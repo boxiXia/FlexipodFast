@@ -13,8 +13,6 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 
 
-
-
 # https://cliutils.gitlab.io/modern-cmake/chapters/packages/CUDA.html
 if(NOT DEFINED CMAKE_CUDA_STANDARD)
     set(CMAKE_CUDA_STANDARD 14)
@@ -56,7 +54,12 @@ add_definitions(-DCONSTRAINTS)
 
 #add_subdirectory(src/Titan)
 
-add_executable(main src/main.cu src/vec.h src/vec.cu)
+add_executable(main 
+    src/main.cu 
+    src/vec.h src/vec.cu 
+    src/shader.h src/shader.cpp 
+    src/object.h src/object.cu
+    src/sim.h src/sim.cu) 
 
 set_target_properties(main PROPERTIES 
                       POSITION_INDEPENDENT_CODE ON
@@ -65,7 +68,8 @@ target_include_directories(main PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
 target_link_libraries(main PRIVATE 
         OpenMP::OpenMP_CXX
-        ${ALL_GL_LIBS})
+        ${ALL_GL_LIBS}
+        ${CUDA_INCLUDE_DIRS})
 
 #target_link_libraries(main PRIVATE cuda) # cudart
 
