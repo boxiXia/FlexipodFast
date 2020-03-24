@@ -22,35 +22,35 @@ __device__ const double NORMAL = 20000; // normal force coefficient for contact 
 
 
 
-CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Vec & center, double radius) {
-    _center = center;
-    _radius = radius;
-}
-
-CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Ball & b) {
-    _center = b._center;
-    _radius = b._radius;
-}
+//CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Vec & center, double radius) {
+//    _center = center;
+//    _radius = radius;
+//}
+//
+//CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Ball & b) {
+//    _center = b._center;
+//    _radius = b._radius;
+//}
 
 CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec& force, Vec& pos) {
     double dist = (pos - _center).norm();
     force += (dist < _radius) ? NORMAL * (pos - _center) / dist : Vec(0, 0, 0);
 }
 
-CUDA_CALLABLE_MEMBER CudaContactPlane::CudaContactPlane(const Vec & normal, double offset) {
-    _normal = normal / normal.norm();
-    _offset = offset;
-    _FRICTION_S = 0.0;
-    _FRICTION_K = 0.0;
-}
-
-CudaContactPlane::CudaContactPlane(const ContactPlane & p) {
-    _normal = p._normal;
-    _offset = p._offset;
-
-    _FRICTION_S = p._FRICTION_S;
-    _FRICTION_K = p._FRICTION_K;
-}
+//CUDA_CALLABLE_MEMBER CudaContactPlane::CudaContactPlane(const Vec & normal, double offset) {
+//    _normal = normal / normal.norm();
+//    _offset = offset;
+//    _FRICTION_S = 0.0;
+//    _FRICTION_K = 0.0;
+//}
+//
+//CudaContactPlane::CudaContactPlane(const ContactPlane & p) {
+//    _normal = p._normal;
+//    _offset = p._offset;
+//
+//    _FRICTION_S = p._FRICTION_S;
+//    _FRICTION_K = p._FRICTION_K;
+//}
 
 CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec& force, Vec& pos, Vec& vel) {
     //    m -> force += (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // TODO fix this for the host
@@ -58,25 +58,25 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec& force, Vec& pos, Vec
     double disp = dot(pos, _normal) - _offset; // displacement into the plane
     Vec f_normal = dot(force, _normal) * _normal; // normal force
 
-    if (disp < 0 && (_FRICTION_S > 0 || _FRICTION_K > 0)) { // if inside the plane
-        Vec v_perp = vel - dot(vel, _normal) * _normal; // perpendicular velocity
-        double v_norm = v_perp.norm();
+    if (disp < 0) {// if inside the plane
+        force -= disp * _normal * NORMAL;// displacement force
 
-        if (v_norm > 1e-15) { // kinetic friction domain
-            double friction_mag = _FRICTION_K * f_normal.norm();
-            force -= v_perp * friction_mag / v_norm;
-        } else { // static friction
-            Vec f_perp = force - f_normal; // perpendicular force
-	        if (_FRICTION_S * f_normal.norm() > f_perp.norm()) {
-                force -= f_perp;
-	        } 
+        if (_FRICTION_S > 0 || _FRICTION_K > 0) {
+            Vec v_perp = vel - dot(vel, _normal) * _normal; // perpendicular velocity
+            double v_norm = v_perp.norm();
+
+            if (v_norm > 1e-15) { // kinetic friction domain
+                double friction_mag = _FRICTION_K * f_normal.norm();
+                force -= v_perp * friction_mag / v_norm;
+            }
+            else { // static friction
+                Vec f_perp = force - f_normal; // perpendicular force
+                if (_FRICTION_S * f_normal.norm() > f_perp.norm()) {
+                    force -= f_perp;
+                }
+            }
         }
     }
-    // now apply the offset force to push the object out of the plane.
-    Vec contact = (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // displacement force
-    //double f_norm = contact.norm();
-    force += contact;
-
 }
 
 

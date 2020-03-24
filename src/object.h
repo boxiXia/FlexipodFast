@@ -85,9 +85,9 @@ struct Ball : public Constraint {
 };
 
 struct CudaBall {
-    CudaBall() = default;
-    CUDA_CALLABLE_MEMBER CudaBall(const Vec & center, double radius);
-    CUDA_CALLABLE_MEMBER CudaBall(const Ball & b);
+    //CudaBall() = default;
+    //CUDA_CALLABLE_MEMBER CudaBall(const Vec & center, double radius);
+    //CUDA_CALLABLE_MEMBER CudaBall(const Ball & b);
 
     CUDA_CALLABLE_MEMBER void applyForce(Vec& force, Vec& pos);
 
@@ -130,16 +130,16 @@ struct ContactPlane : public Constraint {
 };
 
 struct CudaContactPlane {
-    CudaContactPlane() = default;
-    CUDA_CALLABLE_MEMBER CudaContactPlane(const Vec & normal, double offset);
-    CudaContactPlane(const ContactPlane & p);
+    //CudaContactPlane() = default;
+    //CUDA_CALLABLE_MEMBER CudaContactPlane(const Vec & normal, double offset);
+    //CudaContactPlane(const ContactPlane & p);
 
     CUDA_CALLABLE_MEMBER void applyForce(Vec& force, Vec& pos, Vec& vel);
 
     Vec _normal;
     double _offset;
-    double _FRICTION_K;
-    double _FRICTION_S;
+    double _FRICTION_K = 0.0;
+    double _FRICTION_S = 0.0;
 };
 
 
@@ -156,8 +156,6 @@ struct CUDA_GLOBAL_CONSTRAINTS {
 enum CONSTRAINT_TYPE {
     CONTACT_PLANE, BALL
 };
-
-
 
 
 #endif //TITAN_OBJECT_H

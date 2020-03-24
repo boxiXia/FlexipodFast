@@ -120,19 +120,19 @@ __global__ void massForcesAndUpdate(
 	}
 }
 
-__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
-								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
-								int massBlocksPerGrid,int springBlocksPerGrid) {
-	for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-
-		computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
-			d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
-
-		//massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
-		//	d_mass.force, d_mass.force_extern, d_mass.fixed, num_mass, global_acc,
-		//	d_constraints, dt);
-	}
-}
+//__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
+//								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
+//								int massBlocksPerGrid,int springBlocksPerGrid) {
+//	for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+//
+//		computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
+//			d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
+//
+//		massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
+//			d_mass.force, d_mass.force_extern, d_mass.fixed, num_mass, global_acc,
+//			d_constraints, dt);
+//	}
+//}
 
 inline void Simulation::updateCudaParameters() {
 	massBlocksPerGrid = (num_mass + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
@@ -260,29 +260,24 @@ void Simulation::execute() {
 			continue;
 		}
 
-		dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, num_mass, num_spring, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
+		//dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, num_mass, num_spring, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
 		
-		//for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-		//	//computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring, num_spring); // compute mass forces after syncing
-		//	
-		//	computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
-		//		d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
-		//	
-		//	//gpuErrchk(cudaPeekAtLastError());
-		//	//cudaDeviceSynchronize();
-		//	//getAll();
-		//	//massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, num_mass, global_acc, d_constraints, dt);
-		//	
-		//	
-		//	massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
-		//		d_mass.force,d_mass.force_extern,d_mass.fixed,num_mass,global_acc,
-		//		d_constraints,dt);
-		//	
-		//	
-		//	//gpuErrchk(cudaPeekAtLastError());
-		//	//cudaDeviceSynchronize();
-		//	//getAll();
-		//}
+		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+			//computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring, num_spring); // compute mass forces after syncing
+			
+			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
+				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
+			//gpuErrchk(cudaPeekAtLastError());
+
+			//massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, num_mass, global_acc, d_constraints, dt);
+			
+			
+			massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
+				d_mass.force,d_mass.force_extern,d_mass.fixed,num_mass,global_acc,
+				d_constraints,dt);
+			//gpuErrchk(cudaPeekAtLastError());
+
+		}
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef GRAPHICS
@@ -389,7 +384,17 @@ void Simulation::createPlane(const Vec& abc, const double d, const double FRICTI
 	new_plane->_FRICTION_K = FRICTION_K;
 	new_plane->_FRICTION_S = FRICTION_S;
 	constraints.push_back(new_plane);
-	d_planes.push_back(CudaContactPlane(*new_plane));
+
+	CudaContactPlane cuda_contact_plane;
+	cuda_contact_plane._normal = new_plane->_normal;
+	cuda_contact_plane._offset = d;
+	cuda_contact_plane._FRICTION_K = FRICTION_K;
+	cuda_contact_plane._FRICTION_S = FRICTION_S;
+
+	d_planes.push_back(cuda_contact_plane);
+
+
+	//d_planes.push_back(CudaContactPlane(*new_plane));
 	update_constraints = true;
 }
 
@@ -397,7 +402,13 @@ void Simulation::createBall(const Vec& center, const double r) { // creates ball
 	if (ENDED) { throw std::runtime_error("The simulation has ended. New constraints cannot be added."); }
 	Ball* new_ball = new Ball(center, r);
 	constraints.push_back(new_ball);
-	d_balls.push_back(CudaBall(*new_ball));
+	
+	CudaBall cuda_ball;
+	cuda_ball._center = center;
+	cuda_ball._radius = r;
+	d_balls.push_back(cuda_ball);
+
+	//d_balls.push_back(CudaBall(*new_ball));
 	update_constraints = true;
 }
 
