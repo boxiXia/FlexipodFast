@@ -28,7 +28,9 @@
 #include <thread>
 
 constexpr auto MAX_BLOCKS = 65535; // max number of CUDA blocks
-constexpr auto THREADS_PER_BLOCK = 32;
+constexpr auto THREADS_PER_BLOCK = 128;
+constexpr auto MASS_THREADS_PER_BLOCK = 32;
+
 constexpr size_t NUM_CUDA_STREAM = 2; // number of cuda stream besides the default stream
 constexpr size_t  NUM_QUEUED_KERNELS = 8; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 

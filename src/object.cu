@@ -258,23 +258,13 @@ void Ball::draw() {
 #ifdef GRAPHICS
 
 void ContactPlane::generateBuffers() {
-    glm::vec3 color = {0.22f, 0.71f, 0.0f};
-    Vec temp = (dot(_normal, Vec(0, 1, 0)) < 0.8) ? Vec(0, 1, 0) : Vec(1, 0, 0);
-
-    Vec v1 = cross(_normal, temp); // two unit vectors along plane
-    v1 = v1 / v1.norm();
-
-    Vec v2 = cross(_normal, v1);
-    v2 = v2 / v2.norm();
-
 
     const int radius = 5; // radius [unit] of the plane
     // total 5*5*4*6=600 points 
     
-
-    std::vector<GLfloat> vertex_data_v;
-
-    std::vector<GLfloat> color_data_v;
+    // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
+    std::vector<GLfloat> vertex_data;
+    std::vector<GLfloat> color_data;
 
     GLfloat s = 0.5f;// scale
     for (int i = -radius; i < radius; i++)
@@ -283,18 +273,16 @@ void ContactPlane::generateBuffers() {
         {
             GLfloat x = i*s;
             GLfloat y = j*s;
-
-            vertex_data_v.insert(vertex_data_v.end(), {
+            vertex_data.insert(vertex_data.end(), {
                 x,y,0,
                 x+s,y+s,0,
                 x+s,y,0,
                 x,y,0,
                 x,y+s,0,
-                x+s,y+s,0});
-            
+                x+s,y+s,0});//2 triangles of a quad
+            // pick one color
             glm::vec3 c = (i + j) % 2 == 0? glm::vec3(0.729f, 0.78f, 0.655f): glm::vec3(0.533f, 0.62f, 0.506f);
-
-            color_data_v.insert(color_data_v.end(), {
+            color_data.insert(color_data.end(), {
                 c[0],c[1],c[2],
                 c[0],c[1],c[2],
                 c[0],c[1],c[2],
@@ -305,31 +293,29 @@ void ContactPlane::generateBuffers() {
 
     }
 
-
-
     glm::vec3 glm_normal = glm::vec3(_normal[0], _normal[1], _normal[2]);
     auto quat_rot = glm::rotation(glm::vec3(0, 0, 1), glm_normal);
 
     glm::vec3 glm_offset = (float)_offset*glm_normal;
 
-    for (size_t i = 0; i < vertex_data_v.size()/3; i++)
+    #pragma omp parallel for
+    for (size_t i = 0; i < vertex_data.size()/3; i++)
     {
-        glm::vec3 v(vertex_data_v[3 * i], vertex_data_v[3 * i+1], vertex_data_v[3 * i+2]);
+        glm::vec3 v(vertex_data[3 * i], vertex_data[3 * i+1], vertex_data[3 * i+2]);
         v = glm::rotate(quat_rot, v) + glm_offset;
-
-        vertex_data_v[3 * i] = v[0];
-        vertex_data_v[3 * i+1] = v[1];
-        vertex_data_v[3 * i+2] = v[2];
+        vertex_data[3 * i] = v[0];
+        vertex_data[3 * i+1] = v[1];
+        vertex_data[3 * i+2] = v[2];
     }
 
     glGenBuffers(1, &vertices); // create buffer for these vertices
     glBindBuffer(GL_ARRAY_BUFFER, vertices);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)* vertex_data_v.size(), vertex_data_v.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)* vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
 
 
     glGenBuffers(1, &colors);
     glBindBuffer(GL_ARRAY_BUFFER, colors);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * color_data_v.size(), color_data_v.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * color_data.size(), color_data.data(), GL_STATIC_DRAW);
 
     _initialized = true;
 }

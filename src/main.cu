@@ -91,6 +91,7 @@ public:
 
 int main()
 {
+	auto start = std::chrono::steady_clock::now();
 
 	Model bot("..\\src\\data.msgpack");
 
@@ -127,7 +128,7 @@ int main()
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	sim.createPlane(Vec(0, 0, 1), 0, 0.2, 0.2);
 
-	double runtime = 10;
+	double runtime = 1;
 	sim.setBreakpoint(runtime);
 	
 
@@ -145,6 +146,11 @@ int main()
 	//std::cout << "Elapsed time:"
 	//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
 	//	<< " ms" << std::endl;
+
+
+	auto end = std::chrono::steady_clock::now();
+	printf("main():Elapsed time:%d ms \n",
+		std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 
 	return 0;
 }
