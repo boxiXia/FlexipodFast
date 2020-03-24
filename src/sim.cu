@@ -11,9 +11,8 @@
 
 
 
-__global__ void computeSpringForces(MASS d_mass,SPRING d_spring,const int num_mass,const int num_spring) {
-	int i = blockDim.x * blockIdx.x + threadIdx.x;
-	if (i < num_spring) {
+__global__ void computeSpringForces(MASS d_mass,SPRING d_spring,const int num_spring) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
 		int right = d_spring.right[i];
 		int left = d_spring.left[i];
 
@@ -23,30 +22,55 @@ __global__ void computeSpringForces(MASS d_mass,SPRING d_spring,const int num_ma
 		Vec force = d_spring.k[i] * (d_spring.rest[i] - length) * s_vec; // normal spring force
 		force += dot(d_mass.vel[left] - d_mass.vel[right], s_vec) * d_spring.damping[i] * s_vec;// damping
 
-#ifdef CONSTRAINTS
 		if (d_mass.fixed[right] == false) {
 			d_mass.force[right].atomicVecAdd(force); // need atomics here
 		}
 		if (d_mass.fixed[left] == false) {
 			d_mass.force[left].atomicVecAdd(-force);
 		}
-#else
-		d_mass.force[right].atomicVecAdd(force); // need atomics here
-		d_mass.force[left].atomicVecAdd(-force);
-#endif
 	}
 }
 
 
-__global__ void massForcesAndUpdate(MASS d_mass, const int num_mass, 
+
+__global__ void computeSpringForces(
+	const Vec* __restrict__ mass_pos,
+	const Vec* __restrict__ mass_vel, 
+	Vec* mass_force, 
+	const bool* __restrict__ mass_fixed,
+	const double* __restrict__ spring_k, 
+	const double* __restrict__ spring_rest, 
+	const double* __restrict__ spring_damping,
+	const int* __restrict__ spring_left,
+	const int* __restrict__ spring_right, const int num_spring) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
+
+		int right = spring_right[i];
+		int left = spring_left[i];
+
+		Vec s_vec = mass_pos[right] - mass_pos[left];// the vector from left to right
+		double length = s_vec.norm(); // current spring length
+		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
+		Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
+		force += dot(mass_vel[left] - mass_vel[right], s_vec) * spring_damping[i] * s_vec;// damping
+
+		if (mass_fixed[right] == false) {
+			mass_force[right].atomicVecAdd(force); // need atomics here
+		}
+		if (mass_fixed[left] == false) {
+			mass_force[left].atomicVecAdd(-force);
+		}
+	}
+}
+
+__global__ void massForcesAndUpdate(MASS d_mass, const int num_mass,
 	const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS c,const double dt) {
-	int i = blockDim.x * blockIdx.x + threadIdx.x;
-	if (i < num_mass) {
-#ifdef CONSTRAINTS
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		if (d_mass.fixed[i] == false) {
-#endif
-			Vec force = d_mass.force[i];
-			force += d_mass.m[i] * global_acc;
+
+			Vec force = global_acc;
+			force *= d_mass.m[i]; // force = d_mass.m[i] * global_acc;
+			force += d_mass.force[i];
 			force += d_mass.force_extern[i];// add external force [N]
 
 			for (int j = 0; j < c.num_planes; j++) { // global constraints
@@ -59,14 +83,56 @@ __global__ void massForcesAndUpdate(MASS d_mass, const int num_mass,
 			d_mass.vel[i] += d_mass.acc[i] * dt;
 			d_mass.pos[i] += d_mass.vel[i] * dt;
 			d_mass.force[i].setZero();
-
-#ifdef CONSTRAINTS
 		}
-#endif
 	}
 }
 
+__global__ void massForcesAndUpdate(
+	const double* __restrict__ mass_m,
+	Vec* mass_pos,
+	Vec* mass_vel,
+	Vec* mass_acc,
+	Vec* mass_force,
+	const Vec* __restrict__ mass_force_extern,
+	const bool* __restrict__ mass_fixed,
+	const int num_mass,
+	const Vec global_acc, 
+	const CUDA_GLOBAL_CONSTRAINTS c, 
+	const double dt) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
+		if (mass_fixed[i] == false) {
+			Vec force = global_acc;
+			force *= mass_m[i]; // force = d_mass.m[i] * global_acc;
+			force += mass_force[i];
+			force += mass_force_extern[i];// add external force [N]
 
+			for (int j = 0; j < c.num_planes; j++) { // global constraints
+				c.d_planes[j].applyForce(force, mass_pos[i], mass_vel[i]); // todo fix this 
+			}
+			for (int j = 0; j < c.num_balls; j++) {
+				c.d_balls[j].applyForce(force, mass_pos[i]);
+			}
+			mass_acc[i] = force / mass_m[i];
+			mass_vel[i] += mass_acc[i] * dt;
+			mass_pos[i] += mass_vel[i] * dt;
+			mass_force[i].setZero();
+		}
+	}
+}
+
+__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
+								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
+								int massBlocksPerGrid,int springBlocksPerGrid) {
+	for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+
+		computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
+			d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
+
+		//massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
+		//	d_mass.force, d_mass.force_extern, d_mass.fixed, num_mass, global_acc,
+		//	d_constraints, dt);
+	}
+}
 
 inline void Simulation::updateCudaParameters() {
 	massBlocksPerGrid = (num_mass + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
@@ -172,7 +238,6 @@ void Simulation::execute() {
 				}
 			}
 
-#ifdef CONSTRAINTS
 			if (resize_buffers) {
 				resizeBuffers(); // needs to be run from GPU thread
 				resize_buffers = false;
@@ -192,26 +257,36 @@ void Simulation::execute() {
 				}
 				update_constraints = false;
 			}
-#endif
 			continue;
 		}
 
-		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring, num_mass, num_spring); // compute mass forces after syncing
-			gpuErrchk(cudaPeekAtLastError());
-			//cudaDeviceSynchronize();
-			//getAll();
-
-			massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, num_mass, global_acc, d_constraints, dt);
-			gpuErrchk(cudaPeekAtLastError());
-
-			//cudaDeviceSynchronize();
-			//getAll();
-		}
+		dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, num_mass, num_spring, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
+		
+		//for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+		//	//computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring, num_spring); // compute mass forces after syncing
+		//	
+		//	computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
+		//		d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
+		//	
+		//	//gpuErrchk(cudaPeekAtLastError());
+		//	//cudaDeviceSynchronize();
+		//	//getAll();
+		//	//massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, num_mass, global_acc, d_constraints, dt);
+		//	
+		//	
+		//	massForcesAndUpdate << <massBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
+		//		d_mass.force,d_mass.force_extern,d_mass.fixed,num_mass,global_acc,
+		//		d_constraints,dt);
+		//	
+		//	
+		//	//gpuErrchk(cudaPeekAtLastError());
+		//	//cudaDeviceSynchronize();
+		//	//getAll();
+		//}
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef GRAPHICS
-		if (fmod(T, 1./90.) < NUM_QUEUED_KERNELS * dt) {
+		if (fmod(T, 1./60.) < NUM_QUEUED_KERNELS * dt) {
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP[0][0]);// update transformation "MVP" uniform
 
@@ -221,10 +296,11 @@ void Simulation::execute() {
 				c->draw();
 			}
 
-			cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
-
 			//updateBuffers();
 			updateVertexBuffers();
+
+			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
+
 			draw();
 
 			// Swap buffers, render screen
@@ -292,7 +368,6 @@ void Simulation::freeGPU() {
 	//	delete s;
 	//}
 	//for (Mass* m : masses) {
-
 	//	if (m->arrayptr) {
 	//		gpuErrchk(cudaFree(m->arrayptr));
 	//	}
@@ -475,7 +550,6 @@ void Simulation::updateVertexBuffers() {
 	//cudaGLUnmapBufferObject(vertexbuffer);
 }
 
-
 inline void Simulation::draw() {
 	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, this->vertexbuffer);
@@ -516,15 +590,15 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 GLFWwindow* createGLFWWindow() {
 	// Initialise GLFW
 	if (!glfwInit()) { throw(std::runtime_error("Failed to initialize GLFW\n")); }
-	//// MSAA: multisampling
-	glfwWindowHint(GLFW_SAMPLES, 0); // #samples to use for multisampling. Zero disables multisampling.
-	glEnable(GL_MULTISAMPLE);
+	////// MSAA: multisampling
+	//glfwWindowHint(GLFW_SAMPLES, 0); // #samples to use for multisampling. Zero disables multisampling.
+	//glEnable(GL_MULTISAMPLE);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4); // use GLSL 4.6
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // meke opengl forward compatible
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); //We don't want the old OpenGL
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
-	glfwSwapInterval(false);// disable vsync
+	glfwSwapInterval(0);// disable vsync
 	// Open a window and create its OpenGL context
 	GLFWwindow* window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
 	if (window == NULL) {

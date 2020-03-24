@@ -50,7 +50,6 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src)
 
 add_definitions(-DGRAPHICS)
-add_definitions(-DCONSTRAINTS)
 
 #add_subdirectory(src/Titan)
 

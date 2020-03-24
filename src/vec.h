@@ -183,12 +183,12 @@ struct Vec {
 		return *this;
 	} // return the normalized vector
 
-	CUDA_CALLABLE_MEMBER double sum() const {
+	inline CUDA_CALLABLE_MEMBER double sum() const {
 		return data[0] + data[1] + data[2];
 	} // sums all components of the vector
 
 
-	CUDA_CALLABLE_MEMBER void setZero() {
+	inline CUDA_CALLABLE_MEMBER void setZero() {
 		data[0] = 0;
 		data[1] = 0;
 		data[2] = 0;

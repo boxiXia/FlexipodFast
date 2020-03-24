@@ -97,13 +97,15 @@ int main()
 	int num_mass = bot.vertices.size();
 	int num_spring = bot.edges.size();
 
-	double dt = 5e-5;
-	double m = 1e-1;// mass per vertex
-	double spring_constant = 5e5;
-
 	Simulation sim(num_mass, num_spring);
 	MASS& mass = sim.mass;
 	SPRING& spring = sim.spring;
+
+	sim.global_acc = Vec(0, 0, -9.8);
+	sim.dt = 5e-5;
+
+	double m = 1e-1;// mass per vertex
+	double spring_constant = 5e5;
 
 #pragma omp parallel for
 	for (size_t i = 0; i < num_mass; i++)
@@ -121,16 +123,11 @@ int main()
 		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm();
 	}
 
-
-	sim.global_acc = Vec(0, 0, -9.8);
-
-	sim.dt = dt;
 	sim.setViewport(Vec(0.5, -0., 1), Vec(0, -0., 0), Vec(0, 0, 1));
-
 	// our plane has a unit normal in the z-direction, with 0 offset.
-	sim.createPlane(Vec(0, 0, 1), 0, 0.2, 0.2);
+	sim.createPlane(Vec(0, 0, 1), -0.5, 0.2, 0.2);
 
-	double runtime = 5;
+	double runtime = 10;
 	sim.setBreakpoint(runtime);
 	
 

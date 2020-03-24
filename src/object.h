@@ -20,9 +20,8 @@
 
 #include <vector>
 
-#ifdef CONSTRAINTS
 #include <thrust/device_vector.h>
-#endif
+
 
 struct CUDA_MASS;
 class Spring;
@@ -154,12 +153,9 @@ struct CUDA_GLOBAL_CONSTRAINTS {
 };
 
 
-
-#ifdef CONSTRAINTS
 enum CONSTRAINT_TYPE {
     CONTACT_PLANE, BALL
 };
-#endif
 
 
 

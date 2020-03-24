@@ -62,7 +62,7 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec& force, Vec& pos, Vec
         Vec v_perp = vel - dot(vel, _normal) * _normal; // perpendicular velocity
         double v_norm = v_perp.norm();
 
-        if (v_norm > 1e-16) { // kinetic friction domain
+        if (v_norm > 1e-15) { // kinetic friction domain
             double friction_mag = _FRICTION_K * f_normal.norm();
             force -= v_perp * friction_mag / v_norm;
         } else { // static friction
