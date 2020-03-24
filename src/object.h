@@ -126,6 +126,8 @@ struct ContactPlane : public Constraint {
 
     GLuint vertices;
     GLuint colors;
+
+
 #endif
 };
 

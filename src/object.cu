@@ -12,10 +12,14 @@
 
 
 #ifdef GRAPHICS
-const Vec RED(1.0, 0.2, 0.2);
-const Vec GREEN(0.2, 1.0, 0.2);
-const Vec BLUE(0.2, 0.2, 1.0);
-const Vec PURPLE(0.5, 0.2, 0.5);
+const glm::vec3 RED(1.0, 0.2, 0.2);
+const glm::vec3 GREEN(0.2, 1.0, 0.2);
+const glm::vec3 BLUE(0.2, 0.2, 1.0);
+const glm::vec3 PURPLE(0.5, 0.2, 0.5);
+const glm::vec3 DARKSEAGREEN(0.45, 0.84, 0.5);
+const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
+
+#include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
 __device__ const double NORMAL = 20000; // normal force coefficient for contact constaints
@@ -263,75 +267,69 @@ void ContactPlane::generateBuffers() {
     Vec v2 = cross(_normal, v1);
     v2 = v2 / v2.norm();
 
-    const static GLfloat vertex_buffer_platform[118] = {
-            -1, -1, -1,
-            -1, -1,  1,
-            -1,  1,  1,
-            1,  1, -1,
-            -1, -1, -1,
-            -1,  1, -1,
-            1, -1,  1,
-            -1, -1, -1,
-            1, -1, -1,
-            1,  1, -1,
-            1, -1, -1,
-            -1, -1, -1,
-            -1, -1, -1,
-            -1,  1,  1,
-            -1,  1, -1,
-            1, -1,  1,
-            -1, -1,  1,
-            -1, -1, -1,
-            -1,  1,  1,
-            -1, -1,  1,
-            1, -1,  1,
-            1,  1,  1,
-            1, -1, -1,
-            1,  1, -1,
-            1, -1, -1,
-            1,  1,  1,
-            1, -1,  1,
-            1,  1,  1,
-            1,  1, -1,
-            -1,  1, -1,
-            1,  1,  1,
-            -1,  1, -1,
-            -1,  1,  1,
-            1,  1,  1,
-            -1,  1,  1,
-            1, -1,  1
-    };
 
-
-
-    GLfloat vertex_data[108];
+    const int radius = 5; // radius [unit] of the plane
+    // total 5*5*4*6=600 points 
     
-    for (int i = 0; i < 36; i++) {
-        Vec temp = Vec(vertex_buffer_platform[3 * i], vertex_buffer_platform[3 * i + 1], vertex_buffer_platform[3 * i + 2]);
-        Vec vertex = 1* (dot(v1, temp) * v1 + dot(v2, temp) * v2 + _normal * (_offset + dot(_normal, temp) - 1.0));
 
-        vertex_data[3 * i] = vertex[0];
-        vertex_data[3 * i + 1] = vertex[1];
-        vertex_data[3 * i + 2] = vertex[2];
+    std::vector<GLfloat> vertex_data_v;
+
+    std::vector<GLfloat> color_data_v;
+
+    GLfloat s = 0.5f;// scale
+    for (int i = -radius; i < radius; i++)
+    {
+        for (int j = -radius; j < radius; j++)
+        {
+            GLfloat x = i*s;
+            GLfloat y = j*s;
+
+            vertex_data_v.insert(vertex_data_v.end(), {
+                x,y,0,
+                x+s,y+s,0,
+                x+s,y,0,
+                x,y,0,
+                x,y+s,0,
+                x+s,y+s,0});
+            
+            glm::vec3 c = (i + j) % 2 == 0? glm::vec3(0.729f, 0.78f, 0.655f): glm::vec3(0.533f, 0.62f, 0.506f);
+
+            color_data_v.insert(color_data_v.end(), {
+                c[0],c[1],c[2],
+                c[0],c[1],c[2],
+                c[0],c[1],c[2],
+                c[0],c[1],c[2],
+                c[0],c[1],c[2],
+                c[0],c[1],c[2]});
+        }
+
+    }
+
+
+
+    glm::vec3 glm_normal = glm::vec3(_normal[0], _normal[1], _normal[2]);
+    auto quat_rot = glm::rotation(glm::vec3(0, 0, 1), glm_normal);
+
+    glm::vec3 glm_offset = (float)_offset*glm_normal;
+
+    for (size_t i = 0; i < vertex_data_v.size()/3; i++)
+    {
+        glm::vec3 v(vertex_data_v[3 * i], vertex_data_v[3 * i+1], vertex_data_v[3 * i+2]);
+        v = glm::rotate(quat_rot, v) + glm_offset;
+
+        vertex_data_v[3 * i] = v[0];
+        vertex_data_v[3 * i+1] = v[1];
+        vertex_data_v[3 * i+2] = v[2];
     }
 
     glGenBuffers(1, &vertices); // create buffer for these vertices
     glBindBuffer(GL_ARRAY_BUFFER, vertices);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_data), vertex_data, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)* vertex_data_v.size(), vertex_data_v.data(), GL_STATIC_DRAW);
 
-    GLfloat g_color_buffer_data[108];
-
-
-    
-    for (int i = 0; i < 36; i++) {
-        g_color_buffer_data[3 * i] = color[0];
-        g_color_buffer_data[3 * i + 1] = color[1];
-        g_color_buffer_data[3 * i + 2] = color[2];
-    }
 
     glGenBuffers(1, &colors);
     glBindBuffer(GL_ARRAY_BUFFER, colors);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(g_color_buffer_data), g_color_buffer_data, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * color_data_v.size(), color_data_v.data(), GL_STATIC_DRAW);
 
     _initialized = true;
 }
@@ -362,10 +360,10 @@ void ContactPlane::draw() {
     );
 
     // Draw the triangle !
-    glDrawArrays(GL_TRIANGLES, 0, 12*3); // 12*3 indices starting at 0 -> 12 triangles
+    glDrawArrays(GL_TRIANGLES, 0, 600); // number of vertices
     
     // Todo: this won't work when the plane is shifted
-    glDrawElements(GL_LINES, 12*6, GL_UNSIGNED_INT, (void*)0); // 3 indices starting at 0 -> 1 triangle
+    //glDrawElements(GL_LINES, 12*6, GL_UNSIGNED_INT, (void*)0); // 3 indices starting at 0 -> 1 triangle
 
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(0);
