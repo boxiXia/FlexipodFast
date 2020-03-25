@@ -11,27 +11,48 @@
 
 
 
-__global__ void computeSpringForces(MASS d_mass,SPRING d_spring,const int num_spring) {
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
-		int right = d_spring.right[i];
-		int left = d_spring.left[i];
-
-		Vec s_vec = d_mass.pos[right] - d_mass.pos[left];// the vector from left to right
-		double length = s_vec.norm(); // current spring length
-		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
-		Vec force = d_spring.k[i] * (d_spring.rest[i] - length) * s_vec; // normal spring force
-		force += dot(d_mass.vel[left] - d_mass.vel[right], s_vec) * d_spring.damping[i] * s_vec;// damping
-
-		if (d_mass.fixed[right] == false) {
-			d_mass.force[right].atomicVecAdd(force); // need atomics here
-		}
-		if (d_mass.fixed[left] == false) {
-			d_mass.force[left].atomicVecAdd(-force);
-		}
-	}
-}
-
-
+//__global__ void computeSpringForces(MASS d_mass,SPRING d_spring,const int num_spring) {
+//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
+//		int right = d_spring.right[i];
+//		int left = d_spring.left[i];
+//
+//		Vec s_vec = d_mass.pos[right] - d_mass.pos[left];// the vector from left to right
+//		double length = s_vec.norm(); // current spring length
+//		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
+//		Vec force = d_spring.k[i] * (d_spring.rest[i] - length) * s_vec; // normal spring force
+//		force += s_vec.dot(mass_vel[left] - mass_vel[right]) * d_spring.damping[i] * s_vec;// damping
+//
+//		if (d_mass.fixed[right] == false) {
+//			d_mass.force[right].atomicVecAdd(force); // need atomics here
+//		}
+//		if (d_mass.fixed[left] == false) {
+//			d_mass.force[left].atomicVecAdd(-force);
+//		}
+//	}
+//}
+//__global__ void massForcesAndUpdate(MASS d_mass, const int num_mass,
+//	const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS c,const double dt) {
+//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
+//		if (d_mass.fixed[i] == false) {
+//
+//			Vec force = global_acc;
+//			force *= d_mass.m[i]; // force = d_mass.m[i] * global_acc;
+//			force += d_mass.force[i];
+//			force += d_mass.force_extern[i];// add external force [N]
+//
+//			for (int j = 0; j < c.num_planes; j++) { // global constraints
+//				c.d_planes[j].applyForce(force, d_mass.pos[i], d_mass.vel[i]); // todo fix this 
+//			}
+//			for (int j = 0; j < c.num_balls; j++) {
+//				c.d_balls[j].applyForce(force, d_mass.pos[i]);
+//			}
+//			d_mass.acc[i] = force / d_mass.m[i];
+//			d_mass.vel[i] += d_mass.acc[i] * dt;
+//			d_mass.pos[i] += d_mass.vel[i] * dt;
+//			d_mass.force[i].setZero();
+//		}
+//	}
+//}
 
 __global__ void computeSpringForces(
 	const Vec* __restrict__ mass_pos,
@@ -52,37 +73,13 @@ __global__ void computeSpringForces(
 		double length = s_vec.norm(); // current spring length
 		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
 		Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
-		force += dot(mass_vel[left] - mass_vel[right], s_vec) * spring_damping[i] * s_vec;// damping
-
+		force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
+		
 		if (mass_fixed[right] == false) {
 			mass_force[right].atomicVecAdd(force); // need atomics here
 		}
 		if (mass_fixed[left] == false) {
 			mass_force[left].atomicVecAdd(-force);
-		}
-	}
-}
-
-__global__ void massForcesAndUpdate(MASS d_mass, const int num_mass,
-	const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS c,const double dt) {
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		if (d_mass.fixed[i] == false) {
-
-			Vec force = global_acc;
-			force *= d_mass.m[i]; // force = d_mass.m[i] * global_acc;
-			force += d_mass.force[i];
-			force += d_mass.force_extern[i];// add external force [N]
-
-			for (int j = 0; j < c.num_planes; j++) { // global constraints
-				c.d_planes[j].applyForce(force, d_mass.pos[i], d_mass.vel[i]); // todo fix this 
-			}
-			for (int j = 0; j < c.num_balls; j++) {
-				c.d_balls[j].applyForce(force, d_mass.pos[i]);
-			}
-			d_mass.acc[i] = force / d_mass.m[i];
-			d_mass.vel[i] += d_mass.acc[i] * dt;
-			d_mass.pos[i] += d_mass.vel[i] * dt;
-			d_mass.force[i].setZero();
 		}
 	}
 }
@@ -440,9 +437,9 @@ void Simulation::computeMVP(bool update_view) {
 	if (update_view) {
 		// Camera matrix
 		this->View = glm::lookAt(
-			glm::vec3(camera_pos[0], camera_pos[1], camera_pos[2]), // Camera is at (4,3,3), in World Space
-			glm::vec3(looks_at[0], looks_at[1], looks_at[2]), // and looks at the origin
-			glm::vec3(up[0], up[1], up[2]));  // Head is up (set to 0,-1,0 to look upside-down)
+			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // Camera is at (4,3,3), in World Space
+			glm::vec3(looks_at.x, looks_at.y, looks_at.z), // and looks at the origin
+			glm::vec3(up.x, up.y, up.z));  // Head is up (set to 0,-1,0 to look upside-down)
 	}
 	if (is_resized || update_view) {
 		this->MVP = Projection * View; // Remember, matrix multiplication is the other way around
@@ -506,9 +503,9 @@ __global__ void updateVertices(float* __restrict__ gl_ptr, const Vec* __restrict
 	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
 	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x;i < num_mass;i += blockDim.x * gridDim.x){
-		gl_ptr[3 * i] = (float)pos[i][0];
-		gl_ptr[3 * i + 1] = (float)pos[i][1];
-		gl_ptr[3 * i + 2] = (float)pos[i][2];
+		gl_ptr[3 * i] = (float)pos[i].x;
+		gl_ptr[3 * i + 1] = (float)pos[i].y;
+		gl_ptr[3 * i + 2] = (float)pos[i].z;
 	}
 }
 
@@ -522,9 +519,9 @@ __global__ void updateIndices(unsigned int* __restrict__ gl_ptr,
 
 __global__ void updateColors(float* __restrict__ gl_ptr, const Vec* __restrict__ color, const int num_mass) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		gl_ptr[3 * i] = (float)color[i][0];
-		gl_ptr[3 * i + 1] = (float)color[i][1];
-		gl_ptr[3 * i + 2] = (float)color[i][2];
+		gl_ptr[3 * i] = (float)color[i].x;
+		gl_ptr[3 * i + 1] = (float)color[i].y;
+		gl_ptr[3 * i + 2] = (float)color[i].z;
 	}
 }
 

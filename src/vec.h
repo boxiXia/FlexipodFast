@@ -32,134 +32,158 @@
 
 
 struct Vec {
+	double x;
+	double y;
+	double z;
 
-	double data[3] = { 0 }; // initialize data to 0
+
+	//double data[3] = { 0 }; // initialize data to 0
 
 	CUDA_CALLABLE_MEMBER Vec() {
-		data[0] = 0;
-		data[1] = 0;
-		data[2] = 0;
+		x = 0;
+		y = 0;
+		z = 0;
 	} // default
 
 	CUDA_CALLABLE_MEMBER Vec(const Vec& v) {
-		data[0] = v.data[0];
-		data[1] = v.data[1];
-		data[2] = v.data[2];
+		x = v.x;
+		y = v.y;
+		z = v.z;
 	} // copy constructor
 	//CUDA_CALLABLE_MEMBER Vec(const Vec& v) = default;
 
 	CUDA_CALLABLE_MEMBER Vec(double x, double y, double z) {
-		data[0] = x;
-		data[1] = y;
-		data[2] = z;
+		this->x = x;
+		this->y = y;
+		this->z = z;
 	} // initialization from x, y, and z values
 
 	CUDA_CALLABLE_MEMBER Vec& operator=(const Vec& v) {
-		data[0] = v.data[0];
-		data[1] = v.data[1];
-		data[2] = v.data[2];
+		x = v.x;
+		y = v.y;
+		z = v.z;
 		return *this;
 	}
 
 	Vec(const std::vector<double>& v) {
-		data[0] = v[0];
-		data[1] = v[1];
-		data[2] = v[2];
+		x = v[0];
+		y = v[1];
+		z = v[2];
 	}
 
 	Vec& operator=(const std::vector<double>& v) {
-		data[0] = v[0];
-		data[1] = v[1];
-		data[2] = v[2];
+		x = v[0];
+		y = v[1];
+		z = v[2];
 		return *this;
 	}
 
-	CUDA_CALLABLE_MEMBER Vec& operator+=(const Vec& v) {
-		data[0] += v.data[0];
-		data[1] += v.data[1];
-		data[2] += v.data[2];
+	inline CUDA_CALLABLE_MEMBER Vec& operator+=(const Vec& v) {
+		x += v.x;
+		y += v.y;
+		z += v.z;
 		return *this;
 	}
 
-	CUDA_CALLABLE_MEMBER Vec& operator-=(const Vec& v) {
-		data[0] -= v.data[0];
-		data[1] -= v.data[1];
-		data[2] -= v.data[2];
+	inline CUDA_CALLABLE_MEMBER Vec& operator-=(const Vec& v) {
+		x -= v.x;
+		y -= v.y;
+		z -= v.z;
 		return *this;
 	}
 
-	CUDA_CALLABLE_MEMBER Vec& operator*=(const Vec& v) {
-		data[0] *= v.data[0];
-		data[1] *= v.data[1];
-		data[2] *= v.data[2];
+	inline CUDA_CALLABLE_MEMBER Vec& operator*=(const Vec& v) {
+		x *= v.x;
+		y *= v.y;
+		z *= v.z;
 		return *this;
 	}
 
-	CUDA_CALLABLE_MEMBER Vec& operator*=(const double& d) {
-		data[0] *= d;
-		data[1] *= d;
-		data[2] *= d;
+	inline CUDA_CALLABLE_MEMBER Vec& operator*=(const double& d) {
+		x *= d;
+		y *= d;
+		z *= d;
 		return *this;
 	}
 
-	CUDA_CALLABLE_MEMBER Vec& operator/=(const Vec& v) {
-		data[0] /= v.data[0];
-		data[1] /= v.data[1];
-		data[2] /= v.data[2];
+	inline CUDA_CALLABLE_MEMBER Vec& operator/=(const Vec& v) {
+		x /= v.x;
+		y /= v.y;
+		z /= v.z;
 		return *this;
 	}
 
-	CUDA_CALLABLE_MEMBER Vec& operator/=(const double& d) {
-		data[0] /= d;
-		data[1] /= d;
-		data[2] /= d;
+	inline CUDA_CALLABLE_MEMBER Vec& operator/=(const double& d) {
+		x /= d;
+		y /= d;
+		z /= d;
 		return *this;
 	}
 
-	CUDA_DEVICE void atomicVecAdd(const Vec& v);
+	inline CUDA_DEVICE void atomicVecAdd(const Vec& v) {
+#ifdef __CUDA_ARCH__
+		atomicAdd(&x, v.x);
+		atomicAdd(&y, v.y);
+		atomicAdd(&z, v.z);
+#endif
+	}
 
-	CUDA_CALLABLE_MEMBER Vec operator-() const {
-		return Vec(-data[0], -data[1], -data[2]);
+	inline CUDA_CALLABLE_MEMBER Vec operator-() const {
+		return Vec(-x, -y, -z);
 	}
 
 	CUDA_CALLABLE_MEMBER double& operator [] (int n) {
-		return data[n]; // note n = 0,1,2
+		switch (n){
+		case 0:
+			return x;
+		case 1:
+			return y;
+		case 2:
+			return z;
+		} // to do remove this
 	}
 
 	CUDA_CALLABLE_MEMBER const double& operator [] (int n) const {
-		return data[n];
+		switch (n){
+		case 0:
+			return x;
+		case 1:
+			return y;
+		case 2:
+			return z;
+		} // to do remove this
 	}
 
-	CUDA_CALLABLE_MEMBER friend Vec operator+(const Vec& v1, const Vec& v2) {
-		return Vec(v1.data[0] + v2.data[0], v1.data[1] + v2.data[1], v1.data[2] + v2.data[2]);
+	inline CUDA_CALLABLE_MEMBER friend Vec operator+(const Vec& v1, const Vec& v2) {
+		return Vec(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
 	}
 
-	CUDA_CALLABLE_MEMBER friend Vec operator-(const Vec& v1, const Vec& v2) {
-		return Vec(v1.data[0] - v2.data[0], v1.data[1] - v2.data[1], v1.data[2] - v2.data[2]);
+	inline CUDA_CALLABLE_MEMBER friend Vec operator-(const Vec& v1, const Vec& v2) {
+		return Vec(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z);
 	}
 
-	CUDA_CALLABLE_MEMBER friend Vec operator*(const double x, const Vec& v) {
-		return Vec(v.data[0] * x, v.data[1] * x, v.data[2] * x);
+	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const double x, const Vec& v) {
+		return Vec(v.x * x, v.y * x, v.z * x);
 	}
 
-	CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v, const double x) {
+	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v, const double x) {
 		return x * v;
 	} // double times Vec
 
-	CUDA_CALLABLE_MEMBER friend bool operator==(const Vec& v1, const Vec& v2) {
+	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec& v1, const Vec& v2) {
 		return (v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2]);
 	}
 
-	CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v1, const Vec& v2) {
-		return Vec(v1.data[0] * v2.data[0], v1.data[1] * v2.data[1], v1.data[2] * v2.data[2]);
+	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v1, const Vec& v2) {
+		return Vec(v1.x * v2.x, v1.y * v2.y, v1.z * v2.z);
 	} // Multiplies two Vecs (elementwise)
 
-	CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v, const double x) {
-		return Vec(v.data[0] / x, v.data[1] / x, v.data[2] / x);
+	inline CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v, const double x) {
+		return Vec(v.x / x, v.y / x, v.z / x);
 	} //  vector over double
 
-	CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v1, const Vec& v2) {
-		return Vec(v1.data[0] / v2.data[0], v1.data[1] / v2.data[1], v1.data[2] / v2.data[2]);
+	inline CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v1, const Vec& v2) {
+		return Vec(v1.x / v2.x, v1.y / v2.y, v1.z / v2.z);
 	} // divides two Vecs (elementwise)
 
 	friend std::ostream& operator << (std::ostream& strm, const Vec& v) {
@@ -167,11 +191,15 @@ struct Vec {
 	} // print
 
 	CUDA_CALLABLE_MEMBER void print() {
-		printf("(%3f, %3f, %3f)\n", data[0], data[1], data[2]);
+		printf("(%3f, %3f, %3f)\n", x, y, z);
 	}
 
-	inline CUDA_CALLABLE_MEMBER double norm() const {
-		return sqrt(pow(data[0], 2) + pow(data[1], 2) + pow(data[2], 2));
+	inline CUDA_CALLABLE_MEMBER  double norm() const {
+#ifdef __CUDA_ARCH__
+		return norm3d(x, y, z);
+#else
+		return sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2));
+#endif
 	} // gives vector norm
 
 	CUDA_CALLABLE_MEMBER Vec normalize() {
@@ -180,27 +208,39 @@ struct Vec {
 		//{// Todo: change this
 		//    n = 1e-8;// add for numerical stability
 		//}
-		data[0] = data[0] / n;
-		data[1] = data[1] / n;
-		data[2] = data[2] / n;
+		x = x / n;
+		y = y / n;
+		z = z / n;
 		return *this;
 	} // return the normalized vector
 
 	inline CUDA_CALLABLE_MEMBER double sum() const {
-		return data[0] + data[1] + data[2];
+#ifdef __CUDA_ARCH__
+		return fma(x, y, z); // compute x+y+z as a single operation:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1gff2117f6f3c4ff8a2aa4ce48a0ff2070
+#else
+		return x + y + z;
+#endif
+		
 	} // sums all components of the vector
 
 
 	inline CUDA_CALLABLE_MEMBER void setZero() {
-		data[0] = 0;
-		data[1] = 0;
-		data[2] = 0;
+		x = 0;
+		y = 0;
+		z = 0;
 	}
 
-	friend CUDA_CALLABLE_MEMBER Vec cross(const Vec& v1, const Vec& v2);
-	friend CUDA_CALLABLE_MEMBER double dot(const Vec& a, const Vec& b);
+	inline CUDA_CALLABLE_MEMBER double dot(const Vec& b) { // dot product
+		return x * b.x + y * b.y + z * b.z; // preferably use this version
+	}
 
+	inline friend CUDA_CALLABLE_MEMBER double dot(const Vec& a, const Vec& b){
+		return a.x * b.x + a.y * b.y + a.z * b.z;
+	}// dot product
+
+	inline friend CUDA_CALLABLE_MEMBER Vec cross(const Vec& v1, const Vec& v2) {
+		return Vec(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
+	}
 };
-
 
 #endif

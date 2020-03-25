@@ -136,7 +136,7 @@ struct CudaContactPlane {
     //CUDA_CALLABLE_MEMBER CudaContactPlane(const Vec & normal, double offset);
     //CudaContactPlane(const ContactPlane & p);
 
-    CUDA_CALLABLE_MEMBER void applyForce(Vec& force, Vec& pos, Vec& vel);
+    CUDA_CALLABLE_MEMBER  void applyForce(Vec& force, Vec& pos, Vec& vel);
 
     Vec _normal;
     double _offset;

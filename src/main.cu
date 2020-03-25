@@ -126,7 +126,7 @@ int main()
 
 	sim.setViewport(Vec(0.5, -0., 1), Vec(0, -0., 0), Vec(0, 0, 1));
 	// our plane has a unit normal in the z-direction, with 0 offset.
-	sim.createPlane(Vec(0, 0, 1), 0, 0.2, 0.2);
+	sim.createPlane(Vec(0, 0, 1), -1, 0.2, 0.2);
 
 	double runtime = 10;
 	sim.setBreakpoint(runtime);

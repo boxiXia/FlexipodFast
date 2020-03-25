@@ -38,7 +38,9 @@ __device__ const double NORMAL = 20000; // normal force coefficient for contact 
 
 CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec& force, Vec& pos) {
     double dist = (pos - _center).norm();
-    force += (dist < _radius) ? NORMAL * (pos - _center) / dist : Vec(0, 0, 0);
+    if (dist < _radius) {
+        force += NORMAL * (pos - _center) / dist;
+    }
 }
 
 //CUDA_CALLABLE_MEMBER CudaContactPlane::CudaContactPlane(const Vec & normal, double offset) {
@@ -58,15 +60,17 @@ CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec& force, Vec& pos) {
 
 CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec& force, Vec& pos, Vec& vel) {
     //    m -> force += (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // TODO fix this for the host
-
-    double disp = dot(pos, _normal) - _offset; // displacement into the plane
-    Vec f_normal = dot(force, _normal) * _normal; // normal force
-
+    
+    double disp = _normal.dot(pos) - _offset; // displacement into the plane
+    Vec f_normal = _normal.dot(force) * _normal; // normal force
+#ifdef __CUDA_ARCH__
+    if(signbit(disp)){ // Determine whether the floating-point value a is negative:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1g2bd7d6942a8b25ae518636dab9ad78a7
+#else
     if (disp < 0) {// if inside the plane
+#endif
         force -= disp * _normal * NORMAL;// displacement force
-
         if (_FRICTION_S > 0 || _FRICTION_K > 0) {
-            Vec v_perp = vel - dot(vel, _normal) * _normal; // perpendicular velocity
+            Vec v_perp = vel - _normal.dot(vel) * _normal; // perpendicular velocity
             double v_norm = v_perp.norm();
 
             if (v_norm > 1e-15) { // kinetic friction domain
