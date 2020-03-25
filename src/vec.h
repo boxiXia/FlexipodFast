@@ -32,6 +32,7 @@
 
 
 struct Vec {
+
 	double data[3] = { 0 }; // initialize data to 0
 
 	CUDA_CALLABLE_MEMBER Vec() {
@@ -45,6 +46,7 @@ struct Vec {
 		data[1] = v.data[1];
 		data[2] = v.data[2];
 	} // copy constructor
+	//CUDA_CALLABLE_MEMBER Vec(const Vec& v) = default;
 
 	CUDA_CALLABLE_MEMBER Vec(double x, double y, double z) {
 		data[0] = x;
@@ -52,19 +54,20 @@ struct Vec {
 		data[2] = z;
 	} // initialization from x, y, and z values
 
-	CUDA_CALLABLE_MEMBER Vec(const std::vector<double>& v) {
-		data[0] = v[0];
-		data[1] = v[1];
-		data[2] = v[2];
-	}
-
 	CUDA_CALLABLE_MEMBER Vec& operator=(const Vec& v) {
 		data[0] = v.data[0];
 		data[1] = v.data[1];
 		data[2] = v.data[2];
 		return *this;
 	}
-	CUDA_CALLABLE_MEMBER Vec& operator=(const std::vector<double>& v) {
+
+	Vec(const std::vector<double>& v) {
+		data[0] = v[0];
+		data[1] = v[1];
+		data[2] = v[2];
+	}
+
+	Vec& operator=(const std::vector<double>& v) {
 		data[0] = v[0];
 		data[1] = v[1];
 		data[2] = v[2];

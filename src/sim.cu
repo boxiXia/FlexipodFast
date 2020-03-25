@@ -122,30 +122,16 @@ __global__ void massForcesAndUpdate(
 
 
 
-//__global__ void dummyUpdate(const Vec global_acc) {
-//	Vec v= Vec(0, 0, 0);
-//}
+__global__ void dummyUpdate(const Vec global_acc) {
+	Vec v= Vec(0, 0, 0);
+}
 
 
-//__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
-//								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
-//								int massBlocksPerGrid,int springBlocksPerGrid) {
-
-//	__global__ void dynamicsUpdate(const Vec global_acc, int massBlocksPerGrid, int springBlocksPerGrid){
-//
-//	//for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-//
-//	//	computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
-//	//		d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
-//
-//	//	massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
-//	//		d_mass.force, d_mass.force_extern, d_mass.fixed, num_mass, global_acc,
-//	//		d_constraints, dt);
-//	//}
-//
-//
-//		dummyUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (global_acc);
-//}
+__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
+								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
+								int massBlocksPerGrid,int springBlocksPerGrid) {
+		//dummyUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (global_acc);
+}
 
 inline void Simulation::updateCudaParameters() {
 	massBlocksPerGrid = (num_mass + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
@@ -280,17 +266,17 @@ void Simulation::execute() {
 			
 			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
 				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
-			gpuErrchk(cudaPeekAtLastError());
+			//gpuErrchk(cudaPeekAtLastError());
 
 			//massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, num_mass, global_acc, d_constraints, dt);
 			
-			
-			massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
+			massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
+				d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
 				d_mass.force,d_mass.force_extern,d_mass.fixed,num_mass,global_acc,
 				d_constraints,dt);
-			gpuErrchk(cudaPeekAtLastError());
-
+			//gpuErrchk(cudaPeekAtLastError());
 		}
+
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef GRAPHICS

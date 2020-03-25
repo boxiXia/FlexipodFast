@@ -111,8 +111,8 @@ int main()
 #pragma omp parallel for
 	for (size_t i = 0; i < num_mass; i++)
 	{
-		mass.pos[i] = bot.vertices[i];
-		mass.color[i] = bot.colors[i];
+		mass.pos[i]= bot.vertices[i];
+		mass.color[i]= bot.colors[i];
 		mass.m[i] = m; // mass [kg]
 	}
 #pragma omp parallel for
@@ -128,10 +128,8 @@ int main()
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	sim.createPlane(Vec(0, 0, 1), 0, 0.2, 0.2);
 
-	double runtime = 1;
+	double runtime = 10;
 	sim.setBreakpoint(runtime);
-	
-
 	
 
 	sim.start();
