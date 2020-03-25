@@ -153,35 +153,27 @@ struct Vec {
 			return z;
 		} // to do remove this
 	}
-
 	inline CUDA_CALLABLE_MEMBER friend Vec operator+(const Vec& v1, const Vec& v2) {
 		return Vec(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
 	}
-
 	inline CUDA_CALLABLE_MEMBER friend Vec operator-(const Vec& v1, const Vec& v2) {
 		return Vec(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z);
 	}
-
 	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const double x, const Vec& v) {
 		return Vec(v.x * x, v.y * x, v.z * x);
 	}
-
 	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v, const double x) {
 		return x * v;
 	} // double times Vec
-
 	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec& v1, const Vec& v2) {
 		return (v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2]);
 	}
-
 	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v1, const Vec& v2) {
 		return Vec(v1.x * v2.x, v1.y * v2.y, v1.z * v2.z);
 	} // Multiplies two Vecs (elementwise)
-
 	inline CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v, const double x) {
 		return Vec(v.x / x, v.y / x, v.z / x);
 	} //  vector over double
-
 	inline CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v1, const Vec& v2) {
 		return Vec(v1.x / v2.x, v1.y / v2.y, v1.z / v2.z);
 	} // divides two Vecs (elementwise)
@@ -241,6 +233,10 @@ struct Vec {
 	inline friend CUDA_CALLABLE_MEMBER Vec cross(const Vec& v1, const Vec& v2) {
 		return Vec(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
 	}
+
+	// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
+	// rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
+	inline friend CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const double& theta, const Vec& offset);
 };
 
 #endif

@@ -46,10 +46,15 @@
 template<class T> // alias template for pinned allocator
 using ThurstHostVec = std::vector<T, thrust::system::cuda::experimental::pinned_allocator<T>>;
 
+
+//struct D_Joint {
+//	left
+// };
+
 struct Joint {
 	std::vector<int> left;// the indices of the left points
 	std::vector<int> right;// the indices of the right points
-	std::vector<int> anchor;// the indices of the anchor points
+	std::vector<int> anchor;// the 2 indices of the anchor points: left_anchor_id,right_anchor_id
 	MSGPACK_DEFINE(left, right, anchor);
 };
 class Model {
@@ -107,6 +112,7 @@ int main()
 
 	double m = 1e-1;// mass per vertex
 	double spring_constant = 5e5;
+	double spring_damping = 0.;
 
 #pragma omp parallel for
 	for (size_t i = 0; i < num_mass; i++)
@@ -121,14 +127,15 @@ int main()
 		spring.left[i] = bot.edges[i][0];
 		spring.right[i] = bot.edges[i][1];
 		spring.k[i] = spring_constant; // spring constant
+		spring.damping[i] = spring_damping;
 		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm();
 	}
 
-	sim.setViewport(Vec(0.5, -0., 1), Vec(0, -0., 0), Vec(0, 0, 1));
+	sim.setViewport(Vec(0.25, -0., 0.25), Vec(0, -0., -0.2), Vec(0, 0, 1));
 	// our plane has a unit normal in the z-direction, with 0 offset.
-	sim.createPlane(Vec(0, 0, 1), -1, 0.2, 0.2);
+	sim.createPlane(Vec(0, 0, 1), -0.05, 0.5, 0.55);
 
-	double runtime = 10;
+	double runtime = 1;
 	sim.setBreakpoint(runtime);
 	
 

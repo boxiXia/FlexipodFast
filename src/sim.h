@@ -31,8 +31,8 @@ constexpr auto MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr auto THREADS_PER_BLOCK = 128;
 constexpr auto MASS_THREADS_PER_BLOCK = 32;
 
-constexpr size_t NUM_CUDA_STREAM = 2; // number of cuda stream besides the default stream
-constexpr size_t  NUM_QUEUED_KERNELS = 8; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr size_t NUM_CUDA_STREAM = 4; // number of cuda stream besides the default stream
+constexpr size_t  NUM_QUEUED_KERNELS = 16; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -60,7 +60,8 @@ struct MASS {
 	Vec* force_extern;
 	Vec* color;
 	bool* fixed;
-	MASS() {}
+	size_t num;
+	MASS() { num = 0; }
 	MASS(size_t num, cudaError_t(*malloc)(void**, size_t) = cudaMallocHost) {
 		// if malloc = cudaMallocHost: allocate on host
 		// if malloc = cudaMalloc: allocate on device
@@ -73,8 +74,9 @@ struct MASS {
 		gpuErrchk((*malloc)((void**)&force_extern, num * sizeof(Vec)));
 		gpuErrchk((*malloc)((void**)&color, num * sizeof(Vec)));
 		gpuErrchk((*malloc)((void**)&fixed, num * sizeof(bool)));
+		this->num = num;
 	}
-	void copyFrom(MASS& other, size_t num) {
+	void copyFrom(MASS& other) {
 		gpuErrchk(cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault));
 		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec), cudaMemcpyDefault));
 		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec), cudaMemcpyDefault));
@@ -92,7 +94,8 @@ struct SPRING {
 	double* damping; // damping on the masses.
 	int* left; // index of left mass
 	int* right; // index of right mass
-	SPRING() {}
+	size_t num;
+	SPRING() { num = 0; }
 	SPRING(size_t num, cudaError_t(*malloc)(void**, size_t) = cudaMallocHost) {
 		// if malloc = cudaMallocHost: allocate on host
 		// if malloc = cudaMalloc: allocate on device
@@ -102,8 +105,9 @@ struct SPRING {
 		gpuErrchk((*malloc)((void**)&damping, num * sizeof(double)));
 		gpuErrchk((*malloc)((void**)&left, num * sizeof(int)));
 		gpuErrchk((*malloc)((void**)&right, num * sizeof(int)));
+		this->num = num;
 	}
-	void copyFrom(SPRING& other, size_t num) {
+	void copyFrom(SPRING& other) {
 		gpuErrchk(cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault));
 		gpuErrchk(cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault));
 		gpuErrchk(cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault));
@@ -127,8 +131,8 @@ public:
 	MASS d_mass;
 	SPRING d_spring;
 
-	size_t num_mass=0;
-	size_t num_spring=0;
+	//size_t num_mass=0;// refer to mass.num
+	//size_t num_spring=0;//refer to spring.num
 
 	// control
 	bool RUNNING = false;
@@ -139,29 +143,29 @@ public:
 	bool GPU_DONE = false;
 
 	Simulation() {
-		for (int i = 0; i < 2; ++i)
+		for (int i = 0; i < NUM_CUDA_STREAM; ++i)
 			cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 	}
 
 	Simulation(size_t num_mass, size_t num_spring):Simulation() {
-		this->num_mass = num_mass;
-		this->num_spring = num_spring;
 		mass = MASS(num_mass, cudaMallocHost); // allocate host
 		d_mass = MASS(num_mass, cudaMalloc); // allocate device
 		spring = SPRING(num_spring, cudaMallocHost); // allocate host
 		d_spring = SPRING(num_spring, cudaMalloc); // allocate device
+		//this->num_mass = num_mass;//refer to spring.num
+		//this->num_spring = num_spring;// refer to mass.num
 		cudaDeviceSynchronize();
 	}
 	~Simulation();
 
 	void getAll() {
-		mass.copyFrom(d_mass, num_mass);
-		spring.copyFrom(d_spring, num_spring);
+		mass.copyFrom(d_mass);
+		spring.copyFrom(d_spring);
 		cudaDeviceSynchronize();
 	}
 	void setAll() {
-		d_mass.copyFrom(mass, num_mass);
-		d_spring.copyFrom(spring, num_spring);
+		d_mass.copyFrom(mass);
+		d_spring.copyFrom(spring);
 		cudaDeviceSynchronize();
 	}
 
@@ -210,7 +214,7 @@ private:
 	bool update_constraints = true;
 
 #ifdef GRAPHICS
-	int lineWidth = 1;
+	int lineWidth = 2;
 	int pointSize = 3;
 
 	GLFWwindow* window;

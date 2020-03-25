@@ -11,49 +11,6 @@
 
 
 
-//__global__ void computeSpringForces(MASS d_mass,SPRING d_spring,const int num_spring) {
-//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
-//		int right = d_spring.right[i];
-//		int left = d_spring.left[i];
-//
-//		Vec s_vec = d_mass.pos[right] - d_mass.pos[left];// the vector from left to right
-//		double length = s_vec.norm(); // current spring length
-//		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
-//		Vec force = d_spring.k[i] * (d_spring.rest[i] - length) * s_vec; // normal spring force
-//		force += s_vec.dot(mass_vel[left] - mass_vel[right]) * d_spring.damping[i] * s_vec;// damping
-//
-//		if (d_mass.fixed[right] == false) {
-//			d_mass.force[right].atomicVecAdd(force); // need atomics here
-//		}
-//		if (d_mass.fixed[left] == false) {
-//			d_mass.force[left].atomicVecAdd(-force);
-//		}
-//	}
-//}
-//__global__ void massForcesAndUpdate(MASS d_mass, const int num_mass,
-//	const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS c,const double dt) {
-//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-//		if (d_mass.fixed[i] == false) {
-//
-//			Vec force = global_acc;
-//			force *= d_mass.m[i]; // force = d_mass.m[i] * global_acc;
-//			force += d_mass.force[i];
-//			force += d_mass.force_extern[i];// add external force [N]
-//
-//			for (int j = 0; j < c.num_planes; j++) { // global constraints
-//				c.d_planes[j].applyForce(force, d_mass.pos[i], d_mass.vel[i]); // todo fix this 
-//			}
-//			for (int j = 0; j < c.num_balls; j++) {
-//				c.d_balls[j].applyForce(force, d_mass.pos[i]);
-//			}
-//			d_mass.acc[i] = force / d_mass.m[i];
-//			d_mass.vel[i] += d_mass.acc[i] * dt;
-//			d_mass.pos[i] += d_mass.vel[i] * dt;
-//			d_mass.force[i].setZero();
-//		}
-//	}
-//}
-
 __global__ void computeSpringForces(
 	const Vec* __restrict__ mass_pos,
 	const Vec* __restrict__ mass_vel, 
@@ -131,8 +88,8 @@ __global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, 
 }
 
 inline void Simulation::updateCudaParameters() {
-	massBlocksPerGrid = (num_mass + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
-	springBlocksPerGrid = (num_spring + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+	massBlocksPerGrid = (mass.num + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
+	springBlocksPerGrid = (spring.num + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
 	if (massBlocksPerGrid > MAX_BLOCKS) { massBlocksPerGrid = MAX_BLOCKS; }
 	if (springBlocksPerGrid > MAX_BLOCKS) { springBlocksPerGrid = MAX_BLOCKS; }
 }
@@ -151,8 +108,8 @@ void Simulation::pause(const double t) {
 
 void Simulation::start() {
 	if (ENDED) { throw std::runtime_error("The simulation has ended. Cannot call sim.start() after the end of the simulation."); }
-	if (num_mass == 0) { throw std::runtime_error("No masses have been added. Please add masses before starting the simulation."); }
-	printf("Starting simulation with %d masses and %d springs\n", num_mass, num_spring);
+	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Please add masses before starting the simulation."); }
+	printf("Starting simulation with %d masses and %d springs\n", mass.num, spring.num);
 	RUNNING = true;
 	STARTED = true;
 
@@ -256,20 +213,20 @@ void Simulation::execute() {
 			continue;
 		}
 
-		//dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, num_mass, num_spring, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
+		//dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, mass.num, spring.num, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
 		
 		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-			//computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring, num_spring); // compute mass forces after syncing
+			//computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring, spring.num); // compute mass forces after syncing
 			
 			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
-				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, num_spring);
+				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num);
 			//gpuErrchk(cudaPeekAtLastError());
 
-			//massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, num_mass, global_acc, d_constraints, dt);
+			//massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, mass.num, global_acc, d_constraints, dt);
 			
 			massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
 				d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
-				d_mass.force,d_mass.force_extern,d_mass.fixed,num_mass,global_acc,
+				d_mass.force,d_mass.force_extern,d_mass.fixed,mass.num,global_acc,
 				d_constraints,dt);
 			//gpuErrchk(cudaPeekAtLastError());
 		}
@@ -312,7 +269,7 @@ void Simulation::execute() {
 void Simulation::resume() {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. Cannot resume simulation."); }
 	if (!STARTED) { throw std::runtime_error("Simulation has not started. Cannot resume before calling sim.start()."); }
-	if (num_mass == 0) { throw std::runtime_error("No masses have been added. Add masses before simulation starts."); }
+	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Add masses before simulation starts."); }
 	updateCudaParameters();
 	cudaDeviceSynchronize();
 	RUNNING = true;
@@ -451,21 +408,21 @@ inline void Simulation::generateBuffers() {
 		//GLuint colorbuffer; // bind colors to buffer colorbuffer 
 		glGenBuffers(1, &colorbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * num_mass * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(colorbuffer);
 		cudaGLMapBufferObject(&colorPointer, colorbuffer); // refer to updateBuffers()
 
 		//GLuint elementbuffer; // create buffer for main object
 		glGenBuffers(1, &elementbuffer);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * num_spring * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
 		cudaGLRegisterBufferObject(elementbuffer);
 		cudaGLMapBufferObject(&indexPointer, elementbuffer);// refer to updateBuffers()
 
 		//GLuint vertexbuffer; // bind vertex buffer
 		glGenBuffers(1, &vertexbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * num_mass * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(vertexbuffer);
 		cudaGLMapBufferObject(&vertexPointer, vertexbuffer);// refer to updateBuffers()
 
@@ -478,21 +435,21 @@ inline void Simulation::resizeBuffers() {
 		cudaGLUnmapBufferObject(colorbuffer);//refer to updateBuffers()
 		cudaGLUnregisterBufferObject(this->colorbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, this->colorbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * num_mass * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(this->colorbuffer);
 		cudaGLMapBufferObject(&colorPointer, colorbuffer);//refer to updateBuffers()
 
 		cudaGLUnmapBufferObject(elementbuffer);//refer to updateBuffers()
 		cudaGLUnregisterBufferObject(this->elementbuffer);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->elementbuffer);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * num_spring * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
 		cudaGLRegisterBufferObject(this->elementbuffer);
 		cudaGLMapBufferObject(&indexPointer, elementbuffer);//refer to updateBuffers()
 
 		cudaGLUnmapBufferObject(vertexbuffer);//refer to updateBuffers()
 		cudaGLUnregisterBufferObject(this->vertexbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * num_mass * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(this->vertexbuffer);
 		cudaGLMapBufferObject(&vertexPointer, vertexbuffer);//refer to updateBuffers()
 
@@ -510,7 +467,7 @@ __global__ void updateVertices(float* __restrict__ gl_ptr, const Vec* __restrict
 }
 
 __global__ void updateIndices(unsigned int* __restrict__ gl_ptr, 
-							  const int* __restrict__ left,const int* __restrict__ right, int num_spring) {
+							  const int* __restrict__ left,const int* __restrict__ right, const int num_spring) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
 		gl_ptr[2 * i] = (unsigned int)left[i]; // todo check if this is needed
 		gl_ptr[2 * i + 1] = (unsigned int)right[i];
@@ -526,11 +483,18 @@ __global__ void updateColors(float* __restrict__ gl_ptr, const Vec* __restrict__
 }
 
 void Simulation::updateBuffers() { // todo: check the kernel call
+	{
+		//glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+		//void* vertexPointer;
+		//cudaGLMapBufferObject(&vertexPointer, vertexbuffer);
+		updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > ((float*)vertexPointer, d_mass.pos, mass.num);
+		//cudaGLUnmapBufferObject(vertexbuffer);
+	}
 	if (update_colors) {
 		//glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
 		//void* colorPointer; // if no masses, springs, or colors are changed/deleted, this can be start only once
 		//cudaGLMapBufferObject(&colorPointer, colorbuffer);
-		updateColors<<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK,0, stream[0]>>>((float*)colorPointer, d_mass.color, num_mass);
+		updateColors<<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK,0, stream[1]>>>((float*)colorPointer, d_mass.color, mass.num);
 		//cudaGLUnmapBufferObject(colorbuffer);
 		update_colors = false;
 	}
@@ -538,22 +502,15 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 		//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
 		//void* indexPointer; // if no masses or springs are deleted, this can be start only once
 		//cudaGLMapBufferObject(&indexPointer, elementbuffer);
-		updateIndices<<<springBlocksPerGrid, THREADS_PER_BLOCK,0,stream[1]>>>((unsigned int*)indexPointer, d_spring.left,d_spring.right, num_spring);
+		updateIndices<<<springBlocksPerGrid, THREADS_PER_BLOCK,0,stream[2]>>>((unsigned int*)indexPointer, d_spring.left,d_spring.right, spring.num);
 		//cudaGLUnmapBufferObject(elementbuffer);
 		update_indices = false;
-	}
-	{
-		//glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		//void* vertexPointer;
-		//cudaGLMapBufferObject(&vertexPointer, vertexbuffer);
-		updateVertices<<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK >>>((float*)vertexPointer, d_mass.pos, num_mass);
-		//cudaGLUnmapBufferObject(vertexbuffer);
 	}
 }
 
 void Simulation::updateVertexBuffers() {
 
-	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > ((float*)vertexPointer, d_mass.pos, num_mass);
+	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > ((float*)vertexPointer, d_mass.pos, mass.num);
 	//cudaGLUnmapBufferObject(vertexbuffer);
 }
 
@@ -582,8 +539,8 @@ inline void Simulation::draw() {
 		(void*)0                          // array buffer offset
 		);
 
-	glDrawArrays(GL_POINTS, 0, num_mass); // 3 indices starting at 0 -> 1 triangle
-	glDrawElements(GL_LINES, 2 * num_spring, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
+	glDrawArrays(GL_POINTS, 0, mass.num); // 3 indices starting at 0 -> 1 triangle
+	glDrawElements(GL_LINES, 2 * spring.num, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
 
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);

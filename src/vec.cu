@@ -9,11 +9,15 @@
 #include "vec.h"
 
 
-//CUDA_CALLABLE_MEMBER double dot(const Vec& a, const Vec& b) {
-//
-//    return a.x * b.x + a.y * b.y + a.z * b.z;
-//}
-
-//CUDA_CALLABLE_MEMBER Vec cross(const Vec& v1, const Vec& v2) {
-//    return Vec(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
-//}
+// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
+// rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
+CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const double& theta, const Vec& offset) {
+	Vec v = v_ - offset;
+	double c = cos(theta);
+	Vec v_rot = v * c + cross(k, v) * sin(theta) + dot(k,v) * (1 - c) * k;
+	//Vec v_rot = cross(k, v) * sin(theta);
+	//v_rot += v * c;
+	//v_rot += dot(k, v) * (1 - c) * k;
+	v_rot += offset;
+	return v_rot;
+}
