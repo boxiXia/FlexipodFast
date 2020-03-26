@@ -27,13 +27,12 @@
 #include <set>
 #include <thread>
 
-constexpr auto MAX_BLOCKS = 65535; // max number of CUDA blocks
-constexpr auto THREADS_PER_BLOCK = 128;
-constexpr auto MASS_THREADS_PER_BLOCK = 32;
+constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
+constexpr int THREADS_PER_BLOCK = 128;
+constexpr int MASS_THREADS_PER_BLOCK = 32;
 
-constexpr size_t NUM_CUDA_STREAM = 4; // number of cuda stream besides the default stream
-constexpr size_t  NUM_QUEUED_KERNELS = 16; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
-
+constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream besides the default stream
+constexpr int  NUM_QUEUED_KERNELS = 16; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = false)
@@ -60,12 +59,14 @@ struct MASS {
 	Vec* force_extern;
 	Vec* color;
 	bool* fixed;
-	size_t num;
+	int num;
 	MASS() { num = 0; }
-	MASS(size_t num, cudaError_t(*malloc)(void**, size_t) = cudaMallocHost) {
-		// if malloc = cudaMallocHost: allocate on host
-		// if malloc = cudaMalloc: allocate on device
+	MASS(int num, bool on_host = true) {
+		cudaError_t(*malloc)(void**, size_t);
+		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
+		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
 		// ref: https://stackoverflow.com/questions/9410/how-do-you-pass-a-function-as-a-parameter-in-c
+		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
 		gpuErrchk((*malloc)((void**)&m, num * sizeof(double)));
 		gpuErrchk((*malloc)((void**)&pos, num * sizeof(Vec)));
 		gpuErrchk((*malloc)((void**)&vel, num * sizeof(Vec)));
@@ -76,15 +77,16 @@ struct MASS {
 		gpuErrchk((*malloc)((void**)&fixed, num * sizeof(bool)));
 		this->num = num;
 	}
-	void copyFrom(MASS& other) {
-		gpuErrchk(cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(force, other.force, num * sizeof(Vec), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault));
+	void copyFrom(MASS& other, cudaStream_t stream=(cudaStream_t)0) {
+		gpuErrchk(cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(force, other.force, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream));
+		//this->num = other.num;
 	}
 };
 
@@ -94,12 +96,13 @@ struct SPRING {
 	double* damping; // damping on the masses.
 	int* left; // index of left mass
 	int* right; // index of right mass
-	size_t num;
+	int num;
 	SPRING() { num = 0; }
-	SPRING(size_t num, cudaError_t(*malloc)(void**, size_t) = cudaMallocHost) {
-		// if malloc = cudaMallocHost: allocate on host
-		// if malloc = cudaMalloc: allocate on device
-		// ref: https://stackoverflow.com/questions/9410/how-do-you-pass-a-function-as-a-parameter-in-c
+	SPRING(int num, bool on_host = true) {
+		cudaError_t(*malloc)(void**, size_t);
+		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
+		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
+		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
 		gpuErrchk((*malloc)((void**)&k, num * sizeof(double)));
 		gpuErrchk((*malloc)((void**)&rest, num * sizeof(double)));
 		gpuErrchk((*malloc)((void**)&damping, num * sizeof(double)));
@@ -107,16 +110,46 @@ struct SPRING {
 		gpuErrchk((*malloc)((void**)&right, num * sizeof(int)));
 		this->num = num;
 	}
-	void copyFrom(SPRING& other) {
-		gpuErrchk(cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault));
-		gpuErrchk(cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault));
+	void copyFrom(SPRING& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
+		gpuErrchk(cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault,stream));
+		gpuErrchk(cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault,stream));
+		gpuErrchk(cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream));
+		//this->num = other.num;
 	}
 };
 
 
+
+struct Joint {
+	int* left; // index of left mass
+	int* right; // index of right mass
+	int* anchor; // anchor_left = anchor[0], anchor_right = anchor[1], 2 number
+	int num_left;
+	int num_right;
+	Joint(){}
+	Joint(int num_left,int num_right, bool on_host=true) {
+		init(num_left, num_right, on_host);
+	}
+	void init(int num_left, int num_right, bool on_host = true) {
+		cudaError_t(*malloc)(void**, size_t);
+		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
+		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
+		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
+		gpuErrchk((*malloc)((void**)&left, num_left * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&right, num_right * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&anchor, 2 * sizeof(int)));
+		this->num_left = num_left;
+		this->num_right = num_right;
+	}
+	void copyFrom(Joint& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
+		gpuErrchk(cudaMemcpyAsync(left, other.left, num_left * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(right, other.right, num_right * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(anchor, other.anchor, 2 * sizeof(int), cudaMemcpyDefault, stream));
+	}
+
+};
 
 class Simulation {
 public:
@@ -124,13 +157,15 @@ public:
 	double T = 0; //simulation time
 	Vec global_acc = Vec(0,0,0); // global acceleration
 
+	static const int num_joint = 4; //todo:make it dynamic
 	// host
 	MASS mass;
 	SPRING spring;
+	Joint joint[num_joint];
 	// device
 	MASS d_mass;
 	SPRING d_spring;
-
+	Joint d_joint[num_joint];
 	//size_t num_mass=0;// refer to mass.num
 	//size_t num_spring=0;//refer to spring.num
 
@@ -142,16 +177,18 @@ public:
 	bool FREED = false;
 	bool GPU_DONE = false;
 
+	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
+
 	Simulation() {
 		for (int i = 0; i < NUM_CUDA_STREAM; ++i)
 			cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 	}
 
-	Simulation(size_t num_mass, size_t num_spring):Simulation() {
-		mass = MASS(num_mass, cudaMallocHost); // allocate host
-		d_mass = MASS(num_mass, cudaMalloc); // allocate device
-		spring = SPRING(num_spring, cudaMallocHost); // allocate host
-		d_spring = SPRING(num_spring, cudaMalloc); // allocate device
+	Simulation(int num_mass, int num_spring):Simulation() {
+		mass = MASS(num_mass, true); // allocate host
+		d_mass = MASS(num_mass, false); // allocate device
+		spring = SPRING(num_spring, true); // allocate host
+		d_spring = SPRING(num_spring, false); // allocate device
 		//this->num_mass = num_mass;//refer to spring.num
 		//this->num_spring = num_spring;// refer to mass.num
 		cudaDeviceSynchronize();
@@ -159,13 +196,13 @@ public:
 	~Simulation();
 
 	void getAll() {
-		mass.copyFrom(d_mass);
-		spring.copyFrom(d_spring);
+		mass.copyFrom(d_mass, stream[NUM_CUDA_STREAM-1]);
+		spring.copyFrom(d_spring,stream[NUM_CUDA_STREAM - 1]);
 		cudaDeviceSynchronize();
 	}
 	void setAll() {
-		d_mass.copyFrom(mass);
-		d_spring.copyFrom(spring);
+		d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
+		d_spring.copyFrom(spring, stream[NUM_CUDA_STREAM - 1]);
 		cudaDeviceSynchronize();
 	}
 
@@ -194,7 +231,6 @@ public:
 
 private:
 	
-	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 
 	void waitForEvent();
 	void freeGPU();

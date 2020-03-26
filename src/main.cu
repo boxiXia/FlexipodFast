@@ -51,7 +51,7 @@ using ThurstHostVec = std::vector<T, thrust::system::cuda::experimental::pinned_
 //	left
 // };
 
-struct Joint {
+struct StdJoint {
 	std::vector<int> left;// the indices of the left points
 	std::vector<int> right;// the indices of the right points
 	std::vector<int> anchor;// the 2 indices of the anchor points: left_anchor_id,right_anchor_id
@@ -64,7 +64,7 @@ public:
 	std::vector<int> idVertices;// the edge id of the vertices
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<std::vector<double> > colors;// the mass xyzs
-	std::vector<Joint> Joints;// the mass xyzs
+	std::vector<StdJoint> Joints;// the mass xyzs
 	MSGPACK_DEFINE(vertices, edges, idVertices, idEdges, colors, Joints); // write the member variables that you want to pack
 
 	Model() {

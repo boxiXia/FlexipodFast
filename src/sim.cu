@@ -31,7 +31,7 @@ __global__ void computeSpringForces(
 		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
 		Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
-		
+
 		if (mass_fixed[right] == false) {
 			mass_force[right].atomicVecAdd(force); // need atomics here
 		}
@@ -74,18 +74,71 @@ __global__ void massForcesAndUpdate(
 	}
 }
 
+//__global__ void dynamicsUpdate(
+//	const double* __restrict__ mass_m,
+//	Vec* mass_pos,
+//	Vec* mass_vel,
+//	Vec* mass_acc,
+//	Vec* mass_force,
+//	const Vec* __restrict__ mass_force_extern,
+//	const bool* __restrict__ mass_fixed,
+//	const double* __restrict__ spring_k,
+//	const double* __restrict__ spring_rest,
+//	const double* __restrict__ spring_damping,
+//	const int* __restrict__ spring_left,
+//	const int* __restrict__ spring_right,
+//	const int num_mass,
+//	const int num_spring,
+//	const Vec global_acc,
+//	const CUDA_GLOBAL_CONSTRAINTS c,
+//	const double dt) {
+//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
+//
+//		int right = spring_right[i];
+//		int left = spring_left[i];
+//
+//		Vec s_vec = mass_pos[right] - mass_pos[left];// the vector from left to right
+//		double length = s_vec.norm(); // current spring length
+//		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
+//		Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
+//		force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
+//
+//		if (mass_fixed[right] == false) {
+//			mass_force[right].atomicVecAdd(force); // need atomics here
+//		}
+//		if (mass_fixed[left] == false) {
+//			mass_force[left].atomicVecAdd(-force);
+//		}
+//	}
+////////////////////////////////////////////
+//	__syncthreads();
+//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
+//		if (mass_fixed[i] == false) {
+//			Vec force = global_acc;
+//			force *= mass_m[i]; // force = d_mass.m[i] * global_acc;
+//			force += mass_force[i];
+//			force += mass_force_extern[i];// add external force [N]
+//
+//			for (int j = 0; j < c.num_planes; j++) { // global constraints
+//				c.d_planes[j].applyForce(force, mass_pos[i], mass_vel[i]); // todo fix this 
+//			}
+//			for (int j = 0; j < c.num_balls; j++) {
+//				c.d_balls[j].applyForce(force, mass_pos[i]);
+//			}
+//			mass_acc[i] = force / mass_m[i];
+//			mass_vel[i] += mass_acc[i] * dt;
+//			mass_pos[i] += mass_vel[i] * dt;
+//			mass_force[i].setZero();
+//		}
+//	}
+//}
 
 
-__global__ void dummyUpdate(const Vec global_acc) {
-	Vec v= Vec(0, 0, 0);
-}
-
-
-__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
-								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
-								int massBlocksPerGrid,int springBlocksPerGrid) {
-		//dummyUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (global_acc);
-}
+//__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
+//								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
+//								int massBlocksPerGrid,int springBlocksPerGrid) {
+//		//dummyUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (global_acc);
+//}
 
 inline void Simulation::updateCudaParameters() {
 	massBlocksPerGrid = (mass.num + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
@@ -215,14 +268,10 @@ void Simulation::execute() {
 
 		//dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, mass.num, spring.num, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
 		
-		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-			//computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring, spring.num); // compute mass forces after syncing
-			
+		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {			
 			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
 				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num);
 			//gpuErrchk(cudaPeekAtLastError());
-
-			//massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, mass.num, global_acc, d_constraints, dt);
 			
 			massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
 				d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
