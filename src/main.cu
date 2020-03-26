@@ -64,7 +64,7 @@ public:
 	std::vector<int> idVertices;// the edge id of the vertices
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<std::vector<double> > colors;// the mass xyzs
-	std::vector<StdJoint> Joints;// the mass xyzs
+	std::vector<StdJoint> Joints;// the joints
 	MSGPACK_DEFINE(vertices, edges, idVertices, idEdges, colors, Joints); // write the member variables that you want to pack
 
 	Model() {
@@ -115,14 +115,14 @@ int main()
 	double spring_damping = 0.;
 
 #pragma omp parallel for
-	for (size_t i = 0; i < num_mass; i++)
+	for (int i = 0; i < num_mass; i++)
 	{
 		mass.pos[i]= bot.vertices[i];
 		mass.color[i]= bot.colors[i];
 		mass.m[i] = m; // mass [kg]
 	}
 #pragma omp parallel for
-	for (size_t i = 0; i < num_spring; i++)
+	for (int i = 0; i < num_spring; i++)
 	{
 		spring.left[i] = bot.edges[i][0];
 		spring.right[i] = bot.edges[i][1];
@@ -131,7 +131,26 @@ int main()
 		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm();
 	}
 
-	sim.setViewport(Vec(0.25, -0., 0.25), Vec(0, -0., -0.2), Vec(0, 0, 1));
+#pragma omp parallel for
+	for (int i = 0; i < sim.num_joint; i++)
+	{
+		auto& std_joint = bot.Joints[i];
+		auto& joint = sim.joints[i];
+		auto& d_joint = sim.d_joints[i];
+		joint.init(std_joint.left.size(), std_joint.right.size(), true);//init the host
+		d_joint.init(std_joint.left.size(), std_joint.right.size(), false);//init the device, TODO
+		for (int k = 0; k < std_joint.left.size(); k++)
+		{
+			joint.left[k] = std_joint.left[k];
+			joint.right[k] = std_joint.right[k];
+		}
+		joint.anchor[0] = std_joint.anchor[0];
+		joint.anchor[1] = std_joint.anchor[1];
+	}
+
+
+
+	sim.setViewport(Vec(0.3, -0., 0.3), Vec(0, -0., -0.2), Vec(0, 0, 1));
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	sim.createPlane(Vec(0, 0, 1), -0.05, 0.5, 0.55);
 

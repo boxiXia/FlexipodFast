@@ -74,6 +74,29 @@ __global__ void massForcesAndUpdate(
 	}
 }
 
+//__global__ void rotateJoint(
+//	Vec* mass_pos,
+//	const int* __restrict__ left,
+//	const int* __restrict__ right,
+//	const int* __restrict__ anchor,
+//	const int num_left,
+//	const int num_right,
+//	const double theta) {
+//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_left; i += blockDim.x * gridDim.x) {
+//			// rotate this point
+//			Vec& anchor_0 = mass_pos[anchor[0]];
+//			Vec rotation_axis = anchor_0 - mass_pos[anchor[1]];
+//			AxisAngleRotaion(rotation_axis, mass_pos[i], theta, anchor_0);
+//	}
+//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_right; i += blockDim.x * gridDim.x) {
+//			// rotate this point
+//			Vec& anchor_0 = mass_pos[anchor[0]];
+//			Vec rotation_axis = anchor_0 - mass_pos[anchor[1]];
+//			AxisAngleRotaion(rotation_axis, mass_pos[i], -theta, anchor_0);
+//	}
+//}
+
+
 //__global__ void dynamicsUpdate(
 //	const double* __restrict__ mass_m,
 //	Vec* mass_pos,
@@ -140,6 +163,43 @@ __global__ void massForcesAndUpdate(
 //		//dummyUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (global_acc);
 //}
 
+
+
+Simulation::Simulation() {
+	for (int i = 0; i < NUM_CUDA_STREAM; ++i)
+		cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
+}
+
+Simulation::Simulation(int num_mass, int num_spring) :Simulation() {
+	mass = MASS(num_mass, true); // allocate host
+	d_mass = MASS(num_mass, false); // allocate device
+	spring = SPRING(num_spring, true); // allocate host
+	d_spring = SPRING(num_spring, false); // allocate device
+	//this->num_mass = num_mass;//refer to spring.num
+	//this->num_spring = num_spring;// refer to mass.num
+	//cudaDeviceSynchronize();
+}
+
+void Simulation::getAll() {
+	mass.copyFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
+	//spring.copyFrom(d_spring, stream[NUM_CUDA_STREAM - 1]);//don't need to spring
+	//cudaDeviceSynchronize();
+}
+
+void Simulation::setAll() {
+	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
+	d_spring.copyFrom(spring, stream[NUM_CUDA_STREAM - 1]);
+	for (int i = 0; i < num_joint; i++)
+	{
+		d_joints[i].copyFrom(joints[i], stream[NUM_CUDA_STREAM - 1]);
+	}
+	//cudaDeviceSynchronize();
+}
+
+void Simulation::setMass() {
+	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
+}
+
 inline void Simulation::updateCudaParameters() {
 	massBlocksPerGrid = (mass.num + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
 	springBlocksPerGrid = (spring.num + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
@@ -188,7 +248,6 @@ void Simulation::start() {
 void Simulation::_run() { // repeatedly start next
 #ifdef GRAPHICS
 	window = createGLFWWindow();
-
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 
@@ -213,7 +272,7 @@ void Simulation::_run() { // repeatedly start next
 
 
 void Simulation::execute() {
-
+	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
 	while (true) {
 		if (!bpts.empty() && *bpts.begin() <= T) {
@@ -278,6 +337,12 @@ void Simulation::execute() {
 				d_mass.force,d_mass.force_extern,d_mass.fixed,mass.num,global_acc,
 				d_constraints,dt);
 			//gpuErrchk(cudaPeekAtLastError());
+
+
+			//int massBlocksPerGrid = (mass.num + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
+
+			//int k = 0;
+			//rotateJoint<<<>>>(d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, 1e-4);
 		}
 
 		T += NUM_QUEUED_KERNELS * dt;

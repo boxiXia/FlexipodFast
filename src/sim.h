@@ -35,33 +35,31 @@ constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream besides the default 
 constexpr int  NUM_QUEUED_KERNELS = 16; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = false)
+inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
 {
 	if (code != cudaSuccess)
 	{
-		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-		if (abort) {
-			char buffer[200];
-			snprintf(buffer, sizeof(buffer), "GPUassert error in CUDA kernel: %s %s %d\n", cudaGetErrorString(code), file, line);
-			std::string buffer_string = buffer;
-			throw std::runtime_error(buffer_string);
-		}
+		fprintf(stderr, "Cuda failure: %s %s %d\n", cudaGetErrorString(code), file, line);
+		exit(code);
 	}
 }
 
 
 struct MASS {
-	double* m;
-	Vec* pos;
-	Vec* vel;
-	Vec* acc;
-	Vec* force;
-	Vec* force_extern;
-	Vec* color;
-	bool* fixed;
-	int num;
-	MASS() { num = 0; }
+	double* m = nullptr;
+	Vec* pos = nullptr;
+	Vec* vel = nullptr;
+	Vec* acc = nullptr;
+	Vec* force = nullptr;
+	Vec* force_extern = nullptr;
+	Vec* color = nullptr;
+	bool* fixed = nullptr;
+	int num = 0;
+	MASS() { }
 	MASS(int num, bool on_host = true) {
+		init(num, on_host);
+	}
+	void init(int num, bool on_host = true) {
 		cudaError_t(*malloc)(void**, size_t);
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
@@ -91,14 +89,17 @@ struct MASS {
 };
 
 struct SPRING {
-	double* k; // spring constant (N/m)
-	double* rest; // spring rest length (meters)
-	double* damping; // damping on the masses.
-	int* left; // index of left mass
-	int* right; // index of right mass
-	int num;
-	SPRING() { num = 0; }
+	double* k = nullptr; // spring constant (N/m)
+	double* rest = nullptr; // spring rest length (meters)
+	double* damping = nullptr; // damping on the masses.
+	int* left = nullptr; // index of left mass
+	int* right = nullptr; // index of right mass
+	int num =0;
+	SPRING() {}
 	SPRING(int num, bool on_host = true) {
+		init(num, on_host);
+	}
+	void init(int num, bool on_host = true) { // initialize
 		cudaError_t(*malloc)(void**, size_t);
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
@@ -119,8 +120,6 @@ struct SPRING {
 		//this->num = other.num;
 	}
 };
-
-
 
 struct Joint {
 	int* left; // index of left mass
@@ -144,11 +143,11 @@ struct Joint {
 		this->num_right = num_right;
 	}
 	void copyFrom(Joint& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
+		//todo: init the device joint
 		gpuErrchk(cudaMemcpyAsync(left, other.left, num_left * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(right, other.right, num_right * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(anchor, other.anchor, 2 * sizeof(int), cudaMemcpyDefault, stream));
 	}
-
 };
 
 class Simulation {
@@ -161,11 +160,11 @@ public:
 	// host
 	MASS mass;
 	SPRING spring;
-	Joint joint[num_joint];
+	Joint joints[num_joint];
 	// device
 	MASS d_mass;
 	SPRING d_spring;
-	Joint d_joint[num_joint];
+	Joint d_joints[num_joint];
 	//size_t num_mass=0;// refer to mass.num
 	//size_t num_spring=0;//refer to spring.num
 
@@ -179,33 +178,13 @@ public:
 
 	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 
-	Simulation() {
-		for (int i = 0; i < NUM_CUDA_STREAM; ++i)
-			cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
-	}
-
-	Simulation(int num_mass, int num_spring):Simulation() {
-		mass = MASS(num_mass, true); // allocate host
-		d_mass = MASS(num_mass, false); // allocate device
-		spring = SPRING(num_spring, true); // allocate host
-		d_spring = SPRING(num_spring, false); // allocate device
-		//this->num_mass = num_mass;//refer to spring.num
-		//this->num_spring = num_spring;// refer to mass.num
-		cudaDeviceSynchronize();
-	}
+	Simulation();
+	Simulation(int num_mass, int num_spring);
 	~Simulation();
 
-	void getAll() {
-		mass.copyFrom(d_mass, stream[NUM_CUDA_STREAM-1]);
-		spring.copyFrom(d_spring,stream[NUM_CUDA_STREAM - 1]);
-		cudaDeviceSynchronize();
-	}
-	void setAll() {
-		d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
-		d_spring.copyFrom(spring, stream[NUM_CUDA_STREAM - 1]);
-		cudaDeviceSynchronize();
-	}
-
+	void getAll();
+	void setAll();
+	void setMass();
 	// Global constraints (can be rendered)
 	// creates half-space ax + by + cz < d
 	void createPlane(const Vec& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0);
