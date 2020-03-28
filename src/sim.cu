@@ -74,27 +74,27 @@ __global__ void massForcesAndUpdate(
 	}
 }
 
-//__global__ void rotateJoint(
-//	Vec* mass_pos,
-//	const int* __restrict__ left,
-//	const int* __restrict__ right,
-//	const int* __restrict__ anchor,
-//	const int num_left,
-//	const int num_right,
-//	const double theta) {
-//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_left; i += blockDim.x * gridDim.x) {
-//			// rotate this point
-//			Vec& anchor_0 = mass_pos[anchor[0]];
-//			Vec rotation_axis = anchor_0 - mass_pos[anchor[1]];
-//			AxisAngleRotaion(rotation_axis, mass_pos[i], theta, anchor_0);
-//	}
-//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_right; i += blockDim.x * gridDim.x) {
-//			// rotate this point
-//			Vec& anchor_0 = mass_pos[anchor[0]];
-//			Vec rotation_axis = anchor_0 - mass_pos[anchor[1]];
-//			AxisAngleRotaion(rotation_axis, mass_pos[i], -theta, anchor_0);
-//	}
-//}
+__global__ void rotateJoint(
+	Vec* mass_pos,
+	const int* __restrict__ left,
+	const int* __restrict__ right,
+	const int* __restrict__ anchor,
+	const int num_left,
+	const int num_right,
+	const double theta) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if ((i < num_left) || (i < num_right)) {
+		Vec& anchor_0 = mass_pos[anchor[0]];
+		Vec rotation_axis = anchor_0 - mass_pos[anchor[1]];
+		rotation_axis = rotation_axis.normalize();
+		if (i < num_left) {
+			mass_pos[left[i]] = AxisAngleRotaion(rotation_axis, mass_pos[left[i]], theta, anchor_0);
+		}
+		if (i < num_right) {
+			mass_pos[right[i]] = AxisAngleRotaion(rotation_axis, mass_pos[right[i]], -theta, anchor_0);
+		}
+	}
+}
 
 
 //__global__ void dynamicsUpdate(
@@ -337,12 +337,13 @@ void Simulation::execute() {
 				d_mass.force,d_mass.force_extern,d_mass.fixed,mass.num,global_acc,
 				d_constraints,dt);
 			//gpuErrchk(cudaPeekAtLastError());
+		}
+		double theta = 0.25;
+		for (int k = 0; k < num_joint; k++)
+		{
+			double theta_k = k > 1? theta:-theta;
 
-
-			//int massBlocksPerGrid = (mass.num + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
-
-			//int k = 0;
-			//rotateJoint<<<>>>(d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, 1e-4);
+			rotateJoint << <100, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
 		}
 
 		T += NUM_QUEUED_KERNELS * dt;

@@ -108,11 +108,11 @@ int main()
 	SPRING& spring = sim.spring;
 
 	sim.global_acc = Vec(0, 0, -9.8);
-	sim.dt = 5e-5;
+	sim.dt = 1e-5;
 
 	double m = 1e-1;// mass per vertex
 	double spring_constant = 5e5;
-	double spring_damping = 0.;
+	double spring_damping = 10.;
 
 #pragma omp parallel for
 	for (int i = 0; i < num_mass; i++)
@@ -129,6 +129,18 @@ int main()
 		spring.k[i] = spring_constant; // spring constant
 		spring.damping[i] = spring_damping;
 		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm();
+	}
+
+
+	// set higher spring constant for the robot body
+	for (size_t i = 0; i < bot.idEdges[1]; i++)
+	{
+		spring.k[i] = 10e5;
+	}
+	// set higher spring constant for the rotational joints
+	for (size_t i = bot.idEdges[5]; i < bot.edges.size(); i++)
+	{
+		spring.k[i] = 10e5;
 	}
 
 #pragma omp parallel for
@@ -150,11 +162,11 @@ int main()
 
 
 
-	sim.setViewport(Vec(0.3, -0., 0.3), Vec(0, -0., -0.2), Vec(0, 0, 1));
+	sim.setViewport(Vec(1, -0., 1), Vec(0, -0., -0), Vec(0, 0, 1));
 	// our plane has a unit normal in the z-direction, with 0 offset.
-	sim.createPlane(Vec(0, 0, 1), -0.05, 0.5, 0.55);
+	sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
 
-	double runtime = 1;
+	double runtime = 30;
 	sim.setBreakpoint(runtime);
 	
 

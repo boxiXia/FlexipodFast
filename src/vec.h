@@ -236,7 +236,7 @@ struct Vec {
 
 	// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
 	// rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
-	inline friend CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const double& theta, const Vec& offset);
+	friend CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const double& theta, const Vec& offset);
 };
 
 #endif

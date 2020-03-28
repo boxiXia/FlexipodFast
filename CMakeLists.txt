@@ -1,3 +1,4 @@
+message(STATUS "${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}")
 cmake_minimum_required(VERSION 3.14)
 project(Titan LANGUAGES C CXX CUDA) # use CXX, CUDA by default (since CUDA is a language, don't need cuda_add_executable)
 set(CMAKE_CXX_STANDARD 17) # set C++ standard to C++17
