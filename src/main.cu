@@ -152,10 +152,14 @@ int main()
 		joint.init(std_joint.left.size(), std_joint.right.size(), true);//init the host
 		d_joint.init(std_joint.left.size(), std_joint.right.size(), false);//init the device, TODO
 		for (int k = 0; k < std_joint.left.size(); k++)
-		{
+		{ // note that #left may not equal # right
 			joint.left[k] = std_joint.left[k];
+		}
+		for (int k = 0; k < std_joint.right.size(); k++)
+		{
 			joint.right[k] = std_joint.right[k];
 		}
+
 		joint.anchor[0] = std_joint.anchor[0];
 		joint.anchor[1] = std_joint.anchor[1];
 	}
