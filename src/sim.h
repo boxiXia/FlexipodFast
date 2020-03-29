@@ -156,6 +156,8 @@ public:
 	double T = 0; //simulation time
 	Vec global_acc = Vec(0,0,0); // global acceleration
 
+	int id_restable_spring_start = 0;
+
 	static const int num_joint = 4; //todo:make it dynamic
 	// host
 	MASS mass;

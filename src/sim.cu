@@ -28,15 +28,17 @@ __global__ void computeSpringForces(
 
 		Vec s_vec = mass_pos[right] - mass_pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
-		Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
-		force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
+		if (length > 1e-5) {
+			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
+			Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
+			force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
 
-		if (mass_fixed[right] == false) {
-			mass_force[right].atomicVecAdd(force); // need atomics here
-		}
-		if (mass_fixed[left] == false) {
-			mass_force[left].atomicVecAdd(-force);
+			if (mass_fixed[right] == false) {
+				mass_force[right].atomicVecAdd(force); // need atomics here
+			}
+			if (mass_fixed[left] == false) {
+				mass_force[left].atomicVecAdd(-force);
+			}
 		}
 	}
 }
@@ -93,6 +95,19 @@ __global__ void rotateJoint(
 		if (i < num_right) {
 			mass_pos[right[i]] = AxisAngleRotaion(rotation_axis, mass_pos[right[i]], -theta, anchor_0);
 		}
+	}
+}
+
+__global__ void resetSprings(
+	const Vec* __restrict__ mass_pos,
+	double* spring_rest,
+	const int* __restrict__ spring_left,
+	const int* __restrict__ spring_right,
+	const int index_start,
+	const int index_end) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x + index_start; i < index_end; i += blockDim.x * gridDim.x) {
+		Vec s_vec = mass_pos[spring_right[i]] - mass_pos[spring_left[i]];// the vector from left to right
+		spring_rest[i] = s_vec.norm(); // current spring length
 	}
 }
 
@@ -340,13 +355,17 @@ void Simulation::execute() {
 				d_mass.force,d_mass.force_extern,d_mass.fixed,mass.num,global_acc,
 				d_constraints,dt);
 			//gpuErrchk(cudaPeekAtLastError());
+		
+			double theta = 0.0002;
+			for (int k = 0; k < num_joint; k++)
+			{
+				double theta_k = k > 1 ? theta : -theta;
+				rotateJoint << <100, MASS_THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
+			}
+			resetSprings << <100, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, spring.num);
+
 		}
-		double theta = 0.25;
-		for (int k = 0; k < num_joint; k++)
-		{
-			double theta_k = k > 1? theta:-theta;
-			rotateJoint << <100, MASS_THREADS_PER_BLOCK,0,0 >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
-		}
+
 
 		T += NUM_QUEUED_KERNELS * dt;
 
