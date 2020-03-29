@@ -170,6 +170,9 @@ Simulation::Simulation() {
 		cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 }
 
+
+
+
 Simulation::Simulation(int num_mass, int num_spring) :Simulation() {
 	mass = MASS(num_mass, true); // allocate host
 	d_mass = MASS(num_mass, false); // allocate device
@@ -342,8 +345,7 @@ void Simulation::execute() {
 		for (int k = 0; k < num_joint; k++)
 		{
 			double theta_k = k > 1? theta:-theta;
-
-			rotateJoint << <100, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
+			rotateJoint << <100, MASS_THREADS_PER_BLOCK,0,0 >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
 		}
 
 		T += NUM_QUEUED_KERNELS * dt;
@@ -625,7 +627,7 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 
 void Simulation::updateVertexBuffers() {
 
-	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > ((float*)vertexPointer, d_mass.pos, mass.num);
+	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[NUM_CUDA_STREAM-1] >> > ((float*)vertexPointer, d_mass.pos, mass.num);
 	//cudaGLUnmapBufferObject(vertexbuffer);
 }
 

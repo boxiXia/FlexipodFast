@@ -30,6 +30,9 @@ find_package(CUDA REQUIRED) # find and include CUDA
 ###### here you must modify to fit your GPU architecture #####
 # check https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
 string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
+
+string(APPEND CMAKE_CUDA_FLAGS " --default-stream per-thread")
+# https://devblogs.nvidia.com/gpu-pro-tip-cuda-7-streams-simplify-concurrency/
 ##############################################################
 #CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS Auto)
 #string(APPEND CMAKE_CUDA_FLAGS " ${ARCH_FLAGS}")

@@ -103,12 +103,20 @@ int main()
 	int num_mass = bot.vertices.size();
 	int num_spring = bot.edges.size();
 
+
+	int num_resetable_spring = 0;
+	for (int i = 0; i < bot.Joints.size(); i++)
+	{
+		num_resetable_spring += 
+			bot.Joints[i].left.size() * bot.Joints[i].right.size();
+	}
+
 	Simulation sim(num_mass, num_spring);
 	MASS& mass = sim.mass;
 	SPRING& spring = sim.spring;
 
 	sim.global_acc = Vec(0, 0, -9.8);
-	sim.dt = 1e-5;
+	sim.dt = 2e-5;
 
 	double m = 1e-1;// mass per vertex
 	double spring_constant = 5e5;
@@ -133,12 +141,12 @@ int main()
 
 
 	// set higher spring constant for the robot body
-	for (size_t i = 0; i < bot.idEdges[1]; i++)
+	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
 		spring.k[i] = 10e5;
 	}
 	// set higher spring constant for the rotational joints
-	for (size_t i = bot.idEdges[5]; i < bot.edges.size(); i++)
+	for (int i = bot.idEdges[5]; i < bot.edges.size(); i++)
 	{
 		spring.k[i] = 10e5;
 	}
@@ -159,18 +167,17 @@ int main()
 		{
 			joint.right[k] = std_joint.right[k];
 		}
-
 		joint.anchor[0] = std_joint.anchor[0];
 		joint.anchor[1] = std_joint.anchor[1];
 	}
 
 
 
-	sim.setViewport(Vec(1, -0., 1), Vec(0, -0., -0), Vec(0, 0, 1));
+	sim.setViewport(Vec(1.5, -0., 1.5), Vec(0, -0., -0), Vec(0, 0, 1));
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
 
-	double runtime = 30;
+	double runtime = 1;
 	sim.setBreakpoint(runtime);
 	
 

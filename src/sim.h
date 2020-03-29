@@ -31,7 +31,7 @@ constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr int THREADS_PER_BLOCK = 128;
 constexpr int MASS_THREADS_PER_BLOCK = 32;
 
-constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream besides the default stream
+constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr int  NUM_QUEUED_KERNELS = 16; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
