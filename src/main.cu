@@ -104,13 +104,6 @@ int main()
 	int num_spring = bot.edges.size();
 
 
-	int num_resetable_spring = 0;
-	for (int i = 0; i < bot.Joints.size(); i++)
-	{
-		num_resetable_spring += 
-			bot.Joints[i].left.size() * bot.Joints[i].right.size();
-	}
-
 	Simulation sim(num_mass, num_spring);
 	MASS& mass = sim.mass;
 	SPRING& spring = sim.spring;
@@ -154,7 +147,8 @@ int main()
 	{
 		spring.k[i] = 8e3;
 	}
-	sim.id_restable_spring_start = bot.idEdges[5 + sim.num_joint];
+	sim.id_restable_spring_start = bot.idEdges[5 + sim.num_joint]; // resetable spring
+	sim.id_resetable_spring_end = bot.edges.size();
 
 #pragma omp parallel for
 	for (int i = 0; i < sim.num_joint; i++)
@@ -178,13 +172,13 @@ int main()
 
 
 
-	sim.setViewport(Vec(1., -0., 1.), Vec(0, 1.5, -0), Vec(0, 0, 1));
+	sim.setViewport(Vec(1.5, -0., 1.5), Vec(0, 0, -0), Vec(0, 0, 1));
 	//sim.setViewport(Vec(.4, -0., .4), Vec(0, -0., -0), Vec(0, 0, 1));
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
 
-	double runtime = 30;
+	double runtime = 0.2;
 	sim.setBreakpoint(runtime);
 	
 

@@ -77,7 +77,7 @@ __global__ void massForcesAndUpdate(
 }
 
 __global__ void rotateJoint(
-	Vec* mass_pos,
+	Vec* __restrict__ mass_pos,
 	const int* __restrict__ left,
 	const int* __restrict__ right,
 	const int* __restrict__ anchor,
@@ -218,12 +218,24 @@ void Simulation::setMass() {
 	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
 }
 
-inline void Simulation::updateCudaParameters() {
-	massBlocksPerGrid = (mass.num + MASS_THREADS_PER_BLOCK - 1) / MASS_THREADS_PER_BLOCK;
-	springBlocksPerGrid = (spring.num + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
-	if (massBlocksPerGrid > MAX_BLOCKS) { massBlocksPerGrid = MAX_BLOCKS; }
-	if (springBlocksPerGrid > MAX_BLOCKS) { springBlocksPerGrid = MAX_BLOCKS; }
+inline int Simulation::computeBlocksPerGrid(const int threadsPerBlock, const int num) {
+	int blocksPerGrid = (num - 1 + threadsPerBlock) / threadsPerBlock;
+	if (blocksPerGrid > MAX_BLOCKS) { blocksPerGrid = MAX_BLOCKS; }
+	return blocksPerGrid;
 }
+
+inline void Simulation::updateCudaParameters() {
+	massBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, mass.num);
+	springBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, spring.num);
+	for (int i = 0; i < num_joint; i++)
+	{
+		jointBlocksPerGrid[i] = computeBlocksPerGrid(THREADS_PER_BLOCK, 
+			joints[i].num_left+ joints[i].num_right);
+	}
+	resetableSpringBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, id_resetable_spring_end - id_restable_spring_start);
+}
+
+
 
 void Simulation::setBreakpoint(const double time) {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. Can't modify simulation after simulation end."); }
@@ -344,7 +356,8 @@ void Simulation::execute() {
 		}
 
 		//dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, mass.num, spring.num, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
-		
+		double theta = 0.0004;
+
 		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {			
 			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
 				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num);
@@ -355,17 +368,15 @@ void Simulation::execute() {
 				d_mass.force,d_mass.force_extern,d_mass.fixed,mass.num,global_acc,
 				d_constraints,dt);
 			//gpuErrchk(cudaPeekAtLastError());
-		
-			double theta = 0.0002;
+			
 			for (int k = 0; k < num_joint; k++)
 			{
 				double theta_k = k > 1 ? theta : -theta;
-				rotateJoint << <100, MASS_THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
+				rotateJoint << <jointBlocksPerGrid[k], THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
 			}
-			resetSprings << <100, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, spring.num);
-
+			resetSprings << <resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
 		}
-
+		cudaDeviceSynchronize();
 
 		T += NUM_QUEUED_KERNELS * dt;
 

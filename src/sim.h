@@ -32,7 +32,7 @@ constexpr int THREADS_PER_BLOCK = 128;
 constexpr int MASS_THREADS_PER_BLOCK = 32;
 
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
-constexpr int  NUM_QUEUED_KERNELS = 16; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr int  NUM_QUEUED_KERNELS = 32; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -157,6 +157,7 @@ public:
 	Vec global_acc = Vec(0,0,0); // global acceleration
 
 	int id_restable_spring_start = 0;
+	int id_resetable_spring_end = 0;
 
 	static const int num_joint = 4; //todo:make it dynamic
 	// host
@@ -216,12 +217,15 @@ private:
 	void waitForEvent();
 	void freeGPU();
 	inline void updateCudaParameters();
-
+	inline int computeBlocksPerGrid(const int threadsPerBlock, const int num);//helper function to compute blocksPerGrid
 
 	std::thread gpu_thread;
 	std::set<double> bpts; // list of breakpoints
-	int massBlocksPerGrid;
-	int springBlocksPerGrid;
+
+	int massBlocksPerGrid; // blocksPergrid for mass update
+	int springBlocksPerGrid; // blocksPergrid for spring update
+	int jointBlocksPerGrid[num_joint];// blocksPergrid for joint rotation
+	int resetableSpringBlocksPerGrid; // blocksPergrid for joint friction spring resettnig
 
 	std::vector<Constraint*> constraints;
 	thrust::device_vector<CudaContactPlane> d_planes; // used for constraints
