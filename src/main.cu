@@ -173,7 +173,7 @@ int main()
 
 
 
-	sim.setViewport(Vec(1.5, -0., 2), Vec(0, 0, -0), Vec(0, 0, 1));
+	sim.setViewport(Vec(0, 2, 0.3), Vec(0, 0, 0), Vec(0, 0, 1));
 	//sim.setViewport(Vec(.4, -0., .4), Vec(0, -0., -0), Vec(0, 0, 1));
 
 	// our plane has a unit normal in the z-direction, with 0 offset.

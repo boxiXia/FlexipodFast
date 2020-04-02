@@ -287,7 +287,7 @@ void Simulation::_run() { // repeatedly start next
 	//}
 
 #ifdef GRAPHICS
-	window = createGLFWWindow();
+	window = createGLFWWindow(); // create a window with  width and height
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 
@@ -365,8 +365,8 @@ void Simulation::execute() {
 			continue;
 		}
 
-		int n_per_rot = 4; //number of update per rotation
-		double theta = 0.0003* n_per_rot;
+		//dynamicsUpdate << <springBlocksPerGrid, THREADS_PER_BLOCK>> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right,d_mass.num, d_spring.num, global_acc, d_constraints, dt);
+
 		
 		//void* kernelArgs[] = {
 		//	(void*)&(d_mass.m), 
@@ -388,43 +388,54 @@ void Simulation::execute() {
 		//	(void*)&(dt),
 		//};
 
-		cudaEvent_t event;
+		
+
+		int n_per_rot = 6; //number of update per rotation
+		double theta = 0.0003 * n_per_rot;
+
+		cudaDeviceSynchronize();
 		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
-			cudaEventCreate(&event); // create event
-			cudaEventRecord(event, 0);
+			resetSprings <<<resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
+
 			for (int j = 0; j < n_per_rot; j++)
 			{
-				computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
+				computeSpringForces <<<springBlocksPerGrid, THREADS_PER_BLOCK >>> (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
 					d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num);
 				//gpuErrchk(cudaPeekAtLastError());
 
-				massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
+				massForcesAndUpdate <<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK >>> (
 					d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
 					d_mass.force, d_mass.force_extern, d_mass.fixed, mass.num, global_acc,
 					d_constraints, dt);
 
-				//dynamicsUpdate << <springBlocksPerGrid, THREADS_PER_BLOCK>> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right,d_mass.num, d_spring.num, global_acc, d_constraints, dt);
 				//gpuErrchk(cudaPeekAtLastError());
 			}
-			
+			cudaEvent_t event;
+			cudaEventCreate(&event); // create event
+			cudaEventRecord(event, 0);
+
 			for (int k = 0; k < num_joint; k++)
 			{
 				double theta_k = k > 1 ? theta : -theta;
 				cudaStreamWaitEvent(stream[k], event,0);
 				rotateJoint << <jointBlocksPerGrid[k], THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
 			}
-			resetSprings << <resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
-		
 		}
-		cudaDeviceSynchronize();
+		
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef GRAPHICS
 		if (fmod(T, 1./60.) < NUM_QUEUED_KERNELS * dt) {
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
+
+			if (glfwGetKey(window, GLFW_KEY_UP)) {
+				camera_pos.x += 0.01;
+			}
+
+			computeMVP(true); // update MVP, also update camera matrix //todo
+
 			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP[0][0]);// update transformation "MVP" uniform
 
-			computeMVP(false); // update MVP, dont update camera matrix //todo
 
 			for (Constraint* c : constraints) {
 				c->draw();
@@ -749,8 +760,13 @@ GLFWwindow* createGLFWWindow() {
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); //We don't want the old OpenGL
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 	glfwSwapInterval(0);// disable vsync
+
 	// Open a window and create its OpenGL context
-	GLFWwindow* window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
+	auto monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+
+	GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "CUDA Physics Simulation", NULL, NULL);
 	if (window == NULL) {
 		fprintf(stderr,"Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible.\n");
 		getchar();

@@ -239,7 +239,8 @@ private:
 	int pointSize = 3;
 
 	GLFWwindow* window;
-	int window_width, window_height; // the width and height of the window
+	int window_width,window_height; // the width and height of the window
+
 	GLuint VertexArrayID; // handle for the vertex array object
 	GLuint programID;  // handle for the shader program
 	GLuint MatrixID; // handel for the uniform MVP
