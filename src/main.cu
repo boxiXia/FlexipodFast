@@ -145,7 +145,8 @@ int main()
 	}
 	for (int i = bot.idEdges[5 + sim.num_joint]; i < bot.edges.size(); i++)
 	{
-		spring.k[i] = 8e3;
+		spring.k[i] = 1e4;// resetable spring
+		spring.damping[i] = spring_damping*2.;
 	}
 	sim.id_restable_spring_start = bot.idEdges[5 + sim.num_joint]; // resetable spring
 	sim.id_resetable_spring_end = bot.edges.size();
@@ -172,13 +173,13 @@ int main()
 
 
 
-	sim.setViewport(Vec(1.5, -0., 1.5), Vec(0, 0, -0), Vec(0, 0, 1));
+	sim.setViewport(Vec(1.5, -0., 2), Vec(0, 0, -0), Vec(0, 0, 1));
 	//sim.setViewport(Vec(.4, -0., .4), Vec(0, -0., -0), Vec(0, 0, 1));
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
 
-	double runtime = 0.2;
+	double runtime = 30;
 	sim.setBreakpoint(runtime);
 	
 

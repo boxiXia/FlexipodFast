@@ -8,6 +8,7 @@
 #include <cuda_gl_interop.h>
 #include <exception>
 #include <device_launch_parameters.h>
+#include <cooperative_groups.h>
 
 
 
@@ -22,10 +23,8 @@ __global__ void computeSpringForces(
 	const int* __restrict__ spring_left,
 	const int* __restrict__ spring_right, const int num_spring) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
-
 		int right = spring_right[i];
 		int left = spring_left[i];
-
 		Vec s_vec = mass_pos[right] - mass_pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
 		if (length > 1e-5) {
@@ -111,8 +110,8 @@ __global__ void resetSprings(
 	}
 }
 
-
-//__global__ void dynamicsUpdate(
+//namespace cg = cooperative_groups;
+//__global__ void dynamicsUpdateDummy(
 //	const double* __restrict__ mass_m,
 //	Vec* mass_pos,
 //	Vec* mass_vel,
@@ -125,62 +124,65 @@ __global__ void resetSprings(
 //	const double* __restrict__ spring_damping,
 //	const int* __restrict__ spring_left,
 //	const int* __restrict__ spring_right,
-//	const int num_mass,
-//	const int num_spring,
+//	const int num_mass, const int num_spring,
 //	const Vec global_acc,
 //	const CUDA_GLOBAL_CONSTRAINTS c,
-//	const double dt) {
-//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
-//
+//	const double dt
+//	) {
+//	int i = blockIdx.x * blockDim.x + threadIdx.x;
+//	if(i<num_spring) {
 //		int right = spring_right[i];
 //		int left = spring_left[i];
-//
 //		Vec s_vec = mass_pos[right] - mass_pos[left];// the vector from left to right
 //		double length = s_vec.norm(); // current spring length
-//		s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
-//		Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
-//		force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
+//		if (length > 1e-5) {
+//			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
+//			Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
+//			force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
 //
-//		if (mass_fixed[right] == false) {
-//			mass_force[right].atomicVecAdd(force); // need atomics here
+//			if (mass_fixed[right] == false) {
+//				mass_force[right].atomicVecAdd(force); // need atomics here
+//			}
+//			if (mass_fixed[left] == false) {
+//				mass_force[left].atomicVecAdd(-force);
+//			}
 //		}
-//		if (mass_fixed[left] == false) {
-//			mass_force[left].atomicVecAdd(-force);
-//		}
-//	}
-////////////////////////////////////////////
-//	__syncthreads();
-//	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-//		if (mass_fixed[i] == false) {
-//			Vec force = global_acc;
-//			force *= mass_m[i]; // force = d_mass.m[i] * global_acc;
-//			force += mass_force[i];
-//			force += mass_force_extern[i];// add external force [N]
 //
-//			for (int j = 0; j < c.num_planes; j++) { // global constraints
-//				c.d_planes[j].applyForce(force, mass_pos[i], mass_vel[i]); // todo fix this 
+//		cg::grid_group grid = cg::this_grid();
+//		grid.sync();
+//
+//		if (i < num_mass) {
+//			if (mass_fixed[i] == false) {
+//				Vec force = global_acc;
+//				force *= mass_m[i]; // force = d_mass.m[i] * global_acc;
+//				force += mass_force[i];
+//				force += mass_force_extern[i];// add external force [N]
+//
+//				for (int j = 0; j < c.num_planes; j++) { // global constraints
+//					c.d_planes[j].applyForce(force, mass_pos[i], mass_vel[i]); // todo fix this 
+//				}
+//				for (int j = 0; j < c.num_balls; j++) {
+//					c.d_balls[j].applyForce(force, mass_pos[i]);
+//				}
+//				mass_acc[i] = force / mass_m[i];
+//				mass_vel[i] += mass_acc[i] * dt;
+//				mass_pos[i] += mass_vel[i] * dt;
+//				mass_force[i].setZero();
 //			}
-//			for (int j = 0; j < c.num_balls; j++) {
-//				c.d_balls[j].applyForce(force, mass_pos[i]);
-//			}
-//			mass_acc[i] = force / mass_m[i];
-//			mass_vel[i] += mass_acc[i] * dt;
-//			mass_pos[i] += mass_vel[i] * dt;
-//			mass_force[i].setZero();
 //		}
+//
+//		cg::sync(grid);
 //	}
-//}
-
-
-//__global__ void dynamicsUpdate(MASS d_mass, SPRING d_spring,const int num_mass, const int num_spring, 
-//								const Vec global_acc, const CUDA_GLOBAL_CONSTRAINTS d_constraints, const double dt,
-//								int massBlocksPerGrid,int springBlocksPerGrid) {
-//		//dummyUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (global_acc);
+//
 //}
 
 
 
 Simulation::Simulation() {
+	//dynamicsUpdate(d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,
+	//	d_spring.k,d_spring.rest,d_spring.damping,d_spring.left,d_spring.right,
+	//	d_mass.num,d_spring.num,global_acc, d_constraints,dt);
+
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i)
 		cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 }
@@ -276,6 +278,14 @@ void Simulation::start() {
 }
 
 void Simulation::_run() { // repeatedly start next
+
+	//cudaDeviceProp deviceProp;
+	//cudaGetDeviceProperties(&deviceProp, 0);
+	//if (deviceProp.cooperativeLaunch == 0) {
+	//	printf("not supported");
+	//	exit(-1);
+	//}
+
 #ifdef GRAPHICS
 	window = createGLFWWindow();
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
@@ -355,29 +365,58 @@ void Simulation::execute() {
 			continue;
 		}
 
-		//dynamicsUpdate << <1, 1 >> > (d_mass, d_spring, mass.num, spring.num, global_acc, d_constraints, dt, massBlocksPerGrid, springBlocksPerGrid);
-		double theta = 0.0004;
+		int n_per_rot = 4; //number of update per rotation
+		double theta = 0.0003* n_per_rot;
+		
+		//void* kernelArgs[] = {
+		//	(void*)&(d_mass.m), 
+		//	(void*)&(d_mass.pos), 
+		//	(void*)&(d_mass.vel), 
+		//	(void*)&(d_mass.acc), 
+		//	(void*)&(d_mass.force), 
+		//	(void*)&(d_mass.force_extern), 
+		//	(void*)&(d_mass.fixed),
+		//	(void*)&(d_spring.k), 
+		//	(void*)&(d_spring.rest), 
+		//	(void*)&(d_spring.damping), 
+		//	(void*)&(d_spring.left), 
+		//	(void*)&(d_spring.right),
+		//	(void*)&(d_mass.num), 
+		//	(void*)&(d_spring.num), 
+		//	(void*)&(global_acc), 
+		//	(void*)&(d_constraints), 
+		//	(void*)&(dt),
+		//};
 
-		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {			
-			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
-				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num);
-			//gpuErrchk(cudaPeekAtLastError());
-			
-			massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
-				d_mass.m,d_mass.pos,d_mass.vel,d_mass.acc,
-				d_mass.force,d_mass.force_extern,d_mass.fixed,mass.num,global_acc,
-				d_constraints,dt);
-			//gpuErrchk(cudaPeekAtLastError());
+		cudaEvent_t event;
+		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
+			cudaEventCreate(&event); // create event
+			cudaEventRecord(event, 0);
+			for (int j = 0; j < n_per_rot; j++)
+			{
+				computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
+					d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num);
+				//gpuErrchk(cudaPeekAtLastError());
+
+				massForcesAndUpdate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
+					d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
+					d_mass.force, d_mass.force_extern, d_mass.fixed, mass.num, global_acc,
+					d_constraints, dt);
+
+				//dynamicsUpdate << <springBlocksPerGrid, THREADS_PER_BLOCK>> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right,d_mass.num, d_spring.num, global_acc, d_constraints, dt);
+				//gpuErrchk(cudaPeekAtLastError());
+			}
 			
 			for (int k = 0; k < num_joint; k++)
 			{
 				double theta_k = k > 1 ? theta : -theta;
+				cudaStreamWaitEvent(stream[k], event,0);
 				rotateJoint << <jointBlocksPerGrid[k], THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
 			}
 			resetSprings << <resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
+		
 		}
 		cudaDeviceSynchronize();
-
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef GRAPHICS
@@ -403,7 +442,7 @@ void Simulation::execute() {
 			glfwSwapBuffers(window);
 
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
-				exit(1); // TODO maybe deal with memory leak here.
+				exit(0); // TODO maybe deal with memory leak here. //key press exit,
 			}
 		}
 #endif

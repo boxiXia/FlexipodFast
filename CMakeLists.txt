@@ -71,10 +71,9 @@ target_include_directories(main PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
 target_link_libraries(main PRIVATE 
         OpenMP::OpenMP_CXX
-        ${ALL_GL_LIBS}
-        ${CUDA_INCLUDE_DIRS})
+        ${ALL_GL_LIBS})
 
-#target_link_libraries(main PRIVATE cuda) # cudart
+target_link_libraries(main PRIVATE cuda) # cudart
 
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
