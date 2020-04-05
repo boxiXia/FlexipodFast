@@ -30,8 +30,8 @@
 #include <cuda_device_runtime_api.h>
 #include <device_launch_parameters.h>
 
-
-struct Vec {
+// use align to force alignment for gpu memory
+struct __align__(16) Vec {
 	double x;
 	double y;
 	double z;
@@ -200,9 +200,7 @@ struct Vec {
 		//{// Todo: change this
 		//    n = 1e-8;// add for numerical stability
 		//}
-		x = x / n;
-		y = y / n;
-		z = z / n;
+		*this /= n;
 		return *this;
 	} // return the normalized vector
 

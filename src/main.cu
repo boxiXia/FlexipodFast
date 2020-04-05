@@ -179,7 +179,7 @@ int main()
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
 
-	double runtime = 30;
+	double runtime = 120;
 	sim.setBreakpoint(runtime);
 	
 

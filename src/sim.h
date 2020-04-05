@@ -152,7 +152,7 @@ struct Joint {
 
 class Simulation {
 public:
-	double dt = 0.001;
+	double dt = 0.0001;
 	double T = 0; //simulation time
 	Vec global_acc = Vec(0,0,0); // global acceleration
 
@@ -168,6 +168,8 @@ public:
 	MASS d_mass;
 	SPRING d_spring;
 	Joint d_joints[num_joint];
+	
+	double jointSpeeds[num_joint] = { 0 };
 	//size_t num_mass=0;// refer to mass.num
 	//size_t num_spring=0;//refer to spring.num
 

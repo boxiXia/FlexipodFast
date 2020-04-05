@@ -8,7 +8,7 @@
 #include <cuda_gl_interop.h>
 #include <exception>
 #include <device_launch_parameters.h>
-#include <cooperative_groups.h>
+//#include <cooperative_groups.h>
 
 
 
@@ -22,6 +22,7 @@ __global__ void computeSpringForces(
 	const double* __restrict__ spring_damping,
 	const int* __restrict__ spring_left,
 	const int* __restrict__ spring_right, const int num_spring) {
+#pragma unroll
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
 		int right = spring_right[i];
 		int left = spring_left[i];
@@ -32,12 +33,8 @@ __global__ void computeSpringForces(
 			Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
 			force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
 
-			if (mass_fixed[right] == false) {
 				mass_force[right].atomicVecAdd(force); // need atomics here
-			}
-			if (mass_fixed[left] == false) {
-				mass_force[left].atomicVecAdd(-force);
-			}
+				mass_force[left].atomicVecAdd(-force); // removed condition on fixed
 		}
 	}
 }
@@ -54,10 +51,12 @@ __global__ void massForcesAndUpdate(
 	const Vec global_acc, 
 	const CUDA_GLOBAL_CONSTRAINTS c, 
 	const double dt) {
+#pragma unroll
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		if (mass_fixed[i] == false) {
 			Vec force = global_acc;
-			force *= mass_m[i]; // force = d_mass.m[i] * global_acc;
+			double m = mass_m[i];
+			force *= m; // force = d_mass.m[i] * global_acc;
 			force += mass_force[i];
 			force += mass_force_extern[i];// add external force [N]
 
@@ -67,7 +66,7 @@ __global__ void massForcesAndUpdate(
 			for (int j = 0; j < c.num_balls; j++) {
 				c.d_balls[j].applyForce(force, mass_pos[i]);
 			}
-			mass_acc[i] = force / mass_m[i];
+			mass_acc[i] = force / m;
 			mass_vel[i] += mass_acc[i] * dt;
 			mass_pos[i] += mass_vel[i] * dt;
 			mass_force[i].setZero();
@@ -85,7 +84,7 @@ __global__ void rotateJoint(
 	const double theta) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if ((i < num_left) || (i < num_right)) {
-		Vec& anchor_0 = mass_pos[anchor[0]];
+		Vec anchor_0 = mass_pos[anchor[0]];
 		Vec rotation_axis = anchor_0 - mass_pos[anchor[1]];
 		rotation_axis = rotation_axis.normalize();
 		if (i < num_left) {
@@ -104,6 +103,7 @@ __global__ void resetSprings(
 	const int* __restrict__ spring_right,
 	const int index_start,
 	const int index_end) {
+#pragma unroll
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x + index_start; i < index_end; i += blockDim.x * gridDim.x) {
 		Vec s_vec = mass_pos[spring_right[i]] - mass_pos[spring_left[i]];// the vector from left to right
 		spring_rest[i] = s_vec.norm(); // current spring length
@@ -390,10 +390,10 @@ void Simulation::execute() {
 
 		
 
-		int n_per_rot = 6; //number of update per rotation
-		double theta = 0.0003 * n_per_rot;
+		int n_per_rot = 8; //number of update per rotation
+		//double theta = 0.0003 * n_per_rot;
 
-		cudaDeviceSynchronize();
+		//cudaDeviceSynchronize();
 		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
 			resetSprings <<<resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
 
@@ -413,13 +413,16 @@ void Simulation::execute() {
 			cudaEvent_t event;
 			cudaEventCreate(&event); // create event
 			cudaEventRecord(event, 0);
-
 			for (int k = 0; k < num_joint; k++)
 			{
-				double theta_k = k > 1 ? theta : -theta;
+				//double theta_k = k > 1 ? theta : -theta;
+				double theta_k = k > 1 ? n_per_rot*jointSpeeds[k] : -n_per_rot * jointSpeeds[k];
+
 				cudaStreamWaitEvent(stream[k], event,0);
 				rotateJoint << <jointBlocksPerGrid[k], THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, theta_k);
 			}
+
+			cudaEventDestroy(event);//destroy the event, necessary to prevent memory leak
 		}
 		
 		T += NUM_QUEUED_KERNELS * dt;
@@ -428,9 +431,53 @@ void Simulation::execute() {
 		if (fmod(T, 1./60.) < NUM_QUEUED_KERNELS * dt) {
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
-			if (glfwGetKey(window, GLFW_KEY_UP)) {
+			if (glfwGetKey(window, GLFW_KEY_A)) {
 				camera_pos.x += 0.01;
 			}
+			if (glfwGetKey(window, GLFW_KEY_D)) {
+				camera_pos.x -= 0.01;
+			}
+			if (glfwGetKey(window, GLFW_KEY_W)) {
+				camera_pos.y -= 0.01;
+			}
+			if (glfwGetKey(window, GLFW_KEY_S)) {
+				camera_pos.y += 0.01;
+			}
+			if (glfwGetKey(window, GLFW_KEY_Q)) {
+				camera_pos.z += 0.01;
+			}
+			if (glfwGetKey(window, GLFW_KEY_E)) {
+				camera_pos.z -= 0.01;
+			}
+
+
+			double speed_multiplier = 0.000005;
+			double max_speed = 0.0005;
+			if (glfwGetKey(window, GLFW_KEY_UP)) {
+				for (int i = 0; i < num_joint; i++)
+				{if (jointSpeeds[i] < max_speed) { jointSpeeds[i] += speed_multiplier; }}
+			}
+			if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+				for (int i = 0; i < num_joint; i++)
+				{if (jointSpeeds[i] > -max_speed) { jointSpeeds[i] -= speed_multiplier; }}
+			}
+			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+					if (jointSpeeds[0] > -max_speed) { jointSpeeds[0] -= speed_multiplier; }
+					if (jointSpeeds[1] > -max_speed) { jointSpeeds[1] -= speed_multiplier; }
+					{if (jointSpeeds[2] < max_speed) { jointSpeeds[2] += speed_multiplier; }}
+					{if (jointSpeeds[3] < max_speed) { jointSpeeds[3] += speed_multiplier; }}
+			}
+			if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+				if (jointSpeeds[3] > -max_speed) { jointSpeeds[3] -= speed_multiplier; }
+				if (jointSpeeds[2] > -max_speed) { jointSpeeds[2] -= speed_multiplier; }
+				{if (jointSpeeds[1] < max_speed) { jointSpeeds[1] += speed_multiplier; }}
+				{if (jointSpeeds[0] < max_speed) { jointSpeeds[0] += speed_multiplier; }}
+			}
+			if (glfwGetKey(window, GLFW_KEY_0)) {
+				for (int i = 0; i < num_joint; i++)
+				{jointSpeeds[i] = 0.;}
+			}
+
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
@@ -453,7 +500,9 @@ void Simulation::execute() {
 			glfwSwapBuffers(window);
 
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
-				exit(0); // TODO maybe deal with memory leak here. //key press exit,
+				bpts.insert(T);// break at current time T
+				printf("window closed\n");
+				//exit(0); // TODO maybe deal with memory leak here. //key press exit,
 			}
 		}
 #endif
