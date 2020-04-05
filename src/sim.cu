@@ -431,23 +431,23 @@ void Simulation::execute() {
 		if (fmod(T, 1./60.) < NUM_QUEUED_KERNELS * dt) {
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
-			if (glfwGetKey(window, GLFW_KEY_A)) {
-				camera_pos.x += 0.01;
-			}
-			if (glfwGetKey(window, GLFW_KEY_D)) {
-				camera_pos.x -= 0.01;
-			}
 			if (glfwGetKey(window, GLFW_KEY_W)) {
-				camera_pos.y -= 0.01;
+				camera_pos += 0.01*(camera_dir - camera_dir.dot(camera_up)*camera_up);
 			}
 			if (glfwGetKey(window, GLFW_KEY_S)) {
-				camera_pos.y += 0.01;
+				camera_pos -= 0.01 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
+			}
+			if (glfwGetKey(window, GLFW_KEY_A)) {
+				camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.01, Vec());
+			}
+			if (glfwGetKey(window, GLFW_KEY_D)) {
+				camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.01, Vec());
 			}
 			if (glfwGetKey(window, GLFW_KEY_Q)) {
-				camera_pos.z += 0.01;
+				camera_pos.z -= 0.01;
 			}
 			if (glfwGetKey(window, GLFW_KEY_E)) {
-				camera_pos.z -= 0.01;
+				camera_pos.z += 0.01;
 			}
 
 
@@ -461,13 +461,13 @@ void Simulation::execute() {
 				for (int i = 0; i < num_joint; i++)
 				{if (jointSpeeds[i] > -max_speed) { jointSpeeds[i] -= speed_multiplier; }}
 			}
-			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+			if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 					if (jointSpeeds[0] > -max_speed) { jointSpeeds[0] -= speed_multiplier; }
 					if (jointSpeeds[1] > -max_speed) { jointSpeeds[1] -= speed_multiplier; }
 					{if (jointSpeeds[2] < max_speed) { jointSpeeds[2] += speed_multiplier; }}
 					{if (jointSpeeds[3] < max_speed) { jointSpeeds[3] += speed_multiplier; }}
 			}
-			if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 				if (jointSpeeds[3] > -max_speed) { jointSpeeds[3] -= speed_multiplier; }
 				if (jointSpeeds[2] > -max_speed) { jointSpeeds[2] -= speed_multiplier; }
 				{if (jointSpeeds[1] < max_speed) { jointSpeeds[1] += speed_multiplier; }}
@@ -619,8 +619,8 @@ void Simulation::clearConstraints() { // clears global constraints only
 #ifdef GRAPHICS
 void Simulation::setViewport(const Vec& camera_position, const Vec& target_location, const Vec& up_vector) {
 	this->camera_pos = camera_position;
-	this->looks_at = target_location;
-	this->up = up_vector;
+	this->camera_dir = (target_location- camera_position).normalize();
+	this->camera_up = up_vector;
 	if (STARTED) { computeMVP(); }
 }
 void Simulation::moveViewport(const Vec& displacement) {
@@ -640,9 +640,11 @@ void Simulation::computeMVP(bool update_view) {
 	if (update_view) {
 		// Camera matrix
 		this->View = glm::lookAt(
-			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // Camera is at (4,3,3), in World Space
-			glm::vec3(looks_at.x, looks_at.y, looks_at.z), // and looks at the origin
-			glm::vec3(up.x, up.y, up.z));  // Head is up (set to 0,-1,0 to look upside-down)
+			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // camera position in World Space
+			glm::vec3(camera_pos.x+camera_dir.x, 
+					  camera_pos.y + camera_dir.y, 
+					  camera_pos.z + camera_dir.z),	// look at position
+			glm::vec3(camera_up.x, camera_up.y, camera_up.z));  // camera up vector (set to 0,-1,0 to look upside-down)
 	}
 	if (is_resized || update_view) {
 		this->MVP = Projection * View; // Remember, matrix multiplication is the other way around

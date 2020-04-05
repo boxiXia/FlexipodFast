@@ -252,9 +252,10 @@ private:
 	glm::mat4 Projection; //projection matrix
 
 	// for projection matrix 
-	Vec camera_pos;
-	Vec looks_at;
-	Vec up;
+	Vec camera_pos;// camera position
+	Vec camera_dir;//camera look at direction
+	//Vec looks_at;
+	Vec camera_up;// camera up
 
 	GLuint vertexbuffer; // handle for vertexbuffer
 	GLuint colorbuffer; // handle for colorbuffer
