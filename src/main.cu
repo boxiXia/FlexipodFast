@@ -112,7 +112,7 @@ int main()
 	sim.dt = 4e-5;
 
 	double m = 5e-2;// mass per vertex
-	double spring_constant = 5e5;
+	double spring_constant = 1e5;
 	double spring_damping = 10.;
 
 #pragma omp parallel for
@@ -136,12 +136,12 @@ int main()
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
-		spring.k[i] = 10e5;
+		spring.k[i] = 5e5;
 	}
 	// set higher spring constant for the rotational joints
 	for (int i = bot.idEdges[5]; i < bot.idEdges[5+sim.num_joint]; i++)
 	{
-		spring.k[i] = 10e5;
+		spring.k[i] = 5e5;
 	}
 	for (int i = bot.idEdges[5 + sim.num_joint]; i < bot.edges.size(); i++)
 	{

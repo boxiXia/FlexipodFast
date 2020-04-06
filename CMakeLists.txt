@@ -12,7 +12,8 @@ endif()
 # set cmake module path (where .cmake files are stored) (not used yet)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-
+#set(CMAKE_BUILD_TYPE Release)
+#list(APPEND CMAKE_CXX_FLAGS " -O2 ")
 
 # https://cliutils.gitlab.io/modern-cmake/chapters/packages/CUDA.html
 if(NOT DEFINED CMAKE_CUDA_STANDARD)
