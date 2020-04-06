@@ -39,6 +39,7 @@
 #include <thread>
 
 #include "vec.h"
+#include <complex>
 
 
 
@@ -203,6 +204,10 @@ int main()
 	auto end = std::chrono::steady_clock::now();
 	printf("main():Elapsed time:%d ms \n",
 		std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+
+
+
+	//std::complex<double> a;
 
 	return 0;
 }

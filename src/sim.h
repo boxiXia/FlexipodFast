@@ -239,7 +239,7 @@ private:
 	bool update_constraints = true;
 
 #ifdef GRAPHICS
-	int lineWidth = 2;
+	int lineWidth = 3;
 	int pointSize = 3;
 
 	GLFWwindow* window;

@@ -15,7 +15,7 @@
 __global__ void computeSpringForces(
 	const Vec* __restrict__ mass_pos,
 	const Vec* __restrict__ mass_vel, 
-	Vec* mass_force, 
+	Vec* __restrict__ mass_force,
 	const double* __restrict__ spring_k, 
 	double* __restrict__ spring_rest, 
 	const double* __restrict__ spring_damping,
@@ -48,10 +48,10 @@ __global__ void computeSpringForces(
 
 __global__ void massForcesAndUpdate(
 	const double* __restrict__ mass_m,
-	Vec* mass_pos,
-	Vec* mass_vel,
-	Vec* mass_acc,
-	Vec* mass_force,
+	Vec* __restrict__ mass_pos,
+	Vec* __restrict__ mass_vel,
+	Vec* __restrict__ mass_acc,
+	Vec* __restrict__ mass_force,
 	const Vec* __restrict__ mass_force_extern,
 	const bool* __restrict__ mass_fixed,
 	const int num_mass,
@@ -113,7 +113,7 @@ __global__ void rotateJoint(
 
 __global__ void resetSprings(// this is relocated in the massForcesAndUpdate, no longer needed
 	const Vec* __restrict__ mass_pos,
-	double* spring_rest,
+	double* __restrict__ spring_rest,
 	const int* __restrict__ spring_left,
 	const int* __restrict__ spring_right,
 	const int index_start,
@@ -198,6 +198,7 @@ Simulation::Simulation() {
 
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i)
 		cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
+
 }
 
 Simulation::Simulation(int num_mass, int num_spring) :Simulation() {
@@ -296,6 +297,7 @@ void Simulation::_run() { // repeatedly start next
 
 #ifdef GRAPHICS
 	createGLFWWindow(); // create a window with  width and height
+
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 
@@ -374,30 +376,6 @@ void Simulation::execute() {
 			continue;
 		}
 
-		//dynamicsUpdate << <springBlocksPerGrid, THREADS_PER_BLOCK>> > (d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right,d_mass.num, d_spring.num, global_acc, d_constraints, dt);
-
-		
-		//void* kernelArgs[] = {
-		//	(void*)&(d_mass.m), 
-		//	(void*)&(d_mass.pos), 
-		//	(void*)&(d_mass.vel), 
-		//	(void*)&(d_mass.acc), 
-		//	(void*)&(d_mass.force), 
-		//	(void*)&(d_mass.force_extern), 
-		//	(void*)&(d_mass.fixed),
-		//	(void*)&(d_spring.k), 
-		//	(void*)&(d_spring.rest), 
-		//	(void*)&(d_spring.damping), 
-		//	(void*)&(d_spring.left), 
-		//	(void*)&(d_spring.right),
-		//	(void*)&(d_mass.num), 
-		//	(void*)&(d_spring.num), 
-		//	(void*)&(global_acc), 
-		//	(void*)&(d_constraints), 
-		//	(void*)&(dt),
-		//};
-
-		
 		int n_per_rot = 10; //number of update per rotation
 		double d_theta[num_joint];
 
@@ -428,7 +406,6 @@ void Simulation::execute() {
 				d_theta[k] = k > 1 ? n_per_rot * jointSpeeds[k] : -n_per_rot * jointSpeeds[k];
 				cudaStreamWaitEvent(stream[k], event, 0);
 			}
-
 			for (int k = 0; k < num_joint; k++){
 				rotateJoint << <jointBlocksPerGrid[k], MASS_THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, d_theta[k]);
 			}
@@ -436,8 +413,11 @@ void Simulation::execute() {
 			cudaStreamWaitEvent(NULL, event_rotation, 0);
 		}
 		cudaEventDestroy(event);//destroy the event, necessary to prevent memory leak
+		cudaEventDestroy(event_rotation);//destroy the event, necessary to prevent memory leak
 
 		T += NUM_QUEUED_KERNELS * dt;
+
+
 
 #ifdef GRAPHICS
 		if (fmod(T, 1./60.1) < NUM_QUEUED_KERNELS * dt) {
@@ -519,7 +499,6 @@ void Simulation::execute() {
 		}
 #endif
 	}
-
 
 }
 
