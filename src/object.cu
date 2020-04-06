@@ -270,7 +270,7 @@ void ContactPlane::generateBuffers() {
     std::vector<GLfloat> vertex_data;
     std::vector<GLfloat> color_data;
 
-    GLfloat s = 0.5f;// scale
+    GLfloat s = 1.f;// scale
     for (int i = -radius; i < radius; i++)
     {
         for (int j = -radius; j < radius; j++)

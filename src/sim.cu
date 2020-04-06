@@ -191,8 +191,6 @@ __global__ void resetSprings(// this is relocated in the massForcesAndUpdate, no
 //
 //}
 
-
-
 Simulation::Simulation() {
 	//dynamicsUpdate(d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,
 	//	d_spring.k,d_spring.rest,d_spring.damping,d_spring.left,d_spring.right,
@@ -201,9 +199,6 @@ Simulation::Simulation() {
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i)
 		cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 }
-
-
-
 
 Simulation::Simulation(int num_mass, int num_spring) :Simulation() {
 	mass = MASS(num_mass, true); // allocate host
@@ -251,8 +246,6 @@ inline void Simulation::updateCudaParameters() {
 	}
 	resetableSpringBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, id_resetable_spring_end - id_restable_spring_start);
 }
-
-
 
 void Simulation::setBreakpoint(const double time) {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. Can't modify simulation after simulation end."); }
@@ -302,7 +295,7 @@ void Simulation::_run() { // repeatedly start next
 	//}
 
 #ifdef GRAPHICS
-	window = createGLFWWindow(); // create a window with  width and height
+	createGLFWWindow(); // create a window with  width and height
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 
@@ -447,7 +440,7 @@ void Simulation::execute() {
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef GRAPHICS
-		if (fmod(T, 1./60.) < NUM_QUEUED_KERNELS * dt) {
+		if (fmod(T, 1./60.1) < NUM_QUEUED_KERNELS * dt) {
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
 			if (glfwGetKey(window, GLFW_KEY_W)) {
@@ -471,26 +464,26 @@ void Simulation::execute() {
 			}
 
 			double speed_multiplier = 0.000005;
-			double max_speed = 0.0005;
+
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < num_joint; i++)
-				{if (jointSpeeds[i] < max_speed) { jointSpeeds[i] += speed_multiplier; }}
+				{if (jointSpeeds[i] < max_joint_speed) { jointSpeeds[i] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 				for (int i = 0; i < num_joint; i++)
-				{if (jointSpeeds[i] > -max_speed) { jointSpeeds[i] -= speed_multiplier; }}
+				{if (jointSpeeds[i] > -max_joint_speed) { jointSpeeds[i] -= speed_multiplier; }}
 			}
 			if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-					if (jointSpeeds[0] > -max_speed) { jointSpeeds[0] -= speed_multiplier; }
-					if (jointSpeeds[1] > -max_speed) { jointSpeeds[1] -= speed_multiplier; }
-					{if (jointSpeeds[2] < max_speed) { jointSpeeds[2] += speed_multiplier; }}
-					{if (jointSpeeds[3] < max_speed) { jointSpeeds[3] += speed_multiplier; }}
+					if (jointSpeeds[0] > -max_joint_speed) { jointSpeeds[0] -= speed_multiplier; }
+					if (jointSpeeds[1] > -max_joint_speed) { jointSpeeds[1] -= speed_multiplier; }
+					{if (jointSpeeds[2] < max_joint_speed) { jointSpeeds[2] += speed_multiplier; }}
+					{if (jointSpeeds[3] < max_joint_speed) { jointSpeeds[3] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-				if (jointSpeeds[3] > -max_speed) { jointSpeeds[3] -= speed_multiplier; }
-				if (jointSpeeds[2] > -max_speed) { jointSpeeds[2] -= speed_multiplier; }
-				{if (jointSpeeds[1] < max_speed) { jointSpeeds[1] += speed_multiplier; }}
-				{if (jointSpeeds[0] < max_speed) { jointSpeeds[0] += speed_multiplier; }}
+				if (jointSpeeds[3] > -max_joint_speed) { jointSpeeds[3] -= speed_multiplier; }
+				if (jointSpeeds[2] > -max_joint_speed) { jointSpeeds[2] -= speed_multiplier; }
+				{if (jointSpeeds[1] < max_joint_speed) { jointSpeeds[1] += speed_multiplier; }}
+				{if (jointSpeeds[0] < max_joint_speed) { jointSpeeds[0] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) {
 				for (int i = 0; i < num_joint; i++)
@@ -818,7 +811,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
 	glViewport(0, 0, width, height);
 }
-GLFWwindow* createGLFWWindow() {
+void Simulation::createGLFWWindow() {
 	// Initialise GLFW
 	if (!glfwInit()) { throw(std::runtime_error("Failed to initialize GLFW\n")); }
 	////// MSAA: multisampling
@@ -835,7 +828,7 @@ GLFWwindow* createGLFWWindow() {
 	//auto monitor = glfwGetPrimaryMonitor();
 	//const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 	//GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "CUDA Physics Simulation", NULL, NULL);
-	GLFWwindow* window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
+	window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
 
 	if (window == NULL) {
 		fprintf(stderr,"Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible.\n");
@@ -860,7 +853,6 @@ GLFWwindow* createGLFWWindow() {
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 	// reset window color
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-	return window;
 }
 
 #endif

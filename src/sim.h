@@ -173,6 +173,8 @@ public:
 	//size_t num_mass=0;// refer to mass.num
 	//size_t num_spring=0;//refer to spring.num
 
+	double max_joint_speed = 1e-4;
+
 	// control
 	bool RUNNING = false;
 	bool STARTED = false;
@@ -277,19 +279,17 @@ private:
 	inline void generateBuffers();
 	inline void resizeBuffers();
 	inline void draw();
+
+	void createGLFWWindow();
+
 #endif
 };
 
 
-
-
-
 #ifdef GRAPHICS
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-GLFWwindow* createGLFWWindow();
 
 #endif
-
 
 
 #endif //TITAN_SIM_H
