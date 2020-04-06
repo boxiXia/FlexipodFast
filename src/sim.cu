@@ -333,8 +333,9 @@ void Simulation::execute() {
 				if (ENDED) {
 
 					auto end = std::chrono::steady_clock::now();
-					printf("Elapsed time:%d ms for %.1f simulation time\n", 
-						std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count(),T);
+					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+					printf("Elapsed time:%d ms for %.1f simulation time (%.2f)\n", 
+						duration,T,T/((double)duration/1000.));
 
 					//for (Constraint* c : constraints) {
 					//	delete c;
@@ -822,12 +823,12 @@ GLFWwindow* createGLFWWindow() {
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 	glfwSwapInterval(0);// disable vsync
 
-	// Open a window and create its OpenGL context
-	auto monitor = glfwGetPrimaryMonitor();
-	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	//// Open a window and create its OpenGL context
+	//auto monitor = glfwGetPrimaryMonitor();
+	//const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	//GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "CUDA Physics Simulation", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
 
-
-	GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "CUDA Physics Simulation", NULL, NULL);
 	if (window == NULL) {
 		fprintf(stderr,"Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible.\n");
 		getchar();
