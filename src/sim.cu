@@ -18,10 +18,13 @@ __global__ void computeSpringForces(
 	Vec* mass_force, 
 	const bool* __restrict__ mass_fixed,
 	const double* __restrict__ spring_k, 
-	const double* __restrict__ spring_rest, 
+	double* __restrict__ spring_rest, 
 	const double* __restrict__ spring_damping,
 	const int* __restrict__ spring_left,
-	const int* __restrict__ spring_right, const int num_spring) {
+	const int* __restrict__ spring_right, 
+	const int num_spring,
+	const int id_resetable_start,//resetable spring id start
+	const int id_resetable_end) {//resetable spring id end
 #pragma unroll
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
 		int right = spring_right[i];
@@ -31,10 +34,15 @@ __global__ void computeSpringForces(
 		if (length > 1e-5) {
 			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
 			Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
+
+			if (i >= id_resetable_start && i < id_resetable_end) {
+				spring_rest[i] = length;//reset the spring rest length if this spring is restable
+			}
+
 			force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
 
-				mass_force[right].atomicVecAdd(force); // need atomics here
-				mass_force[left].atomicVecAdd(-force); // removed condition on fixed
+			mass_force[right].atomicVecAdd(force); // need atomics here
+			mass_force[left].atomicVecAdd(-force); // removed condition on fixed
 		}
 	}
 }
@@ -96,14 +104,14 @@ __global__ void rotateJoint(
 	}
 }
 
-__global__ void resetSprings(
+__global__ void resetSprings(// this is relocated in the massForcesAndUpdate, no longer needed
 	const Vec* __restrict__ mass_pos,
 	double* spring_rest,
 	const int* __restrict__ spring_left,
 	const int* __restrict__ spring_right,
 	const int index_start,
 	const int index_end) {
-#pragma unroll
+#pragma unroll 
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x + index_start; i < index_end; i += blockDim.x * gridDim.x) {
 		Vec s_vec = mass_pos[spring_right[i]] - mass_pos[spring_left[i]];// the vector from left to right
 		spring_rest[i] = s_vec.norm(); // current spring length
@@ -325,8 +333,8 @@ void Simulation::execute() {
 				if (ENDED) {
 
 					auto end = std::chrono::steady_clock::now();
-					printf("Elapsed time:%d ms \n", 
-						std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+					printf("Elapsed time:%d ms for %.1f simulation time\n", 
+						std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count(),T);
 
 					//for (Constraint* c : constraints) {
 					//	delete c;
@@ -395,12 +403,12 @@ void Simulation::execute() {
 
 		//cudaDeviceSynchronize();
 		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
-			resetSprings <<<resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
+			//resetSprings <<<resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
 
 			for (int j = 0; j < n_per_rot; j++)
 			{
 				computeSpringForces <<<springBlocksPerGrid, THREADS_PER_BLOCK >>> (d_mass.pos, d_mass.vel, d_mass.force, d_mass.fixed,
-					d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num);
+					d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num, id_restable_spring_start, id_resetable_spring_end);
 				//gpuErrchk(cudaPeekAtLastError());
 
 				massForcesAndUpdate <<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK >>> (
@@ -434,19 +442,21 @@ void Simulation::execute() {
 			if (glfwGetKey(window, GLFW_KEY_W)) {
 				camera_pos += 0.01*(camera_dir - camera_dir.dot(camera_up)*camera_up);
 			}
-			if (glfwGetKey(window, GLFW_KEY_S)) {
+			else if (glfwGetKey(window, GLFW_KEY_S)) {
 				camera_pos -= 0.01 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
 			}
+
 			if (glfwGetKey(window, GLFW_KEY_A)) {
 				camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.01, Vec());
 			}
-			if (glfwGetKey(window, GLFW_KEY_D)) {
+			else if (glfwGetKey(window, GLFW_KEY_D)) {
 				camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.01, Vec());
 			}
+
 			if (glfwGetKey(window, GLFW_KEY_Q)) {
 				camera_pos.z -= 0.01;
 			}
-			if (glfwGetKey(window, GLFW_KEY_E)) {
+			else if (glfwGetKey(window, GLFW_KEY_E)) {
 				camera_pos.z += 0.01;
 			}
 
@@ -457,7 +467,7 @@ void Simulation::execute() {
 				for (int i = 0; i < num_joint; i++)
 				{if (jointSpeeds[i] < max_speed) { jointSpeeds[i] += speed_multiplier; }}
 			}
-			if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 				for (int i = 0; i < num_joint; i++)
 				{if (jointSpeeds[i] > -max_speed) { jointSpeeds[i] -= speed_multiplier; }}
 			}
@@ -467,13 +477,13 @@ void Simulation::execute() {
 					{if (jointSpeeds[2] < max_speed) { jointSpeeds[2] += speed_multiplier; }}
 					{if (jointSpeeds[3] < max_speed) { jointSpeeds[3] += speed_multiplier; }}
 			}
-			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+			else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 				if (jointSpeeds[3] > -max_speed) { jointSpeeds[3] -= speed_multiplier; }
 				if (jointSpeeds[2] > -max_speed) { jointSpeeds[2] -= speed_multiplier; }
 				{if (jointSpeeds[1] < max_speed) { jointSpeeds[1] += speed_multiplier; }}
 				{if (jointSpeeds[0] < max_speed) { jointSpeeds[0] += speed_multiplier; }}
 			}
-			if (glfwGetKey(window, GLFW_KEY_0)) {
+			else if (glfwGetKey(window, GLFW_KEY_0)) {
 				for (int i = 0; i < num_joint; i++)
 				{jointSpeeds[i] = 0.;}
 			}
