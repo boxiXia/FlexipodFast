@@ -97,8 +97,10 @@ public:
 
 int main()
 {
+	
 	auto start = std::chrono::steady_clock::now();
 
+	const int num_body = 5;//number of bodies
 	Model bot("..\\src\\data.msgpack");
 
 	int num_mass = bot.vertices.size();
@@ -116,6 +118,8 @@ int main()
 	double spring_constant = 3e4;
 	double spring_damping = 20.;
 
+
+	printf("total mass:%.2f kg\n", m * num_mass);
 #pragma omp parallel for
 	for (int i = 0; i < num_mass; i++)
 	{
@@ -140,17 +144,18 @@ int main()
 		spring.k[i] = 1e5;
 	}
 	// set higher spring constant for the rotational joints
-	for (int i = bot.idEdges[5]; i < bot.idEdges[5+sim.num_joint]; i++)
+	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body +sim.num_joint]; i++)
 	{
 		spring.k[i] = 1e5;
 	}
-	for (int i = bot.idEdges[5 + sim.num_joint]; i < bot.edges.size(); i++)
+	sim.id_restable_spring_start = bot.idEdges[num_body + 2*sim.num_joint]; // resetable spring
+	sim.id_resetable_spring_end = bot.edges.size();
+	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
 		spring.k[i] = 1e4;// resetable spring
 		spring.damping[i] = spring_damping*2.;
 	}
-	sim.id_restable_spring_start = bot.idEdges[5 + sim.num_joint]; // resetable spring
-	sim.id_resetable_spring_end = bot.edges.size();
+
 
 #pragma omp parallel for
 	for (int i = 0; i < sim.num_joint; i++)
