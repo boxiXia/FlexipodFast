@@ -114,9 +114,9 @@ int main()
 	sim.global_acc = Vec(0, 0, -9.8);
 	sim.dt = 4e-5;
 
-	double m = 5e-2;// mass per vertex
-	double spring_constant = 3e4;
-	double spring_damping = 20.;
+	double m = 1e-3;// mass per vertex
+	double spring_constant = 6e2;
+	double spring_damping = 0.4;
 
 
 	printf("total mass:%.2f kg\n", m * num_mass);
@@ -141,18 +141,18 @@ int main()
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
-		spring.k[i] = 1e5;
+		spring.k[i] = 2e3;
 	}
 	// set higher spring constant for the rotational joints
 	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body +sim.num_joint]; i++)
 	{
-		spring.k[i] = 1e5;
+		spring.k[i] = 2e3;
 	}
 	sim.id_restable_spring_start = bot.idEdges[num_body + 2*sim.num_joint]; // resetable spring
 	sim.id_resetable_spring_end = bot.edges.size();
 	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
-		spring.k[i] = 1e4;// resetable spring
+		spring.k[i] = 2e2;// resetable spring
 		spring.damping[i] = spring_damping*2.;
 	}
 
