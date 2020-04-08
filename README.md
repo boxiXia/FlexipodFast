@@ -1,6 +1,8 @@
 # Flexipod simulation
 The simulation engine for the flexipod project, build upon the original [Titan library](https://github.com/jacobaustin123/Titan)[[1]](#ref-1) from Jacob Austin.
 
+[![Alt text](https://img.youtube.com/vi/eENbrnjF_oA/0.jpg)](https://www.youtube.com/watch?v=eENbrnjF_oA)
+
 
 ## Hardware Requirement:
 **Windows/Linux** machine with Nvidia Graphics card that has **Cuda** support, preferably with compute Capability>6.0. See a list of CUDA enabled graphics card [here](https://developer.nvidia.com/cuda-gpus).
