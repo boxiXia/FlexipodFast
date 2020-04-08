@@ -22,3 +22,5 @@ CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const dou
 	v_rot += offset;
 	return v_rot;
 }
+
+
