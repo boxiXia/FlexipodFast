@@ -8,7 +8,6 @@
 
 #include "vec.h"
 
-
 // https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
 // rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
 CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const double& theta, const Vec& offset) {
@@ -23,4 +22,14 @@ CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const dou
 	return v_rot;
 }
 
-
+//CUDA_DEVICE void Vec::atomicVecAdd(const Vec& v) {
+//#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
+//	atomicAdd(&x, v.x);
+//	atomicAdd(&y, v.y);
+//	atomicAdd(&z, v.z);
+//#elif defined(__CUDA_ARCH__) &&__CUDA_ARCH__ < 600
+//	atomicDoubleAdd(&x, v.x);
+//	atomicDoubleAdd(&y, v.y);
+//	atomicDoubleAdd(&z, v.z);
+//#endif
+//}
