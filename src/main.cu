@@ -103,7 +103,9 @@ int main()
 		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm();
 	}
 
-	// bot.idVertices: body, leg0, leg1, leg2, leg3, anchor0, anchor1, anchor2,anchor3, oxyz_body, oxyz_leg0, oxyz_leg1, oxyz_leg2, oxyz_leg3, the end
+	// bot.idVertices: body,leg0,leg1,leg2,leg3,anchor0,anchor1,anchor2,anchor3,\
+					oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,\
+							  oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,the end
 	// bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end
 
 	// set higher spring constant for the robot body
@@ -125,15 +127,23 @@ int main()
 	sim.id_resetable_spring_end = bot.idEdges[num_body + 3];
 	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
-		spring.k[i] = spring_constant/5.;// resetable spring
+		spring.k[i] = spring_constant/5.;// resetable spring, reset the rest length per dynamic update
 		spring.damping[i] = spring_damping*2.;
 	}
 
 
-	double scale_down = 0.1;
+	
 
+	//// the start (inclusive) and end (exclusive) index of the anchor points
+	//double id_joint_anchor_start = bot.idVertices[num_body];
+	//double id_joint_anchor_end = bot.idVertices[num_body + sim.num_joint];
+
+	//oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,\
+				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,
 	sim.id_oxyz_start = bot.idVertices[num_body + sim.num_joint];
-	sim.id_oxyz_end = bot.idVertices[2 * num_body + sim.num_joint];
+	sim.id_oxyz_end = bot.idVertices[num_body + sim.num_joint + 1 + 2* sim.num_joint];
+
+	double scale_down = 0.1;
 	// set lower mass for the anchored coordinate systems
 	for (int i = sim.id_oxyz_start; i < sim.id_oxyz_end; i++)
 	{
