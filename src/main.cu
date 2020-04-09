@@ -16,12 +16,6 @@
 #include <thrust/device_vector.h>
 #include<thrust/system/cuda/experimental/pinned_allocator.h>
 
-#include <stdio.h>
-#include <sstream>
-#include <fstream>
-#include<iostream>
-#include<stdlib.h>
-#include<string.h>
 #include <chrono> // for time measurement
 
 #include "shader.h"
@@ -52,37 +46,7 @@ using ThurstHostVec = std::vector<T, thrust::system::cuda::experimental::pinned_
 //	left
 // };
 
-struct StdJoint {
-	std::vector<int> left;// the indices of the left points
-	std::vector<int> right;// the indices of the right points
-	std::vector<int> anchor;// the 2 indices of the anchor points: left_anchor_id,right_anchor_id
-	MSGPACK_DEFINE(left, right, anchor);
-};
-class Model {
-public:
-	std::vector<std::vector<double> > vertices;// the mass xyzs
-	std::vector<std::vector<int> > edges;//the spring ids
-	std::vector<int> idVertices;// the edge id of the vertices
-	std::vector<int> idEdges;// the edge id of the springs
-	std::vector<std::vector<double> > colors;// the mass xyzs
-	std::vector<StdJoint> Joints;// the joints
-	MSGPACK_DEFINE(vertices, edges, idVertices, idEdges, colors, Joints); // write the member variables that you want to pack
 
-	Model() {
-	}
-
-	Model(const char* file_path) {
-		// get the msgpack robot model
-		// Deserialize the serialized data
-		std::ifstream ifs(file_path, std::ifstream::in | std::ifstream::binary);
-		std::stringstream buffer;
-		buffer << ifs.rdbuf();
-		msgpack::unpacked upd;//unpacked data
-		msgpack::unpack(upd, buffer.str().data(), buffer.str().size());
-		//    std::cout << upd.get() << std::endl;
-		upd.get().convert(*this);
-	}
-};
 
 
 
@@ -101,7 +65,7 @@ int main()
 	auto start = std::chrono::steady_clock::now();
 
 	const int num_body = 5;//number of bodies
-	Model bot("..\\src\\data.msgpack");
+	Model bot("..\\src\\data.msgpack"); //defined in sim.h
 
 	int num_mass = bot.vertices.size();
 	int num_spring = bot.edges.size();
@@ -115,7 +79,9 @@ int main()
 	sim.dt = 4e-5;
 
 	double m = 1e-3;// mass per vertex
-	double spring_constant = 6e2;
+	double spring_constant = 6e2; //spring constant for silicone leg
+	double spring_constant_high = spring_constant*3.5;//spring constant for rigid spring
+	double spring_constant_low = spring_constant*0.2;// spring constant for resetable spring
 	double spring_damping = 0.4;
 
 
@@ -137,23 +103,52 @@ int main()
 		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm();
 	}
 
+	// bot.idVertices: body, leg0, leg1, leg2, leg3, anchor0, anchor1, anchor2,anchor3, oxyz_body, oxyz_leg0, oxyz_leg1, oxyz_leg2, oxyz_leg3, the end
+	// bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end
 
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
-		spring.k[i] = 2e3;
+		spring.k[i] = spring_constant_high;
 	}
 	// set higher spring constant for the rotational joints
-	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body +sim.num_joint]; i++)
+	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body +1]; i++)
 	{
-		spring.k[i] = 2e3;
+		spring.k[i] = spring_constant_high; // joints anchors
 	}
-	sim.id_restable_spring_start = bot.idEdges[num_body + 2*sim.num_joint]; // resetable spring
-	sim.id_resetable_spring_end = bot.edges.size();
+	for (int i = bot.idEdges[num_body +1]; i < bot.idEdges[num_body +2]; i++)
+	{
+		spring.k[i] = spring_constant_high; // joints rotation spring
+	}
+
+	sim.id_restable_spring_start = bot.idEdges[num_body + 2]; // resetable spring
+	sim.id_resetable_spring_end = bot.idEdges[num_body + 3];
 	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
-		spring.k[i] = 2e2;// resetable spring
+		spring.k[i] = spring_constant/5.;// resetable spring
 		spring.damping[i] = spring_damping*2.;
+	}
+
+
+	double scale_down = 0.1;
+
+	sim.id_oxyz_start = bot.idVertices[num_body + sim.num_joint];
+	sim.id_oxyz_end = bot.idVertices[2 * num_body + sim.num_joint];
+	// set lower mass for the anchored coordinate systems
+	for (int i = sim.id_oxyz_start; i < sim.id_oxyz_end; i++)
+	{
+		mass.m[i] = m * scale_down; // mass [kg]
+	}
+
+	for (int i = bot.idEdges[num_body + 3]; i < bot.idEdges[num_body + 4]; i++)
+	{
+		spring.k[i] = spring_constant * 2*scale_down;// oxyz_self_springs
+		spring.damping[i] = spring_damping * scale_down;
+	}
+	for (int i = bot.idEdges[num_body + 4]; i < bot.idEdges[num_body + 5]; i++)
+	{
+		spring.k[i] = spring_constant * scale_down;// oxyz_anchor_springs
+		spring.damping[i] = spring_damping * scale_down;
 	}
 
 

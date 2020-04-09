@@ -421,6 +421,17 @@ void Simulation::execute() {
 
 #ifdef GRAPHICS
 		if (fmod(T, 1./60.1) < NUM_QUEUED_KERNELS * dt) {
+
+			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
+
+			//mass.pos[id_oxyz_start].print();
+			// https://en.wikipedia.org/wiki/Slerp
+			double t_lerp = 0.01;
+			Vec camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
+			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/
+			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
+			camera_dir.normalize();
+
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
 			if (glfwGetKey(window, GLFW_KEY_W)) {

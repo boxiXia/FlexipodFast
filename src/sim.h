@@ -6,6 +6,7 @@
 #include "vec.h"
 #include "shader.h"
 
+#include <msgpack.hpp>
 
 #ifdef GRAPHICS
 #include "shader.h"
@@ -15,7 +16,6 @@
 #include <glm/glm.hpp>// Include GLM
 #include <glm/gtc/matrix_transform.hpp>
 #include <cuda_gl_interop.h>
-
 #endif
 
 #include <thrust/host_vector.h>
@@ -26,6 +26,12 @@
 #include <vector>
 #include <set>
 #include <thread>
+
+#include <sstream>
+#include <fstream>
+#include<iostream>
+#include<string.h>
+
 
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr int THREADS_PER_BLOCK = 128;
@@ -44,6 +50,35 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 	}
 }
 
+
+struct StdJoint {
+	std::vector<int> left;// the indices of the left points
+	std::vector<int> right;// the indices of the right points
+	std::vector<int> anchor;// the 2 indices of the anchor points: left_anchor_id,right_anchor_id
+	MSGPACK_DEFINE(left, right, anchor);
+};
+class Model {
+public:
+	std::vector<std::vector<double> > vertices;// the mass xyzs
+	std::vector<std::vector<int> > edges;//the spring ids
+	std::vector<int> idVertices;// the edge id of the vertices
+	std::vector<int> idEdges;// the edge id of the springs
+	std::vector<std::vector<double> > colors;// the mass xyzs
+	std::vector<StdJoint> Joints;// the joints
+	MSGPACK_DEFINE(vertices, edges, idVertices, idEdges, colors, Joints); // write the member variables that you want to pack
+	Model() {}
+	Model(const char* file_path) {
+		// get the msgpack robot model
+		// Deserialize the serialized data
+		std::ifstream ifs(file_path, std::ifstream::in | std::ifstream::binary);
+		std::stringstream buffer;
+		buffer << ifs.rdbuf();
+		msgpack::unpacked upd;//unpacked data
+		msgpack::unpack(upd, buffer.str().data(), buffer.str().size());
+		//    std::cout << upd.get() << std::endl;
+		upd.get().convert(*this);
+	}
+};
 
 struct MASS {
 	double* m = nullptr;
@@ -85,6 +120,11 @@ struct MASS {
 		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream));
 		//this->num = other.num;
+	}
+	void CopyPosVelAccFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
+		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec), cudaMemcpyDefault, stream));
 	}
 };
 
@@ -156,8 +196,11 @@ public:
 	double T = 0; //simulation time
 	Vec global_acc = Vec(0,0,0); // global acceleration
 
-	int id_restable_spring_start = 0;
-	int id_resetable_spring_end = 0;
+	int id_restable_spring_start = 0; // resetable springs start index (inclusive)
+	int id_resetable_spring_end = 0; // resetable springs start index (exclusive)
+
+	int id_oxyz_start = 0;// coordinate oxyz start index (inclusive)
+	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
 
 	static const int num_joint = 4; //todo:make it dynamic
 	// host

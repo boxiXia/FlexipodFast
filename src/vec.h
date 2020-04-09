@@ -195,8 +195,9 @@ struct __align__(16) Vec {
 	} // print
 
 	CUDA_CALLABLE_MEMBER void print() {
-		printf("(%3f, %3f, %3f)\n", x, y, z);
+		printf("(%2f, %2f, %2f)\n", x, y, z);
 	}
+
 
 	inline CUDA_CALLABLE_MEMBER  double norm() const {
 #ifdef __CUDA_ARCH__ 
@@ -261,6 +262,19 @@ struct __align__(16) Vec {
 	// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
 	// rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
 	friend CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const double& theta, const Vec& offset);
+
+
+
+	inline friend CUDA_CALLABLE_MEMBER double angleBetween(Vec p0, Vec p1) {
+		return acos(p0.dot(p1) / (p0.norm() * p1.norm()));
+	}
+
+	friend CUDA_CALLABLE_MEMBER Vec slerp(Vec p0,Vec p1,double t) {
+		double w = angleBetween(p0, p1);//total angle
+		double s = sin(w);
+		Vec p_lerp = sin((1 - t) * w) / s * p0 + sin(t * w) / s * p1;
+		return p_lerp;
+	}
 };
 
 
