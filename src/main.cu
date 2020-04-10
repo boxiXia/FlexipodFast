@@ -36,71 +36,50 @@
 #include <complex>
 
 
-
-
-template<class T> // alias template for pinned allocator
-using ThurstHostVec = std::vector<T, thrust::system::cuda::experimental::pinned_allocator<T>>;
-
-
-//struct D_Joint {
-//	left
-// };
-
-
-
-
-
-//__global__ void dummykernel(MASS d_mass,int num_mass) {
-//	int i = blockDim.x * blockIdx.x + threadIdx.x; // todo: change to grid-strided loop
-//	if (i < num_mass) {
-//		d_mass.vel[i][0] = (double)i; // todo check if this is needed
-//		printf("%d", i);
-//	}
-//}
+//template<class T> // alias template for pinned allocator
+//using ThurstHostVec = std::vector<T, thrust::system::cuda::experimental::pinned_allocator<T>>;
 
 
 int main()
 {
-	
 	auto start = std::chrono::steady_clock::now();
 
 	const int num_body = 5;//number of bodies
 	Model bot("..\\src\\data.msgpack"); //defined in sim.h
 
-	int num_mass = bot.vertices.size();
-	int num_spring = bot.edges.size();
+	int num_mass = bot.vertices.size(); // number of mass
+	int num_spring = bot.edges.size(); // number of spring
 
+	Simulation sim(num_mass, num_spring); // Simulation object
+	MASS& mass = sim.mass; // reference variable for sim.mass
+	SPRING& spring = sim.spring; // reference variable for sim.spring
 
-	Simulation sim(num_mass, num_spring);
-	MASS& mass = sim.mass;
-	SPRING& spring = sim.spring;
-
-	sim.global_acc = Vec(0, 0, -9.8);
-	sim.dt = 4e-5;
+	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
+	sim.dt = 4e-5; // timestep
 
 	double m = 1e-3;// mass per vertex
 	double spring_constant = 6e2; //spring constant for silicone leg
 	double spring_constant_high = spring_constant*3.5;//spring constant for rigid spring
 	double spring_constant_low = spring_constant*0.2;// spring constant for resetable spring
-	double spring_damping = 0.4;
-
+	double spring_damping = 0.4; // damping for spring
 
 	printf("total mass:%.2f kg\n", m * num_mass);
+
 #pragma omp parallel for
 	for (int i = 0; i < num_mass; i++)
 	{
-		mass.pos[i]= bot.vertices[i];
-		mass.color[i]= bot.colors[i];
+		mass.pos[i]= bot.vertices[i]; // position (Vec) [m]
+		mass.color[i]= bot.colors[i]; // color (Vec) [0.0-1.0]
 		mass.m[i] = m; // mass [kg]
 	}
 #pragma omp parallel for
 	for (int i = 0; i < num_spring; i++)
 	{
-		spring.left[i] = bot.edges[i][0];
-		spring.right[i] = bot.edges[i][1];
+		spring.left[i] = bot.edges[i][0]; // the left mass index of the spring
+		spring.right[i] = bot.edges[i][1]; // the right mass index of the spring
 		spring.k[i] = spring_constant; // spring constant
-		spring.damping[i] = spring_damping;
-		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm();
+		spring.damping[i] = spring_damping; // spring constant
+		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm(); // spring rest length
 	}
 
 	// bot.idVertices: body,leg0,leg1,leg2,leg3,anchor0,anchor1,anchor2,anchor3,\
@@ -123,7 +102,7 @@ int main()
 		spring.k[i] = spring_constant_high; // joints rotation spring
 	}
 
-	sim.id_restable_spring_start = bot.idEdges[num_body + 2]; // resetable spring
+	sim.id_restable_spring_start = bot.idEdges[num_body + 2]; // resetable spring (frictional spring)
 	sim.id_resetable_spring_end = bot.idEdges[num_body + 3];
 	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
@@ -205,19 +184,9 @@ int main()
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 
-	//auto end = std::chrono::steady_clock::now();
-	//std::cout << "Elapsed time:"
-	//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-	//	<< " ms" << std::endl;
-
-
 	auto end = std::chrono::steady_clock::now();
 	printf("main():Elapsed time:%d ms \n",
 		std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
-
-
-
-	//std::complex<double> a;
 
 	return 0;
 }

@@ -211,13 +211,13 @@ Simulation::Simulation(int num_mass, int num_spring) :Simulation() {
 	//cudaDeviceSynchronize();
 }
 
-void Simulation::getAll() {
+void Simulation::getAll() {//copy from gpu
 	mass.copyFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 	//spring.copyFrom(d_spring, stream[NUM_CUDA_STREAM - 1]);//don't need to spring
 	//cudaDeviceSynchronize();
 }
 
-void Simulation::setAll() {
+void Simulation::setAll() {//copy form cpu
 	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
 	d_spring.copyFrom(spring, stream[NUM_CUDA_STREAM - 1]);
 	for (int i = 0; i < num_joint; i++)
@@ -428,8 +428,9 @@ void Simulation::execute() {
 			// https://en.wikipedia.org/wiki/Slerp
 			double t_lerp = 0.01;
 			Vec camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
-			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/
-			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
+			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp); 
 			camera_dir.normalize();
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
