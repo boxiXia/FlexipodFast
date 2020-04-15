@@ -656,26 +656,20 @@ void Simulation::computeMVP(bool update_view) {
 
 inline void Simulation::generateBuffers() {
 
-		//GLuint colorbuffer; // bind colors to buffer colorbuffer 
-		glGenBuffers(1, &colorbuffer);
+		glGenBuffers(1, &colorbuffer);//bind color buffer
 		glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
 		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(colorbuffer);
-		cudaGLMapBufferObject(&colorPointer, colorbuffer); // refer to updateBuffers()
 
-		//GLuint elementbuffer; // create buffer for main object
-		glGenBuffers(1, &elementbuffer);
+		glGenBuffers(1, &elementbuffer);//bind element buffer
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
 		cudaGLRegisterBufferObject(elementbuffer);
-		cudaGLMapBufferObject(&indexPointer, elementbuffer);// refer to updateBuffers()
 
-		//GLuint vertexbuffer; // bind vertex buffer
-		glGenBuffers(1, &vertexbuffer);
+		glGenBuffers(1, &vertexbuffer);// bind vertex buffer
 		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
 		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(vertexbuffer);
-		cudaGLMapBufferObject(&vertexPointer, vertexbuffer);// refer to updateBuffers()
 
 	//Todo: maybe unbind buffer? see updateBuffers()
 }
@@ -683,26 +677,21 @@ inline void Simulation::generateBuffers() {
 inline void Simulation::resizeBuffers() {
 	//    std::cout << "resizing buffers (" << masses.size() << " masses, " << springs.size() << " springs)." << std::endl;
 	//    std::cout << "resizing buffers (" << d_masses.size() << " device masses, " << d_springs.size() << " device springs)." << std::endl;
-		cudaGLUnmapBufferObject(colorbuffer);//refer to updateBuffers()
+		//cudaGLUnmapBufferObject(colorbuffer);//refer to updateBuffers()
 		cudaGLUnregisterBufferObject(this->colorbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, this->colorbuffer);
 		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(this->colorbuffer);
-		cudaGLMapBufferObject(&colorPointer, colorbuffer);//refer to updateBuffers()
 
-		cudaGLUnmapBufferObject(elementbuffer);//refer to updateBuffers()
 		cudaGLUnregisterBufferObject(this->elementbuffer);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->elementbuffer);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
 		cudaGLRegisterBufferObject(this->elementbuffer);
-		cudaGLMapBufferObject(&indexPointer, elementbuffer);//refer to updateBuffers()
 
-		cudaGLUnmapBufferObject(vertexbuffer);//refer to updateBuffers()
 		cudaGLUnregisterBufferObject(this->vertexbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
 		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
 		cudaGLRegisterBufferObject(this->vertexbuffer);
-		cudaGLMapBufferObject(&vertexPointer, vertexbuffer);//refer to updateBuffers()
 
 	resize_buffers = false;
 }
@@ -735,34 +724,37 @@ __global__ void updateColors(float* __restrict__ gl_ptr, const Vec* __restrict__
 
 void Simulation::updateBuffers() { // todo: check the kernel call
 	{
-		//glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		//void* vertexPointer;
-		//cudaGLMapBufferObject(&vertexPointer, vertexbuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+		void* vertexPointer;
+		cudaGLMapBufferObject(&vertexPointer, vertexbuffer);
 		updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > ((float*)vertexPointer, d_mass.pos, mass.num);
-		//cudaGLUnmapBufferObject(vertexbuffer);
+		cudaGLUnmapBufferObject(vertexbuffer);
 	}
 	if (update_colors) {
-		//glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
-		//void* colorPointer; // if no masses, springs, or colors are changed/deleted, this can be start only once
-		//cudaGLMapBufferObject(&colorPointer, colorbuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
+		void* colorPointer; // if no masses, springs, or colors are changed/deleted, this can be start only once
+		cudaGLMapBufferObject(&colorPointer, colorbuffer);
 		updateColors<<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK,0, stream[1]>>>((float*)colorPointer, d_mass.color, mass.num);
-		//cudaGLUnmapBufferObject(colorbuffer);
+		cudaGLUnmapBufferObject(colorbuffer);
 		update_colors = false;
 	}
 	if (update_indices) {
-		//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-		//void* indexPointer; // if no masses or springs are deleted, this can be start only once
-		//cudaGLMapBufferObject(&indexPointer, elementbuffer);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
+		void* indexPointer; // if no masses or springs are deleted, this can be start only once
+		cudaGLMapBufferObject(&indexPointer, elementbuffer);
 		updateIndices<<<springBlocksPerGrid, THREADS_PER_BLOCK,0,stream[2]>>>((unsigned int*)indexPointer, d_spring.left,d_spring.right, spring.num);
-		//cudaGLUnmapBufferObject(elementbuffer);
+		cudaGLUnmapBufferObject(elementbuffer);
 		update_indices = false;
 	}
 }
 
 void Simulation::updateVertexBuffers() {
 
-	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[NUM_CUDA_STREAM-1] >> > ((float*)vertexPointer, d_mass.pos, mass.num);
-	//cudaGLUnmapBufferObject(vertexbuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+	void* vertexPointer;
+	cudaGLMapBufferObject(&vertexPointer, vertexbuffer);
+	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > ((float*)vertexPointer, d_mass.pos, mass.num);
+	cudaGLUnmapBufferObject(vertexbuffer);
 }
 
 inline void Simulation::draw() {
