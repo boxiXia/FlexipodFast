@@ -111,6 +111,23 @@ __global__ void rotateJoint(
 	}
 }
 
+
+__global__ void rotateJoint(Vec* __restrict__ mass_pos,const AllJoints joint) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < joint.points.num) {
+		if (i < joint.anchors.num) {
+			joint.anchors.dir[i] = (mass_pos[joint.anchors.right[i]] - mass_pos[joint.anchors.left[i]]).normalize();
+		}
+		__syncthreads();
+
+		int anchor_id = joint.points.anchorId[i];
+		int id = joint.points.massId[i];
+		mass_pos[id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[id], joint.anchors.theta[i] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
+	}
+}
+
+
+
 __global__ void resetSprings(// this is relocated in the massForcesAndUpdate, no longer needed
 	const Vec* __restrict__ mass_pos,
 	double* __restrict__ spring_rest,
@@ -282,7 +299,6 @@ void Simulation::start() {
 	update_constraints = false;
 
 	setAll();// copy mass and spring to gpu
-
 	gpu_thread = std::thread(&Simulation::_run, this); //TODO: thread
 }
 
@@ -404,11 +420,22 @@ void Simulation::execute() {
 			
 			for (int k = 0; k < num_joint; k++){
 				d_theta[k] = k > 1 ? n_per_rot * jointSpeeds[k] : -n_per_rot * jointSpeeds[k];
-				cudaStreamWaitEvent(stream[k], event, 0);
+				//cudaStreamWaitEvent(stream[k], event, 0);
 			}
-			for (int k = 0; k < num_joint; k++){
-				rotateJoint << <jointBlocksPerGrid[k], MASS_THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, d_theta[k]);
-			}
+			//for (int k = 0; k < num_joint; k++){
+			//	rotateJoint << <jointBlocksPerGrid[k], MASS_THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, d_theta[k]);
+			//}
+
+			int jointBlocksPerGridall = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, d_all_joints.points.num);
+			cudaStreamWaitEvent(stream[0], event, 0);
+			//rotateJoint << <jointBlocksPerGridall, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (
+			//	d_mass.pos, d_all_joints.points.massId, d_all_joints.points.anchorId, d_all_joints.points.dir, d_all_joints.points.num,
+			//	d_all_joints.anchors.left, d_all_joints.anchors.right, d_all_joints.anchors.dir, d_all_joints.anchors.num);
+			rotateJoint << <jointBlocksPerGridall, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (d_mass.pos, d_all_joints);
+
+			gpuErrchk(cudaPeekAtLastError());
+
+
 			cudaEventRecord(event_rotation, stream[num_joint-1]);
 			cudaStreamWaitEvent(NULL, event_rotation, 0);
 		}

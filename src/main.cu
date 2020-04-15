@@ -161,6 +161,12 @@ int main()
 		joint.anchor[1] = std_joint.anchor[1];
 	}
 
+
+	sim.all_joints.init(bot.Joints, true);
+	sim.d_all_joints.init(bot.Joints, false);
+	sim.d_all_joints.copyFrom(sim.all_joints);
+
+
 	// set max speed for each joint
 	sim.max_joint_speed = 200. / 60. * 2 * 3.1415926 * sim.dt;//200 rpm
 

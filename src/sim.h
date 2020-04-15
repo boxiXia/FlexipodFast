@@ -151,7 +151,7 @@ struct SPRING {
 		gpuErrchk((*malloc)((void**)&right, num * sizeof(int)));
 		this->num = num;
 	}
-	void copyFrom(SPRING& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
+	void copyFrom(const SPRING& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
 		gpuErrchk(cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault,stream));
 		gpuErrchk(cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault,stream));
 		gpuErrchk(cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream));
@@ -182,12 +182,128 @@ struct Joint {
 		this->num_left = num_left;
 		this->num_right = num_right;
 	}
-	void copyFrom(Joint& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
+	void copyFrom(const Joint& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
 		//todo: init the device joint
 		gpuErrchk(cudaMemcpyAsync(left, other.left, num_left * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(right, other.right, num_right * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(anchor, other.anchor, 2 * sizeof(int), cudaMemcpyDefault, stream));
 	}
+};
+
+
+struct RotAnchors { // the anchors that belongs to the rotational joints
+	int* left; // index of the left anchor of the joint
+	int* right;// index of the right anchor of the joint
+	Vec* dir; // direction of the joint,normalized
+	double* theta;// the angular increment per joint update
+	int num; // num of anchor
+	RotAnchors(){}
+	RotAnchors(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);}
+
+	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
+		num = std_joints.size();
+
+		cudaError_t(*malloc)(void**, size_t);
+		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
+		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device	
+
+		gpuErrchk((*malloc)((void**)&left, num * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&right, num * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&dir, num * sizeof(Vec)));
+		gpuErrchk((*malloc)((void**)&theta, num * sizeof(double)));
+		if (on_host) { // copy the std_joints to this
+			for (int joint_id = 0; joint_id < num; joint_id++)
+			{
+				left[joint_id] = std_joints[joint_id].anchor[0];
+				right[joint_id] = std_joints[joint_id].anchor[1];
+			}
+		}
+	}
+
+	void copyFrom(const RotAnchors& other, cudaStream_t stream = (cudaStream_t)0) {
+		gpuErrchk(cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(dir, other.dir, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream));
+	}
+	void copyThetaFrom(const RotAnchors& other, cudaStream_t stream = (cudaStream_t)0) {
+		gpuErrchk(cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream));
+	}
+};
+
+struct RotPoints { // the points that belongs to the rotational joints
+	int* massId; // index of the left mass and right mass
+	// the directional anchor index of which the mass is rotated about, 
+	int* anchorId;// e.g, k: the k-th anchor,left mass, -k: the k-th anchor, right mass
+	int* dir; // direction: left=+1,right=-1
+	int num; // the length of array "id"
+	RotPoints(){}
+	RotPoints(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); }
+
+	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
+		num = 0;
+		for each (auto & std_joint in std_joints)
+		{num += std_joint.left.size() + std_joint.right.size();}// get the total number of the points in all joints
+
+		// allocate on host or device
+		cudaError_t(*malloc)(void**, size_t);
+		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
+		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
+		gpuErrchk((*malloc)((void**)&massId, num * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&anchorId, num * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&dir, num * sizeof(int)));
+
+
+		if (on_host) { // copy the std_joints to this
+			int offset = 0;//offset the index by "offset"
+			for (int joint_id = 0; joint_id < std_joints.size(); joint_id++)
+			{
+				StdJoint& std_joint = std_joints[joint_id];
+
+				for (int i = 0; i < std_joint.left.size(); i++)
+				{
+					massId[offset + i] = std_joint.left[i];
+					anchorId[offset + i] = joint_id;
+					dir[offset + i] = 1;
+				}
+				offset += std_joint.left.size();//increment offset by num of left
+
+				for (int i = 0; i < std_joint.right.size(); i++)
+				{
+					massId[offset + i] = std_joint.right[i];
+					anchorId[offset + i] = joint_id;
+					dir[offset + i] = -1;
+				}
+				offset += std_joint.right.size();//increment offset by num of right
+			}
+		}
+	}
+
+	void copyFrom(const RotPoints& other, cudaStream_t stream = (cudaStream_t)0) {
+		gpuErrchk(cudaMemcpyAsync(massId, other.massId, num * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(anchorId, other.anchorId, num * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(dir, other.dir, num * sizeof(int), cudaMemcpyDefault, stream));
+
+	}
+};
+
+
+struct AllJoints {
+	RotPoints points;
+	RotAnchors anchors;
+
+	AllJoints() {};
+	AllJoints(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);};
+	void copyFrom(const AllJoints& other, cudaStream_t stream = (cudaStream_t)0) {
+		points.copyFrom(other.points, stream); // copy from the other points
+		anchors.copyFrom(other.anchors, stream); // copy from the other anchor
+	}
+
+	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
+		anchors.init(std_joints, on_host);//initialize anchor
+		points.init(std_joints, on_host);
+	}
+
 };
 
 class Simulation {
@@ -207,10 +323,12 @@ public:
 	MASS mass;
 	SPRING spring;
 	Joint joints[num_joint];
+	AllJoints all_joints;
 	// device
 	MASS d_mass;
 	SPRING d_spring;
 	Joint d_joints[num_joint];
+	AllJoints d_all_joints;
 	
 	double jointSpeeds[num_joint] = { 0 };
 	//size_t num_mass=0;// refer to mass.num
@@ -259,7 +377,6 @@ public:
 #endif
 
 private:
-	
 
 	void waitForEvent();
 	void freeGPU();
