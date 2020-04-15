@@ -161,36 +161,6 @@ struct SPRING {
 	}
 };
 
-struct Joint {
-	int* left; // index of left mass
-	int* right; // index of right mass
-	int* anchor; // anchor_left = anchor[0], anchor_right = anchor[1], 2 number
-	int num_left;
-	int num_right;
-	Joint(){}
-	Joint(int num_left,int num_right, bool on_host=true) {
-		init(num_left, num_right, on_host);
-	}
-	void init(int num_left, int num_right, bool on_host = true) {
-		cudaError_t(*malloc)(void**, size_t);
-		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
-		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
-		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
-		gpuErrchk((*malloc)((void**)&left, num_left * sizeof(int)));
-		gpuErrchk((*malloc)((void**)&right, num_right * sizeof(int)));
-		gpuErrchk((*malloc)((void**)&anchor, 2 * sizeof(int)));
-		this->num_left = num_left;
-		this->num_right = num_right;
-	}
-	void copyFrom(const Joint& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
-		//todo: init the device joint
-		gpuErrchk(cudaMemcpyAsync(left, other.left, num_left * sizeof(int), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(right, other.right, num_right * sizeof(int), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(anchor, other.anchor, 2 * sizeof(int), cudaMemcpyDefault, stream));
-	}
-};
-
-
 struct RotAnchors { // the anchors that belongs to the rotational joints
 	int* left; // index of the left anchor of the joint
 	int* right;// index of the right anchor of the joint
@@ -288,13 +258,13 @@ struct RotPoints { // the points that belongs to the rotational joints
 };
 
 
-struct AllJoints {
+struct Joint {
 	RotPoints points;
 	RotAnchors anchors;
 
-	AllJoints() {};
-	AllJoints(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);};
-	void copyFrom(const AllJoints& other, cudaStream_t stream = (cudaStream_t)0) {
+	Joint() {};
+	Joint(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);};
+	void copyFrom(const Joint& other, cudaStream_t stream = (cudaStream_t)0) {
 		points.copyFrom(other.points, stream); // copy from the other points
 		anchors.copyFrom(other.anchors, stream); // copy from the other anchor
 	}
@@ -320,15 +290,13 @@ public:
 
 	static const int num_joint = 4; //todo:make it dynamic
 	// host
-	MASS mass;
-	SPRING spring;
-	Joint joints[num_joint];
-	AllJoints all_joints;
+	MASS mass; // a flat fiew of all masses
+	SPRING spring; // a flat fiew of all springs
+	Joint joints;// a flat view of all joints
 	// device
 	MASS d_mass;
 	SPRING d_spring;
-	Joint d_joints[num_joint];
-	AllJoints d_all_joints;
+	Joint d_joints;
 	
 	double jointSpeeds[num_joint] = { 0 };
 	//size_t num_mass=0;// refer to mass.num
@@ -388,8 +356,7 @@ private:
 
 	int massBlocksPerGrid; // blocksPergrid for mass update
 	int springBlocksPerGrid; // blocksPergrid for spring update
-	int jointBlocksPerGrid[num_joint];// blocksPergrid for joint rotation
-	int resetableSpringBlocksPerGrid; // blocksPergrid for joint friction spring resettnig
+	int jointBlocksPerGrid;// blocksPergrid for joint rotation
 
 	std::vector<Constraint*> constraints;
 	thrust::device_vector<CudaContactPlane> d_planes; // used for constraints

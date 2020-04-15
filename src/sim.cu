@@ -81,66 +81,23 @@ __global__ void massForcesAndUpdate(
 	}
 }
 
-__global__ void rotateJoint(
-	Vec* __restrict__ mass_pos,
-	const int* __restrict__ left,
-	const int* __restrict__ right,
-	const int* __restrict__ anchor,
-	const int num_left,
-	const int num_right,
-	const double theta) {
-	__shared__ Vec anchor_0_shared;
-	__shared__ Vec rotation_axis_shared;
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < num_right+ num_left) {
-		if (threadIdx.x == 0) {
-			anchor_0_shared = mass_pos[anchor[0]];
-			rotation_axis_shared = anchor_0_shared - mass_pos[anchor[1]];
-			rotation_axis_shared = rotation_axis_shared.normalize();
-		}
-		__syncthreads();
-		Vec anchor_0 = anchor_0_shared;
-		Vec rotation_axis = rotation_axis_shared;
-		if (i < num_left) {
-			mass_pos[left[i]] = AxisAngleRotaion(rotation_axis, mass_pos[left[i]], theta, anchor_0);
-		}
-		else{
-			i -= num_left;//the rest are all right
-			mass_pos[right[i]] = AxisAngleRotaion(rotation_axis, mass_pos[right[i]], -theta, anchor_0);
-		}
-	}
-}
 
-
-__global__ void rotateJoint(Vec* __restrict__ mass_pos,const AllJoints joint) {
+__global__ void rotateJoint(Vec* __restrict__ mass_pos,const Joint joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
+
 		if (i < joint.anchors.num) {
 			joint.anchors.dir[i] = (mass_pos[joint.anchors.right[i]] - mass_pos[joint.anchors.left[i]]).normalize();
 		}
 		__syncthreads();
 
 		int anchor_id = joint.points.anchorId[i];
-		int id = joint.points.massId[i];
-		mass_pos[id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[id], joint.anchors.theta[i] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
+		int mass_id = joint.points.massId[i];
+		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id], 
+			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
 	}
 }
 
-
-
-__global__ void resetSprings(// this is relocated in the massForcesAndUpdate, no longer needed
-	const Vec* __restrict__ mass_pos,
-	double* __restrict__ spring_rest,
-	const int* __restrict__ spring_left,
-	const int* __restrict__ spring_right,
-	const int index_start,
-	const int index_end) {
-#pragma unroll 
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x + index_start; i < index_end; i += blockDim.x * gridDim.x) {
-		Vec s_vec = mass_pos[spring_right[i]] - mass_pos[spring_left[i]];// the vector from left to right
-		spring_rest[i] = s_vec.norm(); // current spring length
-	}
-}
 
 //namespace cg = cooperative_groups;
 //__global__ void dynamicsUpdateDummy(
@@ -237,10 +194,7 @@ void Simulation::getAll() {//copy from gpu
 void Simulation::setAll() {//copy form cpu
 	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
 	d_spring.copyFrom(spring, stream[NUM_CUDA_STREAM - 1]);
-	for (int i = 0; i < num_joint; i++)
-	{
-		d_joints[i].copyFrom(joints[i], stream[NUM_CUDA_STREAM - 1]);
-	}
+
 	//cudaDeviceSynchronize();
 }
 
@@ -257,12 +211,7 @@ inline int Simulation::computeBlocksPerGrid(const int threadsPerBlock, const int
 inline void Simulation::updateCudaParameters() {
 	massBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, mass.num);
 	springBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, spring.num);
-	for (int i = 0; i < num_joint; i++)
-	{
-		jointBlocksPerGrid[i] = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK,
-			joints[i].num_left+ joints[i].num_right);
-	}
-	resetableSpringBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, id_resetable_spring_end - id_restable_spring_start);
+	jointBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, d_joints.points.num);
 }
 
 void Simulation::setBreakpoint(const double time) {
@@ -395,15 +344,13 @@ void Simulation::execute() {
 		int n_per_rot = 10; //number of update per rotation
 		double d_theta[num_joint];
 
-		//cudaDeviceSynchronize();
-		cudaEvent_t event; // an event that tel
-		cudaEventCreateWithFlags(&event, cudaEventDisableTiming); // create event,disable timing for faster speed:https://developer.download.nvidia.com/CUDA/training/StreamsAndConcurrencyWebinar.pdf
-
-		cudaEvent_t event_rotation;
-		cudaEventCreateWithFlags(&event_rotation, cudaEventDisableTiming);
+		////cudaDeviceSynchronize();
+		//cudaEvent_t event; // an event that tel
+		//cudaEventCreateWithFlags(&event, cudaEventDisableTiming); // create event,disable timing for faster speed:https://developer.download.nvidia.com/CUDA/training/StreamsAndConcurrencyWebinar.pdf
+		//cudaEvent_t event_rotation;
+		//cudaEventCreateWithFlags(&event_rotation, cudaEventDisableTiming);
 
 		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
-			//resetSprings <<<resetableSpringBlocksPerGrid, THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_spring.rest, d_spring.left, d_spring.right, id_restable_spring_start, id_resetable_spring_end);
 
 			for (int j = 0; j < n_per_rot; j++){
 				computeSpringForces <<<springBlocksPerGrid, THREADS_PER_BLOCK >>> (d_mass.pos, d_mass.vel, d_mass.force,
@@ -416,31 +363,18 @@ void Simulation::execute() {
 					d_constraints, dt);
 				//gpuErrchk(cudaPeekAtLastError());
 			}
-			cudaEventRecord(event, 0);
-			
-			for (int k = 0; k < num_joint; k++){
-				d_theta[k] = k > 1 ? n_per_rot * jointSpeeds[k] : -n_per_rot * jointSpeeds[k];
-				//cudaStreamWaitEvent(stream[k], event, 0);
-			}
-			//for (int k = 0; k < num_joint; k++){
-			//	rotateJoint << <jointBlocksPerGrid[k], MASS_THREADS_PER_BLOCK, 0, stream[k] >> > (d_mass.pos, d_joints[k].left, d_joints[k].right, d_joints[k].anchor, d_joints[k].num_left, d_joints[k].num_right, d_theta[k]);
-			//}
+			//cudaEventRecord(event, 0);
+			//cudaStreamWaitEvent(stream[0], event, 0);
 
-			int jointBlocksPerGridall = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, d_all_joints.points.num);
-			cudaStreamWaitEvent(stream[0], event, 0);
-			//rotateJoint << <jointBlocksPerGridall, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (
-			//	d_mass.pos, d_all_joints.points.massId, d_all_joints.points.anchorId, d_all_joints.points.dir, d_all_joints.points.num,
-			//	d_all_joints.anchors.left, d_all_joints.anchors.right, d_all_joints.anchors.dir, d_all_joints.anchors.num);
-			rotateJoint << <jointBlocksPerGridall, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (d_mass.pos, d_all_joints);
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
 
 			gpuErrchk(cudaPeekAtLastError());
 
-
-			cudaEventRecord(event_rotation, stream[num_joint-1]);
-			cudaStreamWaitEvent(NULL, event_rotation, 0);
+			//cudaEventRecord(event_rotation, stream[0]);
+			//cudaStreamWaitEvent(NULL, event_rotation, 0);
 		}
-		cudaEventDestroy(event);//destroy the event, necessary to prevent memory leak
-		cudaEventDestroy(event_rotation);//destroy the event, necessary to prevent memory leak
+		//cudaEventDestroy(event);//destroy the event, necessary to prevent memory leak
+		//cudaEventDestroy(event_rotation);//destroy the event, necessary to prevent memory leak
 
 		T += NUM_QUEUED_KERNELS * dt;
 
@@ -492,13 +426,13 @@ void Simulation::execute() {
 				for (int i = 0; i < num_joint; i++)
 				{if (jointSpeeds[i] > -max_joint_speed) { jointSpeeds[i] -= speed_multiplier; }}
 			}
-			if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 					if (jointSpeeds[0] > -max_joint_speed) { jointSpeeds[0] -= speed_multiplier; }
 					if (jointSpeeds[1] > -max_joint_speed) { jointSpeeds[1] -= speed_multiplier; }
 					{if (jointSpeeds[2] < max_joint_speed) { jointSpeeds[2] += speed_multiplier; }}
 					{if (jointSpeeds[3] < max_joint_speed) { jointSpeeds[3] += speed_multiplier; }}
 			}
-			else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 				if (jointSpeeds[3] > -max_joint_speed) { jointSpeeds[3] -= speed_multiplier; }
 				if (jointSpeeds[2] > -max_joint_speed) { jointSpeeds[2] -= speed_multiplier; }
 				{if (jointSpeeds[1] < max_joint_speed) { jointSpeeds[1] += speed_multiplier; }}
@@ -509,6 +443,11 @@ void Simulation::execute() {
 				{jointSpeeds[i] = 0.;}
 			}
 
+			// update joint speed
+			for (int k = 0; k < num_joint; k++) {
+				joints.anchors.theta[k] = k > 1 ? n_per_rot * jointSpeeds[k] : -n_per_rot * jointSpeeds[k];
+			}
+			d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 

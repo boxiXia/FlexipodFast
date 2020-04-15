@@ -141,30 +141,9 @@ int main()
 	}
 
 
-#pragma omp parallel for
-	for (int i = 0; i < sim.num_joint; i++)
-	{
-		auto& std_joint = bot.Joints[i];
-		auto& joint = sim.joints[i];
-		auto& d_joint = sim.d_joints[i];
-		joint.init(std_joint.left.size(), std_joint.right.size(), true);//init the host
-		d_joint.init(std_joint.left.size(), std_joint.right.size(), false);//init the device, TODO
-		for (int k = 0; k < std_joint.left.size(); k++)
-		{ // note that #left may not equal # right
-			joint.left[k] = std_joint.left[k];
-		}
-		for (int k = 0; k < std_joint.right.size(); k++)
-		{
-			joint.right[k] = std_joint.right[k];
-		}
-		joint.anchor[0] = std_joint.anchor[0];
-		joint.anchor[1] = std_joint.anchor[1];
-	}
-
-
-	sim.all_joints.init(bot.Joints, true);
-	sim.d_all_joints.init(bot.Joints, false);
-	sim.d_all_joints.copyFrom(sim.all_joints);
+	sim.joints.init(bot.Joints, true);
+	sim.d_joints.init(bot.Joints, false);
+	sim.d_joints.copyFrom(sim.joints);
 
 
 	// set max speed for each joint
