@@ -12,124 +12,105 @@
 
 
 
-__global__ void computeSpringForces(
-	const Vec* __restrict__ mass_pos,
-	const Vec* __restrict__ mass_vel, 
-	Vec* __restrict__ mass_force,
-	const double* __restrict__ spring_k, 
-	double* __restrict__ spring_rest, 
-	const double* __restrict__ spring_damping,
-	const int* __restrict__ spring_left,
-	const int* __restrict__ spring_right, 
-	const int num_spring,
-	const int id_resetable_start,//resetable spring id start
-	const int id_resetable_end) {//resetable spring id end
-#pragma unroll
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
-		int right = spring_right[i];
-		int left = spring_left[i];
-		Vec s_vec = mass_pos[right] - mass_pos[left];// the vector from left to right
+
+__global__ void SpringUpate(
+	const MASS mass,
+	const SPRING spring
+	) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < spring.num) {
+		int right = spring.right[i];
+		int left = spring.left[i];
+		Vec s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
 		if (length > 1e-5) {
 			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
-			Vec force = spring_k[i] * (spring_rest[i] - length) * s_vec; // normal spring force
+			Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 
-			if (i >= id_resetable_start && i < id_resetable_end) {
-				spring_rest[i] = length;//reset the spring rest length if this spring is restable
+			if (spring.resetable[i]) {
+				spring.rest[i] = length;//reset the spring rest length if this spring is restable
 			}
 
-			force += s_vec.dot(mass_vel[left] - mass_vel[right]) * spring_damping[i] * s_vec;// damping
+			force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
 
-			mass_force[right].atomicVecAdd(force); // need atomics here
-			mass_force[left].atomicVecAdd(-force); // removed condition on fixed
+			mass.force[right].atomicVecAdd(force); // need atomics here
+			mass.force[left].atomicVecAdd(-force); // removed condition on fixed
 		}
 	}
+
 }
 
-__global__ void massUpdate(
-	const double* __restrict__ mass_m,
-	Vec* __restrict__ mass_pos,
-	Vec* __restrict__ mass_vel,
-	Vec* __restrict__ mass_acc,
-	Vec* __restrict__ mass_force,
-	const Vec* __restrict__ mass_force_extern,
-	const bool* __restrict__ mass_fixed,
-	const int num_mass,
-	const Vec global_acc, 
-	const CUDA_GLOBAL_CONSTRAINTS c, 
+__global__ void MassUpate(
+	const MASS mass,
+	const CUDA_GLOBAL_CONSTRAINTS c,
+	const Vec global_acc,
 	const double dt) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if(i < num_mass) {
-		if (mass_fixed[i] == false) {
+	if (i < mass.num) {
+		if (mass.fixed[i] == false) {
 			Vec force = global_acc;
-			double m = mass_m[i];
+			double m = mass.m[i];
 			force *= m; // force = d_mass.m[i] * global_acc;
-			force += mass_force[i];
-			force += mass_force_extern[i];// add external force [N]
+			force += mass.force[i];
+			force += mass.force_extern[i];// add external force [N]
 
 			for (int j = 0; j < c.num_planes; j++) { // global constraints
-				c.d_planes[j].applyForce(force, mass_pos[i], mass_vel[i]); // todo fix this 
+				c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
 			}
 			for (int j = 0; j < c.num_balls; j++) {
-				c.d_balls[j].applyForce(force, mass_pos[i]);
+				c.d_balls[j].applyForce(force, mass.pos[i]);
 			}
-			mass_acc[i] = force / m;
-			mass_vel[i] += mass_acc[i] * dt;
-			mass_pos[i] += mass_vel[i] * dt;
-			mass_force[i].setZero();
+			mass.acc[i] = force / m;
+			mass.vel[i] += mass.acc[i] * dt;
+			mass.pos[i] += mass.vel[i] * dt;
+			mass.force[i].setZero();
 		}
 	}
 }
 
 
 __global__ void massUpdateAndRotate(
-	const double* __restrict__ mass_m,
-	Vec* __restrict__ mass_pos,
-	Vec* __restrict__ mass_vel,
-	Vec* __restrict__ mass_acc,
-	Vec* __restrict__ mass_force,
-	const Vec* __restrict__ mass_force_extern,
-	const bool* __restrict__ mass_fixed,
-	const int num_mass,
-	const Vec global_acc,
+	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
-	const Joint joint,
+	const JOINT joint,
+	const Vec global_acc,
 	const double dt) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < num_mass) {// this part is same as massUpdate
-		if (mass_fixed[i] == false) {
+	if (i < mass.num) {
+		if (mass.fixed[i] == false) {//this part is same as MassUpate
 			Vec force = global_acc;
-			double m = mass_m[i];
+			double m = mass.m[i];
 			force *= m; // force = d_mass.m[i] * global_acc;
-			force += mass_force[i];
-			force += mass_force_extern[i];// add external force [N]
+			force += mass.force[i];
+			force += mass.force_extern[i];// add external force [N]
 
 			for (int j = 0; j < c.num_planes; j++) { // global constraints
-				c.d_planes[j].applyForce(force, mass_pos[i], mass_vel[i]); // todo fix this 
+				c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
 			}
 			for (int j = 0; j < c.num_balls; j++) {
-				c.d_balls[j].applyForce(force, mass_pos[i]);
+				c.d_balls[j].applyForce(force, mass.pos[i]);
 			}
-			mass_acc[i] = force / m;
-			mass_vel[i] += mass_acc[i] * dt;
-			mass_pos[i] += mass_vel[i] * dt;
-			mass_force[i].setZero();
+			mass.acc[i] = force / m;
+			mass.vel[i] += mass.acc[i] * dt;
+			mass.pos[i] += mass.vel[i] * dt;
+			mass.force[i].setZero();
 		}
 	}
-	else if ((i -= num_mass) < joint.points.num) {// this part is same as rotateJoint
+	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint
 		if (i < joint.anchors.num) {
-			joint.anchors.dir[i] = (mass_pos[joint.anchors.right[i]] - mass_pos[joint.anchors.left[i]]).normalize();
+			joint.anchors.dir[i] = (mass.pos[joint.anchors.right[i]] - mass.pos[joint.anchors.left[i]]).normalize();
 		}
 		__syncthreads();
 
 		int anchor_id = joint.points.anchorId[i];
 		int mass_id = joint.points.massId[i];
-		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
-			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
+		mass.pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass.pos[mass_id],
+			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass.pos[joint.anchors.left[anchor_id]]);
 	}
 }
 
-__global__ void rotateJoint(Vec* __restrict__ mass_pos,const Joint joint) {
+
+__global__ void rotateJoint(Vec* __restrict__ mass_pos,const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
 
@@ -400,26 +381,18 @@ void Simulation::execute() {
 		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
 
 			for (int j = 0; j < n_per_rot-1; j++){
-				computeSpringForces <<<springBlocksPerGrid, THREADS_PER_BLOCK >>> (d_mass.pos, d_mass.vel, d_mass.force,
-					d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num, id_restable_spring_start, id_resetable_spring_end);
-				//gpuErrchk(cudaPeekAtLastError());
 
-				massUpdate <<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK >>> (
-					d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
-					d_mass.force, d_mass.force_extern, d_mass.fixed, mass.num, global_acc,
-					d_constraints, dt);
+				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);		
+				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
 				//gpuErrchk(cudaPeekAtLastError());
 			}
 			//cudaEventRecord(event, 0);
 			//cudaStreamWaitEvent(stream[0], event, 0);
 
-			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force,
-				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num, id_restable_spring_start, id_resetable_spring_end);
+			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 
-			massUpdateAndRotate << <massBlocksPerGrid+ jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
-				d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
-				d_mass.force, d_mass.force_extern, d_mass.fixed, mass.num, global_acc,
-				d_constraints, d_joints, dt);
+			massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
+
 
 			//rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
 

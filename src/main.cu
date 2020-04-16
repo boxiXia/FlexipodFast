@@ -80,6 +80,7 @@ int main()
 		spring.k[i] = spring_constant; // spring constant
 		spring.damping[i] = spring_damping; // spring constant
 		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm(); // spring rest length
+		spring.resetable[i] = false; // set all spring as non-resetable
 	}
 
 	// bot.idVertices: body,leg0,leg1,leg2,leg3,anchor0,anchor1,anchor2,anchor3,\
@@ -108,6 +109,7 @@ int main()
 	{
 		spring.k[i] = spring_constant/5.;// resetable spring, reset the rest length per dynamic update
 		spring.damping[i] = spring_damping*2.;
+		spring.resetable[i] = true;
 	}
 
 

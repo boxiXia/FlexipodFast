@@ -34,8 +34,8 @@
 
 
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
-constexpr int THREADS_PER_BLOCK = 128;
-constexpr int MASS_THREADS_PER_BLOCK = 32;
+constexpr int THREADS_PER_BLOCK = 64;
+constexpr int MASS_THREADS_PER_BLOCK = 64;
 
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr int  NUM_QUEUED_KERNELS = 120; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
@@ -134,6 +134,7 @@ struct SPRING {
 	double* damping = nullptr; // damping on the masses.
 	int* left = nullptr; // index of left mass
 	int* right = nullptr; // index of right mass
+	bool* resetable = nullptr; // a flag indicating whether to reset every dynamic update
 	int num =0;
 	SPRING() {}
 	SPRING(int num, bool on_host = true) {
@@ -149,6 +150,7 @@ struct SPRING {
 		gpuErrchk((*malloc)((void**)&damping, num * sizeof(double)));
 		gpuErrchk((*malloc)((void**)&left, num * sizeof(int)));
 		gpuErrchk((*malloc)((void**)&right, num * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&resetable, num * sizeof(bool)));
 		this->num = num;
 	}
 	void copyFrom(const SPRING& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
@@ -157,6 +159,8 @@ struct SPRING {
 		gpuErrchk(cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream));
+
 		//this->num = other.num;
 	}
 };
@@ -209,7 +213,6 @@ struct RotPoints { // the points that belongs to the rotational joints
 	int num; // the length of array "id"
 	RotPoints(){}
 	RotPoints(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); }
-
 	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
 		num = 0;
 		for each (auto & std_joint in std_joints)
@@ -248,23 +251,20 @@ struct RotPoints { // the points that belongs to the rotational joints
 			}
 		}
 	}
-
 	void copyFrom(const RotPoints& other, cudaStream_t stream = (cudaStream_t)0) {
 		gpuErrchk(cudaMemcpyAsync(massId, other.massId, num * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(anchorId, other.anchorId, num * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(dir, other.dir, num * sizeof(int), cudaMemcpyDefault, stream));
-
 	}
 };
 
-
-struct Joint {
+struct JOINT {
 	RotPoints points;
 	RotAnchors anchors;
 
-	Joint() {};
-	Joint(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);};
-	void copyFrom(const Joint& other, cudaStream_t stream = (cudaStream_t)0) {
+	JOINT() {};
+	JOINT(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);};
+	void copyFrom(const JOINT& other, cudaStream_t stream = (cudaStream_t)0) {
 		points.copyFrom(other.points, stream); // copy from the other points
 		anchors.copyFrom(other.anchors, stream); // copy from the other anchor
 	}
@@ -292,11 +292,11 @@ public:
 	// host
 	MASS mass; // a flat fiew of all masses
 	SPRING spring; // a flat fiew of all springs
-	Joint joints;// a flat view of all joints
+	JOINT joints;// a flat view of all joints
 	// device
 	MASS d_mass;
 	SPRING d_spring;
-	Joint d_joints;
+	JOINT d_joints;
 	
 	double jointSpeeds[num_joint] = { 0 };
 	//size_t num_mass=0;// refer to mass.num
