@@ -46,7 +46,7 @@ __global__ void computeSpringForces(
 	}
 }
 
-__global__ void massForcesAndUpdate(
+__global__ void massUpdate(
 	const double* __restrict__ mass_m,
 	Vec* __restrict__ mass_pos,
 	Vec* __restrict__ mass_vel,
@@ -58,8 +58,8 @@ __global__ void massForcesAndUpdate(
 	const Vec global_acc, 
 	const CUDA_GLOBAL_CONSTRAINTS c, 
 	const double dt) {
-#pragma unroll
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if(i < num_mass) {
 		if (mass_fixed[i] == false) {
 			Vec force = global_acc;
 			double m = mass_m[i];
@@ -81,6 +81,53 @@ __global__ void massForcesAndUpdate(
 	}
 }
 
+
+__global__ void massUpdateAndRotate(
+	const double* __restrict__ mass_m,
+	Vec* __restrict__ mass_pos,
+	Vec* __restrict__ mass_vel,
+	Vec* __restrict__ mass_acc,
+	Vec* __restrict__ mass_force,
+	const Vec* __restrict__ mass_force_extern,
+	const bool* __restrict__ mass_fixed,
+	const int num_mass,
+	const Vec global_acc,
+	const CUDA_GLOBAL_CONSTRAINTS c,
+	const Joint joint,
+	const double dt) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < num_mass) {// this part is same as massUpdate
+		if (mass_fixed[i] == false) {
+			Vec force = global_acc;
+			double m = mass_m[i];
+			force *= m; // force = d_mass.m[i] * global_acc;
+			force += mass_force[i];
+			force += mass_force_extern[i];// add external force [N]
+
+			for (int j = 0; j < c.num_planes; j++) { // global constraints
+				c.d_planes[j].applyForce(force, mass_pos[i], mass_vel[i]); // todo fix this 
+			}
+			for (int j = 0; j < c.num_balls; j++) {
+				c.d_balls[j].applyForce(force, mass_pos[i]);
+			}
+			mass_acc[i] = force / m;
+			mass_vel[i] += mass_acc[i] * dt;
+			mass_pos[i] += mass_vel[i] * dt;
+			mass_force[i].setZero();
+		}
+	}
+	else if ((i -= num_mass) < joint.points.num) {// this part is same as rotateJoint
+		if (i < joint.anchors.num) {
+			joint.anchors.dir[i] = (mass_pos[joint.anchors.right[i]] - mass_pos[joint.anchors.left[i]]).normalize();
+		}
+		__syncthreads();
+
+		int anchor_id = joint.points.anchorId[i];
+		int mass_id = joint.points.massId[i];
+		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
+			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
+	}
+}
 
 __global__ void rotateJoint(Vec* __restrict__ mass_pos,const Joint joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -352,12 +399,12 @@ void Simulation::execute() {
 
 		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
 
-			for (int j = 0; j < n_per_rot; j++){
+			for (int j = 0; j < n_per_rot-1; j++){
 				computeSpringForces <<<springBlocksPerGrid, THREADS_PER_BLOCK >>> (d_mass.pos, d_mass.vel, d_mass.force,
 					d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num, id_restable_spring_start, id_resetable_spring_end);
 				//gpuErrchk(cudaPeekAtLastError());
 
-				massForcesAndUpdate <<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK >>> (
+				massUpdate <<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK >>> (
 					d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
 					d_mass.force, d_mass.force_extern, d_mass.fixed, mass.num, global_acc,
 					d_constraints, dt);
@@ -366,7 +413,15 @@ void Simulation::execute() {
 			//cudaEventRecord(event, 0);
 			//cudaStreamWaitEvent(stream[0], event, 0);
 
-			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
+			computeSpringForces << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass.pos, d_mass.vel, d_mass.force,
+				d_spring.k, d_spring.rest, d_spring.damping, d_spring.left, d_spring.right, spring.num, id_restable_spring_start, id_resetable_spring_end);
+
+			massUpdateAndRotate << <massBlocksPerGrid+ jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (
+				d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc,
+				d_mass.force, d_mass.force_extern, d_mass.fixed, mass.num, global_acc,
+				d_constraints, d_joints, dt);
+
+			//rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
 
 			gpuErrchk(cudaPeekAtLastError());
 
