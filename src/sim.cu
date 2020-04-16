@@ -11,8 +11,6 @@
 //#include <cooperative_groups.h>
 
 
-
-
 __global__ void SpringUpate(
 	const MASS mass,
 	const SPRING spring
@@ -67,7 +65,6 @@ __global__ void MassUpate(
 		}
 	}
 }
-
 
 __global__ void massUpdateAndRotate(
 	const MASS mass,
@@ -390,13 +387,10 @@ void Simulation::execute() {
 			//cudaStreamWaitEvent(stream[0], event, 0);
 
 			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-
 			massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
 
-
 			//rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
-
-			gpuErrchk(cudaPeekAtLastError());
+			//gpuErrchk(cudaPeekAtLastError());
 
 			//cudaEventRecord(event_rotation, stream[0]);
 			//cudaStreamWaitEvent(NULL, event_rotation, 0);
