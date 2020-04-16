@@ -22,6 +22,19 @@ CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const dou
 	return v_rot;
 }
 
+
+CUDA_CALLABLE_MEMBER Vec slerp(Vec p0, Vec p1, double t) {
+	double w = angleBetween(p0, p1);//total angle
+	double s = sin(w);
+	Vec p_lerp = sin((1 - t) * w) / s * p0 + sin(t * w) / s * p1;
+	return p_lerp;
+}
+
+// https://stackoverflow.com/questions/14066933/direct-way-of-computing-clockwise-angle-between-2-vectors
+CUDA_CALLABLE_MEMBER double signedAngleBetween(Vec p0, Vec p1, Vec normal) {
+	return atan2(cross(p0, p1).dot(normal), p0.dot(p1));
+}
+
 //CUDA_DEVICE void Vec::atomicVecAdd(const Vec& v) {
 //#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
 //	atomicAdd(&x, v.x);

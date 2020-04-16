@@ -203,7 +203,7 @@ struct __align__(16) Vec {
 #ifdef __CUDA_ARCH__ 
 		return norm3d(x, y, z);
 #else
-		return sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2));
+		return sqrt(x*x + y*y + z*z);
 #endif
 	} // gives vector norm
 
@@ -269,14 +269,11 @@ struct __align__(16) Vec {
 		return acos(p0.dot(p1) / (p0.norm() * p1.norm()));
 	}
 
-	friend CUDA_CALLABLE_MEMBER Vec slerp(Vec p0,Vec p1,double t) {
-		double w = angleBetween(p0, p1);//total angle
-		double s = sin(w);
-		Vec p_lerp = sin((1 - t) * w) / s * p0 + sin(t * w) / s * p1;
-		return p_lerp;
-	}
-};
+	friend CUDA_CALLABLE_MEMBER double signedAngleBetween(Vec p0, Vec p1, Vec normal);
 
+
+	friend CUDA_CALLABLE_MEMBER Vec slerp(Vec p0, Vec p1, double t);
+};
 
 
 
