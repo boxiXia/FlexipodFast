@@ -55,7 +55,9 @@ struct StdJoint {
 	std::vector<int> left;// the indices of the left points
 	std::vector<int> right;// the indices of the right points
 	std::vector<int> anchor;// the 2 indices of the anchor points: left_anchor_id,right_anchor_id
-	MSGPACK_DEFINE(left, right, anchor);
+	int leftCoord;
+	int rightCoord;
+	MSGPACK_DEFINE(left, right, anchor, leftCoord, rightCoord);
 };
 class Model {
 public:
@@ -170,6 +172,10 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 	int* right;// index of the right anchor of the joint
 	Vec* dir; // direction of the joint,normalized
 	double* theta;// the angular increment per joint update
+
+	int* leftCoord; // the index of left coordintate (oxyz) start for all joints (flat view)
+	int* rightCoord;// the index of right coordintate (oxyz) start for all joints (flat view)
+
 	int num; // num of anchor
 	RotAnchors(){}
 	RotAnchors(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);}
@@ -181,24 +187,33 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device	
 
-		gpuErrchk((*malloc)((void**)&left, num * sizeof(int)));
-		gpuErrchk((*malloc)((void**)&right, num * sizeof(int)));
-		gpuErrchk((*malloc)((void**)&dir, num * sizeof(Vec)));
-		gpuErrchk((*malloc)((void**)&theta, num * sizeof(double)));
+		(*malloc)((void**)&left, num * sizeof(int));
+		(*malloc)((void**)&right, num * sizeof(int));
+		(*malloc)((void**)&dir, num * sizeof(Vec));
+		(*malloc)((void**)&theta, num * sizeof(double));
+		(*malloc)((void**)&leftCoord, num * sizeof(int));
+		(*malloc)((void**)&rightCoord, num * sizeof(int));
+		gpuErrchk(cudaPeekAtLastError());
 		if (on_host) { // copy the std_joints to this
 			for (int joint_id = 0; joint_id < num; joint_id++)
 			{
 				left[joint_id] = std_joints[joint_id].anchor[0];
 				right[joint_id] = std_joints[joint_id].anchor[1];
+				leftCoord[joint_id] = std_joints[joint_id].leftCoord;
+				rightCoord[joint_id] = std_joints[joint_id].rightCoord;
 			}
 		}
 	}
 
 	void copyFrom(const RotAnchors& other, cudaStream_t stream = (cudaStream_t)0) {
-		gpuErrchk(cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(dir, other.dir, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream));
+		cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(dir, other.dir, num * sizeof(Vec), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(leftCoord, other.leftCoord, num * sizeof(int), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(rightCoord, other.rightCoord, num * sizeof(int), cudaMemcpyDefault, stream);
+		gpuErrchk(cudaPeekAtLastError());
+
 	}
 	void copyThetaFrom(const RotAnchors& other, cudaStream_t stream = (cudaStream_t)0) {
 		gpuErrchk(cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream));
@@ -211,6 +226,7 @@ struct RotPoints { // the points that belongs to the rotational joints
 	int* anchorId;// e.g, k: the k-th anchor,left mass, -k: the k-th anchor, right mass
 	int* dir; // direction: left=+1,right=-1
 	int num; // the length of array "id"
+
 	RotPoints(){}
 	RotPoints(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); }
 	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
