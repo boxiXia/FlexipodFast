@@ -58,10 +58,15 @@ int main()
 	sim.dt = 4e-5; // timestep
 
 	double m = 8e-4;// mass per vertex
+
 	double spring_constant = 6e2; //spring constant for silicone leg
-	double spring_constant_high = spring_constant*3.5;//spring constant for rigid spring
-	double spring_constant_low = spring_constant*0.2;// spring constant for resetable spring
 	double spring_damping = 0.4; // damping for spring
+
+	double scale_high = 2.5;// scaling factor
+	double scale_low = 0.2;
+
+	double spring_constant_high = spring_constant* scale_high;//spring constant for rigid spring
+	double spring_constant_low = spring_constant* scale_low;// spring constant for resetable spring
 
 	printf("total mass:%.2f kg\n", m * num_mass);
 
@@ -107,8 +112,8 @@ int main()
 	sim.id_resetable_spring_end = bot.idEdges[num_body + 3];
 	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
-		spring.k[i] = spring_constant/5.;// resetable spring, reset the rest length per dynamic update
-		spring.damping[i] = spring_damping*2.;
+		spring.k[i] = spring_constant_low;// resetable spring, reset the rest length per dynamic update
+		spring.damping[i] = spring_damping*1.5;
 		spring.resetable[i] = true;
 	}
 
