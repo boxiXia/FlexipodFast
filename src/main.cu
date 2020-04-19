@@ -57,7 +57,7 @@ int main()
 	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
 	sim.dt = 4e-5; // timestep
 
-	double m = 1e-3;// mass per vertex
+	double m = 8e-4;// mass per vertex
 	double spring_constant = 6e2; //spring constant for silicone leg
 	double spring_constant_high = spring_constant*3.5;//spring constant for rigid spring
 	double spring_constant_low = spring_constant*0.2;// spring constant for resetable spring
