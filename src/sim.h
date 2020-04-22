@@ -171,6 +171,7 @@ struct SPRING {
 	}
 };
 
+
 struct RotAnchors { // the anchors that belongs to the rotational joints
 	int* left; // index of the left anchor of the joint
 	int* right;// index of the right anchor of the joint
@@ -293,7 +294,7 @@ struct JOINT {
 		anchors.init(std_joints, on_host);//initialize anchor
 		points.init(std_joints, on_host);
 	}
-
+	inline int size() { return anchors.num; }
 };
 
 class Simulation {
@@ -308,7 +309,6 @@ public:
 	int id_oxyz_start = 0;// coordinate oxyz start index (inclusive)
 	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
 
-	static const int num_joint = 4; //todo:make it dynamic
 	// host
 	MASS mass; // a flat fiew of all masses
 	SPRING spring; // a flat fiew of all springs
@@ -318,11 +318,15 @@ public:
 	SPRING d_spring;
 	JOINT d_joints;
 	
-	double jointSpeeds[num_joint] = { 0 };
-	//size_t num_mass=0;// refer to mass.num
-	//size_t num_spring=0;//refer to spring.num
+	double* jointSpeeds; // joint speed in RPM, initialized in start()
 
 	double max_joint_speed = 1e-4;
+
+
+	//size_t num_mass=0;// refer to mass.num
+	//size_t num_spring=0;//refer to spring.num
+	//int num_joint = 4; //refer to joints.size()
+
 
 	// control
 	bool RUNNING = false;
@@ -384,6 +388,8 @@ private:
 
 	CUDA_GLOBAL_CONSTRAINTS d_constraints;
 	bool update_constraints = true;
+
+	int num_update_per_rot = 10; //number of update per rotation
 
 #ifdef GRAPHICS
 	int lineWidth = 3;

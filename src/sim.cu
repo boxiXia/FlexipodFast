@@ -211,6 +211,8 @@ void Simulation::start() {
 
 	update_constraints = false;
 
+	cudaMallocHost((void**)&jointSpeeds, joints.size() * sizeof(double));//initialize joint speed array 
+
 	setAll();// copy mass and spring to gpu
 	gpu_thread = std::thread(&Simulation::_run, this); //TODO: thread
 }
@@ -305,18 +307,15 @@ void Simulation::execute() {
 			continue;
 		}
 
-		int n_per_rot = 10; //number of update per rotation
-		double d_theta[num_joint];
-
 		////cudaDeviceSynchronize();
 		//cudaEvent_t event; // an event that tel
 		//cudaEventCreateWithFlags(&event, cudaEventDisableTiming); // create event,disable timing for faster speed:https://developer.download.nvidia.com/CUDA/training/StreamsAndConcurrencyWebinar.pdf
 		//cudaEvent_t event_rotation;
 		//cudaEventCreateWithFlags(&event_rotation, cudaEventDisableTiming);
 
-		for (int i = 0; i < (NUM_QUEUED_KERNELS/ n_per_rot); i++) {
+		for (int i = 0; i < (NUM_QUEUED_KERNELS/ num_update_per_rot); i++) {
 
-			for (int j = 0; j < n_per_rot-1; j++){
+			for (int j = 0; j < num_update_per_rot-1; j++){
 
 				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);		
 				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
@@ -398,11 +397,11 @@ void Simulation::execute() {
 			double speed_multiplier = 0.000005;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
-				for (int i = 0; i < num_joint; i++)
+				for (int i = 0; i < joints.size(); i++)
 				{if (jointSpeeds[i] < max_joint_speed) { jointSpeeds[i] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
-				for (int i = 0; i < num_joint; i++)
+				for (int i = 0; i < joints.size(); i++)
 				{if (jointSpeeds[i] > -max_joint_speed) { jointSpeeds[i] -= speed_multiplier; }}
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
@@ -418,13 +417,13 @@ void Simulation::execute() {
 				{if (jointSpeeds[0] < max_joint_speed) { jointSpeeds[0] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) {
-				for (int i = 0; i < num_joint; i++)
+				for (int i = 0; i < joints.size(); i++)
 				{jointSpeeds[i] = 0.;}
 			}
 
 			// update joint speed
-			for (int k = 0; k < num_joint; k++) {
-				joints.anchors.theta[k] = k > 1 ? n_per_rot * jointSpeeds[k] : -n_per_rot * jointSpeeds[k];
+			for (int k = 0; k < joints.size(); k++) {
+				joints.anchors.theta[k] = k > 1 ? num_update_per_rot * jointSpeeds[k] : -num_update_per_rot * jointSpeeds[k];
 			}
 			d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
 

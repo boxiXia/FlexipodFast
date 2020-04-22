@@ -45,10 +45,14 @@ int main()
 	auto start = std::chrono::steady_clock::now();
 
 	const int num_body = 5;//number of bodies
+	
 	Model bot("..\\src\\data.msgpack"); //defined in sim.h
 
-	int num_mass = bot.vertices.size(); // number of mass
-	int num_spring = bot.edges.size(); // number of spring
+	const int num_mass = bot.vertices.size(); // number of mass
+	const int num_spring = bot.edges.size(); // number of spring
+
+	const int num_joint = bot.Joints.size();//number of rotational joint
+
 
 	Simulation sim(num_mass, num_spring); // Simulation object
 	MASS& mass = sim.mass; // reference variable for sim.mass
@@ -123,12 +127,12 @@ int main()
 
 	//// the start (inclusive) and end (exclusive) index of the anchor points
 	//double id_joint_anchor_start = bot.idVertices[num_body];
-	//double id_joint_anchor_end = bot.idVertices[num_body + sim.num_joint];
+	//double id_joint_anchor_end = bot.idVertices[num_body + num_joint];
 
 	//oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,\
 				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,
-	sim.id_oxyz_start = bot.idVertices[num_body + sim.num_joint];
-	sim.id_oxyz_end = bot.idVertices[num_body + sim.num_joint + 1 + 2* sim.num_joint];
+	sim.id_oxyz_start = bot.idVertices[num_body + num_joint];
+	sim.id_oxyz_end = bot.idVertices[num_body + num_joint + 1 + 2* num_joint];
 
 	double scale_down = 0.1;
 	// set lower mass for the anchored coordinate systems
