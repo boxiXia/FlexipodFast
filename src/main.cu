@@ -76,6 +76,7 @@ int main()
 		mass.pos[i]= bot.vertices[i]; // position (Vec) [m]
 		mass.color[i]= bot.colors[i]; // color (Vec) [0.0-1.0]
 		mass.m[i] = m; // mass [kg]
+		mass.constrain[i] = bot.isSurface[i];// set constrain to true for suface points, and false otherwise
 	}
 #pragma omp parallel for
 	for (int i = 0; i < num_spring; i++)

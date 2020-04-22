@@ -63,11 +63,12 @@ class Model {
 public:
 	std::vector<std::vector<double> > vertices;// the mass xyzs
 	std::vector<std::vector<int> > edges;//the spring ids
+	std::vector<bool> isSurface;// whether the mass is near the surface
 	std::vector<int> idVertices;// the edge id of the vertices
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<std::vector<double> > colors;// the mass xyzs
 	std::vector<StdJoint> Joints;// the joints
-	MSGPACK_DEFINE(vertices, edges, idVertices, idEdges, colors, Joints); // write the member variables that you want to pack
+	MSGPACK_DEFINE(vertices, edges, isSurface, idVertices, idEdges, colors, Joints); // write the member variables that you want to pack
 	Model() {}
 	Model(const char* file_path) {
 		// get the msgpack robot model
@@ -91,6 +92,7 @@ struct MASS {
 	Vec* force_extern = nullptr;
 	Vec* color = nullptr;
 	bool* fixed = nullptr;
+	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
 	int num = 0;
 	MASS() { }
 	MASS(int num, bool on_host = true) {
@@ -110,6 +112,7 @@ struct MASS {
 		gpuErrchk((*malloc)((void**)&force_extern, num * sizeof(Vec)));
 		gpuErrchk((*malloc)((void**)&color, num * sizeof(Vec)));
 		gpuErrchk((*malloc)((void**)&fixed, num * sizeof(bool)));
+		gpuErrchk((*malloc)((void**)&constrain, num * sizeof(bool)));
 		this->num = num;
 	}
 	void copyFrom(MASS& other, cudaStream_t stream=(cudaStream_t)0) {
@@ -121,6 +124,7 @@ struct MASS {
 		gpuErrchk(cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream));
 		//this->num = other.num;
 	}
 	void CopyPosVelAccFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {

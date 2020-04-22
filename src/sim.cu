@@ -21,7 +21,7 @@ __global__ void SpringUpate(
 		int left = spring.left[i];
 		Vec s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		if (length > 1e-5) {
+		if (length > 1e-7) {
 			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
 			Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 
@@ -52,12 +52,15 @@ __global__ void MassUpate(
 			force += mass.force[i];
 			force += mass.force_extern[i];// add external force [N]
 
-			for (int j = 0; j < c.num_planes; j++) { // global constraints
-				c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
+			/*if (mass.constrain) */{
+				for (int j = 0; j < c.num_planes; j++) { // global constraints
+					c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
+				}
+				for (int j = 0; j < c.num_balls; j++) {
+					c.d_balls[j].applyForce(force, mass.pos[i]);
+				}
 			}
-			for (int j = 0; j < c.num_balls; j++) {
-				c.d_balls[j].applyForce(force, mass.pos[i]);
-			}
+
 			mass.acc[i] = force / m;
 			mass.vel[i] += mass.acc[i] * dt;
 			mass.pos[i] += mass.vel[i] * dt;
@@ -81,12 +84,15 @@ __global__ void massUpdateAndRotate(
 			force += mass.force[i];
 			force += mass.force_extern[i];// add external force [N]
 
-			for (int j = 0; j < c.num_planes; j++) { // global constraints
-				c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
+			/*if (mass.constrain)*/ {
+				for (int j = 0; j < c.num_planes; j++) { // global constraints
+					c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
+				}
+				for (int j = 0; j < c.num_balls; j++) {
+					c.d_balls[j].applyForce(force, mass.pos[i]);
+				}
 			}
-			for (int j = 0; j < c.num_balls; j++) {
-				c.d_balls[j].applyForce(force, mass.pos[i]);
-			}
+
 			mass.acc[i] = force / m;
 			mass.vel[i] += mass.acc[i] * dt;
 			mass.pos[i] += mass.vel[i] * dt;
@@ -333,12 +339,30 @@ void Simulation::execute() {
 
 		T += NUM_QUEUED_KERNELS * dt;
 
+#ifdef UDP
+		if (fmod(T, 1. / 100) < NUM_QUEUED_KERNELS * dt) {
+			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 
+		//	for (int i = 0; i < joints.anchors.num; i++)
+		//{
+		//	Vec rotation_axis = mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]];
+		//	Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
+		//	Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1]- mass.pos[joints.anchors.rightCoord[i]];//oxyz
+		//	//printf("%f",x_left.norm());
+		//	//printf("\t");
+		//	//printf("%f",x_right.norm());
+		//	//printf("\t");
+		//	//printf("%3.3f\t\t", x_left.dot(x_right) / (x_left.norm() * x_right.norm()));
+		//	printf("%3.3f\t\t", signedAngleBetween(x_left, x_right, rotation_axis));
+		//	//printf("%3.3f\t\t", angleBetween(x_left, x_right));
+		//}
+		//printf("\r");
+		////printf("\n");
+		//}
+#endif
 
 #ifdef GRAPHICS
 		if (fmod(T, 1./60.1) < NUM_QUEUED_KERNELS * dt) {
-
-			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 
 			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp
@@ -405,22 +429,7 @@ void Simulation::execute() {
 			d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
 
 
-			for (int i = 0; i < joints.anchors.num; i++)
-			{
-				Vec rotation_axis = mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]];
-				Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
-				Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1]- mass.pos[joints.anchors.rightCoord[i]];//oxyz
-				//printf("%f",x_left.norm());
-				//printf("\t");
-				//printf("%f",x_right.norm());
-				//printf("\t");
-				//printf("%3.3f\t\t", x_left.dot(x_right) / (x_left.norm() * x_right.norm()));
 
-				printf("%3.3f\t\t", signedAngleBetween(x_left, x_right, rotation_axis));
-				//printf("%3.3f\t\t", angleBetween(x_left, x_right));
-			}
-			printf("\r");
-			//printf("\n");
 
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
