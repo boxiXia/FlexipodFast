@@ -358,7 +358,7 @@ void Simulation::execute() {
 		//}
 		//printf("\r");
 		////printf("\n");
-		//}
+		}
 #endif
 
 #ifdef GRAPHICS
