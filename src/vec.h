@@ -30,7 +30,7 @@
 #include <cuda_device_runtime_api.h>
 #include <device_launch_parameters.h>
 
-
+//#include<sys/types.h>
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 //https://stackoverflow.com/questions/39274472/error-function-atomicadddouble-double-has-already-been-defined/39287554

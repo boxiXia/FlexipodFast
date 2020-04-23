@@ -61,16 +61,16 @@ int main()
 	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
 	sim.dt = 4e-5; // timestep
 
-	double m = 8e-4;// mass per vertex
+	const double m = 8e-4;// mass per vertex
 
-	double spring_constant = 6e2; //spring constant for silicone leg
-	double spring_damping = 0.4; // damping for spring
+	const double spring_constant = 6e2; //spring constant for silicone leg
+	const double spring_damping = 0.4; // damping for spring
 
-	double scale_high = 2.5;// scaling factor
-	double scale_low = 0.2;
+	const double scale_high = 2.5;// scaling factor
+	const double scale_low = 0.2;
 
-	double spring_constant_high = spring_constant* scale_high;//spring constant for rigid spring
-	double spring_constant_low = spring_constant* scale_low;// spring constant for resetable spring
+	const double spring_constant_high = spring_constant* scale_high;//spring constant for rigid spring
+	const double spring_constant_low = spring_constant* scale_low;// spring constant for resetable spring
 
 	printf("total mass:%.2f kg\n", m * num_mass);
 
@@ -143,7 +143,7 @@ int main()
 
 	for (int i = bot.idEdges[num_body + 3]; i < bot.idEdges[num_body + 4]; i++)
 	{
-		spring.k[i] = spring_constant * 2*scale_down;// oxyz_self_springs
+		spring.k[i] = spring_constant * scale_high *scale_down;// oxyz_self_springs
 		spring.damping[i] = spring_damping * scale_down;
 	}
 	for (int i = bot.idEdges[num_body + 4]; i < bot.idEdges[num_body + 5]; i++)

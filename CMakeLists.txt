@@ -77,6 +77,11 @@ target_link_libraries(flexipod PRIVATE
         OpenMP::OpenMP_CXX
         ${ALL_GL_LIBS}
         cuda)# cudart
-
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
+
+add_executable(testNetwork
+    src/testNetwork.cpp
+    src/network.h
+)
+ target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
 
