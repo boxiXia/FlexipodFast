@@ -58,16 +58,22 @@ public:
         if (ret < 0)
             throw std::system_error(WSAGetLastError(), std::system_category(), "sendto failed");
     }
-    sockaddr_in RecvFrom(char* buffer, int len, int flags = 0)
+    /* ref: https://docs.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-recvfrom
+    buffer: A buffer for the incoming data.
+    buffer_len: The length, in bytes, of the buffer pointed to by the buf parameter.
+    flags: A set of options that modify the behavior of the function call beyond the options specified for the associated socket.
+    n_bytes_received: the number of bytes received
+    */
+    sockaddr_in RecvFrom(char* buffer, int buffer_len,int& n_bytes_received, int flags = 0)
     {
         sockaddr_in from;
         int size = sizeof(from);
-        int ret = recvfrom(sock, buffer, len, flags, reinterpret_cast<SOCKADDR*>(&from), &size);
+        int ret = recvfrom(sock, buffer, buffer_len, flags, reinterpret_cast<SOCKADDR*>(&from), &size);
         if (ret < 0)
             throw std::system_error(WSAGetLastError(), std::system_category(), "recvfrom failed");
-
         // make the buffer zero terminated
         buffer[ret] = 0;
+        n_bytes_received = ret;
         return from;
     }
     void Bind(unsigned short port)

@@ -313,9 +313,9 @@ void Simulation::execute() {
 		//cudaEvent_t event_rotation;
 		//cudaEventCreateWithFlags(&event_rotation, cudaEventDisableTiming);
 
-		for (int i = 0; i < (NUM_QUEUED_KERNELS/ num_update_per_rot); i++) {
+		for (int i = 0; i < (NUM_QUEUED_KERNELS/ NUM_UPDATE_PER_ROTATION); i++) {
 
-			for (int j = 0; j < num_update_per_rot-1; j++){
+			for (int j = 0; j < NUM_UPDATE_PER_ROTATION-1; j++){
 
 				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);		
 				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
@@ -361,7 +361,7 @@ void Simulation::execute() {
 #endif
 
 #ifdef GRAPHICS
-		if (fmod(T, 1./60.1) < NUM_QUEUED_KERNELS * dt) {
+		if (fmod(T, 1./300.1) < NUM_QUEUED_KERNELS * dt) {
 
 			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp
@@ -374,27 +374,29 @@ void Simulation::execute() {
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
+			
+
 			if (glfwGetKey(window, GLFW_KEY_W)) {
-				camera_pos += 0.01*(camera_dir - camera_dir.dot(camera_up)*camera_up);
+				camera_pos += 0.02*(camera_dir - camera_dir.dot(camera_up)*camera_up);
 			}
 			else if (glfwGetKey(window, GLFW_KEY_S)) {
-				camera_pos -= 0.01 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
+				camera_pos -= 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
 			}
 
 			if (glfwGetKey(window, GLFW_KEY_A)) {
-				camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.01, Vec());
+				camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.02, Vec());
 			}
 			else if (glfwGetKey(window, GLFW_KEY_D)) {
-				camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.01, Vec());
+				camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.02, Vec());
 			}
 			else if (glfwGetKey(window, GLFW_KEY_Q)) {
-				camera_pos.z -= 0.01;
+				camera_pos.z -= 0.02;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_E)) {
-				camera_pos.z += 0.01;
+				camera_pos.z += 0.02;
 			}
 
-			double speed_multiplier = 0.000005;
+			double speed_multiplier = 0.0001;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < joints.size(); i++)
@@ -423,7 +425,7 @@ void Simulation::execute() {
 
 			// update joint speed
 			for (int k = 0; k < joints.size(); k++) {
-				joints.anchors.theta[k] = k > 1 ? num_update_per_rot * jointSpeeds[k] : -num_update_per_rot * jointSpeeds[k];
+				joints.anchors.theta[k] = k > 1 ? NUM_UPDATE_PER_ROTATION * jointSpeeds[k] : -NUM_UPDATE_PER_ROTATION * jointSpeeds[k];
 			}
 			d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
 
@@ -753,7 +755,8 @@ void Simulation::createGLFWWindow() {
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // meke opengl forward compatible
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); //We don't want the old OpenGL
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
-	glfwSwapInterval(0);// disable vsync
+	//glfwSwapInterval(0);// disable vsync
+	glfwSwapInterval(1);// enable vsync
 
 	//// Open a window and create its OpenGL context
 	//auto monitor = glfwGetPrimaryMonitor();
@@ -769,6 +772,12 @@ void Simulation::createGLFWWindow() {
 	}
 	glfwMakeContextCurrent(window);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+	glEnable(GL_CULL_FACE); // FACE CULLING :https://learnopengl.com/Advanced-OpenGL/Face-culling
+	glCullFace(GL_FRONT);
+	glFrontFace(GL_CCW);
+
+
 	glEnable(GL_DEPTH_TEST);
 	//    // Accept fragment if it closer to the camera than the former one
 	glDepthFunc(GL_LESS);

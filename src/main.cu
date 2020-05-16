@@ -61,10 +61,10 @@ int main()
 	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
 	sim.dt = 4e-5; // timestep
 
-	const double m = 8e-4;// mass per vertex
+	const double m = 6e-4;// mass per vertex
 
-	const double spring_constant = 6e2; //spring constant for silicone leg
-	const double spring_damping = 0.4; // damping for spring
+	const double spring_constant = 1.5e3; //spring constant for silicone leg
+	const double spring_damping = 0.1; // damping for spring
 
 	const double scale_high = 2.5;// scaling factor
 	const double scale_low = 0.2;
@@ -123,8 +123,6 @@ int main()
 	}
 
 
-	
-
 	//// the start (inclusive) and end (exclusive) index of the anchor points
 	//double id_joint_anchor_start = bot.idVertices[num_body];
 	//double id_joint_anchor_end = bot.idVertices[num_body + num_joint];
@@ -159,7 +157,7 @@ int main()
 
 
 	// set max speed for each joint
-	sim.max_joint_speed = 200. / 60. * 2 * 3.1415926 * sim.dt;//200 rpm
+	sim.max_joint_speed = 400. / 60. * 2 * 3.1415926 * sim.dt;//200 rpm
 
 	sim.setViewport(Vec(-0.3, 0, 0.3), Vec(0, 0, 0), Vec(0, 0, 1));
 	//sim.setViewport(Vec(.4, -0., .4), Vec(0, -0., -0), Vec(0, 0, 1));
