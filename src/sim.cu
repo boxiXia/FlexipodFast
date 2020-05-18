@@ -361,7 +361,7 @@ void Simulation::execute() {
 #endif
 
 #ifdef GRAPHICS
-		if (fmod(T, 1./300.1) < NUM_QUEUED_KERNELS * dt) {
+		if (fmod(T, 1./60.01) < NUM_QUEUED_KERNELS * dt) {
 
 			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp
@@ -396,7 +396,7 @@ void Simulation::execute() {
 				camera_pos.z += 0.02;
 			}
 
-			double speed_multiplier = 0.0001;
+			double speed_multiplier = 0.00005;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < joints.size(); i++)
@@ -755,8 +755,8 @@ void Simulation::createGLFWWindow() {
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // meke opengl forward compatible
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); //We don't want the old OpenGL
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
-	//glfwSwapInterval(0);// disable vsync
-	glfwSwapInterval(1);// enable vsync
+	glfwSwapInterval(0);// disable vsync
+	//glfwSwapInterval(1);// enable vsync
 
 	//// Open a window and create its OpenGL context
 	//auto monitor = glfwGetPrimaryMonitor();
