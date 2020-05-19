@@ -1,3 +1,7 @@
+/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
+ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,” ICRA 2020, May 2020.
+*/
+
 #define GLM_FORCE_PURE
 #include "sim.h"
 
@@ -61,9 +65,17 @@ __global__ void MassUpate(
 				}
 			}
 
-			mass.acc[i] = force / m;
-			mass.vel[i] += mass.acc[i] * dt;
-			mass.pos[i] += mass.vel[i] * dt;
+			//// euler integration
+			//mass.acc[i] = force / m; 
+			//mass.vel[i] += mass.acc[i] * dt;
+			//mass.pos[i] += mass.vel[i] * dt;
+			//mass.force[i].setZero();
+
+			// speed verlet integration
+			Vec acc = force / m;
+			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
+			mass.acc[i] = acc;
 			mass.force[i].setZero();
 		}
 	}
@@ -93,10 +105,19 @@ __global__ void massUpdateAndRotate(
 				}
 			}
 
-			mass.acc[i] = force / m;
-			mass.vel[i] += mass.acc[i] * dt;
-			mass.pos[i] += mass.vel[i] * dt;
+			//// euler integration
+			//mass.acc[i] = force / m; 
+			//mass.vel[i] += mass.acc[i] * dt;
+			//mass.pos[i] += mass.vel[i] * dt;
+			//mass.force[i].setZero();
+
+			// speed verlet integration
+			Vec acc = force / m;
+			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;				
+			mass.acc[i] = acc;
 			mass.force[i].setZero();
+
 		}
 	}
 	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint
@@ -361,7 +382,7 @@ void Simulation::execute() {
 #endif
 
 #ifdef GRAPHICS
-		if (fmod(T, 1./60.01) < NUM_QUEUED_KERNELS * dt) {
+		if (fmod(T, 1./60.1) < NUM_QUEUED_KERNELS * dt) {
 
 			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp

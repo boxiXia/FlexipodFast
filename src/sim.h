@@ -1,6 +1,9 @@
+/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
+ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,” ICRA 2020, May 2020.
+*/
+
 #ifndef TITAN_SIM_H
 #define TITAN_SIM_H
-
 
 #include "object.h"
 #include "vec.h"
@@ -116,6 +119,14 @@ struct MASS {
 		gpuErrchk((*malloc)((void**)&fixed, num * sizeof(bool)));
 		gpuErrchk((*malloc)((void**)&constrain, num * sizeof(bool)));
 		this->num = num;
+		if (on_host) {// set vel,acc to 0
+			memset(vel, 0, num * sizeof(Vec));
+			memset(acc, 0, num * sizeof(Vec));
+		}
+		else {
+			cudaMemset(vel, 0, num * sizeof(Vec));
+			cudaMemset(acc, 0, num * sizeof(Vec));
+		}
 	}
 	void copyFrom(MASS& other, cudaStream_t stream=(cudaStream_t)0) {
 		gpuErrchk(cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream));

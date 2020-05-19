@@ -1,10 +1,13 @@
-//
-// Created by Jacob Austin on 5/21/18.
-// object.cu defines constraint objects like planes and balls that allow the users
-// to enforce limitations on movements of objects within the scene.
-// Generally, an object defines the applyForce method that determines whether to apply a force
-// to a mass, for example a normal force pushing the mass out of a constaint object or
-// a frictional force.
+/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
+ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,” ICRA 2020, May 2020.
+
+object.cu defines constraint objects like planes and balls that allow the users
+to enforce limitations on movements of objects within the scene.
+Generally, an object defines the applyForce method that determines whether to apply a force
+to a mass, for example a normal force pushing the mass out of a constaint object or
+a frictional force.
+*/
+
 
 #define GLM_FORCE_PURE
 #include "object.h"
