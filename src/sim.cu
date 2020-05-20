@@ -30,12 +30,12 @@ __global__ void SpringUpate(
 			Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 			force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
 
-			if (spring.resetable[i]) {
-				spring.rest[i] = length;//reset the spring rest length if this spring is restable
-			}
-
 			mass.force[right].atomicVecAdd(force); // need atomics here
 			mass.force[left].atomicVecAdd(-force); // removed condition on fixed
+		}
+
+		if (spring.resetable[i]) {
+			spring.rest[i] = length;//reset the spring rest length if this spring is restable
 		}
 	}
 
