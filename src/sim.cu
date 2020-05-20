@@ -25,15 +25,14 @@ __global__ void SpringUpate(
 		int left = spring.left[i];
 		Vec s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		if (length > 1e-7) {
+		if (length > 1e-9) {
 			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
 			Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+			force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
 
 			if (spring.resetable[i]) {
 				spring.rest[i] = length;//reset the spring rest length if this spring is restable
 			}
-
-			force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
 
 			mass.force[right].atomicVecAdd(force); // need atomics here
 			mass.force[left].atomicVecAdd(-force); // removed condition on fixed
