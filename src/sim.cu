@@ -65,18 +65,27 @@ __global__ void MassUpate(
 				}
 			}
 
-			//// euler integration
-			//mass.acc[i] = force / m; 
-			//mass.vel[i] += mass.acc[i] * dt;
-			//mass.pos[i] += mass.vel[i] * dt;
+
+#ifdef VERLET // verlet integration
+
+			//Vec acc = force / m;
+			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
+			//mass.acc[i] = acc;
 			//mass.force[i].setZero();
 
-			// speed verlet integration
 			Vec acc = force / m;
+			mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
 			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
 			mass.acc[i] = acc;
 			mass.force[i].setZero();
+
+#else // euler integration
+			mass.acc[i] = force / m;
+			mass.vel[i] += mass.acc[i] * dt;
+			mass.pos[i] += mass.vel[i] * dt;
+			mass.force[i].setZero();
+#endif
 		}
 	}
 }
@@ -105,19 +114,26 @@ __global__ void massUpdateAndRotate(
 				}
 			}
 
-			//// euler integration
-			//mass.acc[i] = force / m; 
-			//mass.vel[i] += mass.acc[i] * dt;
-			//mass.pos[i] += mass.vel[i] * dt;
+#ifdef VERLET // verlet integration
+
+			//Vec acc = force / m;
+			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
+			//mass.acc[i] = acc;
 			//mass.force[i].setZero();
 
-			// speed verlet integration
 			Vec acc = force / m;
+			mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
 			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;				
 			mass.acc[i] = acc;
 			mass.force[i].setZero();
 
+#else // euler integration
+			mass.acc[i] = force / m;
+			mass.vel[i] += mass.acc[i] * dt;
+			mass.pos[i] += mass.vel[i] * dt;
+			mass.force[i].setZero();
+#endif
 		}
 	}
 	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint

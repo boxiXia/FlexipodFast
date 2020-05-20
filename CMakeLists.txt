@@ -56,8 +56,9 @@ find_package(msgpack CONFIG CONFIG)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src)
 
-add_definitions(-DGRAPHICS)
-add_definitions(-DUDP)
+add_definitions(-DGRAPHICS) # enable this definition to dispalay graphics
+add_definitions(-DUDP) # enable this definition to send info via DUP
+add_definitions(-DVERLET) # enable this definition to integrate via verlet
 
 #add_subdirectory(src/Titan)
 
