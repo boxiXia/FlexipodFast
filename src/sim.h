@@ -100,7 +100,7 @@ struct MASS {
 	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
 	int num = 0;
 #ifdef VERLET
-	Vec* prev_acc = nullptr; // a_{n-1}, acceleration at previous timestep
+	Vec* prev_pos = nullptr; // x_{n-1}, position at previous timestep
 #endif // VERLET
 	MASS() { }
 	MASS(int num, bool on_host = true) {
@@ -123,13 +123,13 @@ struct MASS {
 		gpuErrchk((*malloc)((void**)&constrain, num * sizeof(bool)));
 		this->num = num;
 #ifdef VERLET
-		gpuErrchk((*malloc)((void**)&prev_acc, num * sizeof(Vec)));
+		gpuErrchk((*malloc)((void**)&prev_pos, num * sizeof(Vec)));
 #endif // VERLET
 		if (on_host) {// set vel,acc to 0
 			memset(vel, 0, num * sizeof(Vec));
 			memset(acc, 0, num * sizeof(Vec));
 #ifdef VERLET
-			memset(prev_acc,0,num * sizeof(Vec));
+			memset(prev_pos,0,num * sizeof(Vec));
 #endif // VERLET
 		}
 		else {

@@ -65,12 +65,12 @@ __global__ void MassUpateStarter(
 					c.d_balls[j].applyForce(force, mass.pos[i]);
 				}
 			}
-		// euler integration
+		// starter
 		Vec acc = force / m;
 		mass.acc[i] = acc;
-		mass.prev_acc[i] = acc;
-		//mass.vel[i] += mass.acc[i] * dt;
-		//mass.pos[i] += mass.vel[i] * dt;
+		mass.prev_pos[i] = mass.pos[i];
+		mass.pos[i] = mass.prev_pos[i] + (mass.vel[i] + 0.5*acc*dt)*dt;
+		mass.vel[i] += 0.5 * acc * dt;
 		mass.force[i].setZero();
 		}
 	}
@@ -116,10 +116,10 @@ __global__ void MassUpate(
 			//mass.force[i].setZero();
 
 			Vec acc = force / m;
-			mass.pos[i] += (mass.vel[i] + dt / 6.0 * (4 * mass.acc[i] - mass.prev_acc[i])) * dt;
-			mass.vel[i] += dt / 6.0 * (2.0 * acc + 5.0 * mass.acc[i] - mass.prev_acc[i]);
-			mass.prev_acc[i] = mass.acc[i];
-			mass.acc[i] = acc;
+			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
+			mass.vel[i] = (pos - mass.pos[i]) / dt;
+			mass.prev_pos[i] = mass.pos[i];
+			mass.pos[i] = pos;
 			mass.force[i].setZero();
 
 #else // euler integration
@@ -159,26 +159,26 @@ __global__ void massUpdateAndRotate(
 #ifdef VERLET // verlet integration
 
 
-			// velocity verlet - Jacob's implementation
-			Vec acc = force / m;
-			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
-			mass.acc[i] = acc;
-			mass.force[i].setZero();
+			//// velocity verlet - Jacob's implementation
+			//Vec acc = force / m;
+			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
+			//mass.acc[i] = acc;
+			//mass.force[i].setZero();
 
-			// velocity verlet
-			Vec acc = force / m;
-			mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
-			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			mass.acc[i] = acc;
-			mass.force[i].setZero();
+			//// velocity verlet
+			//Vec acc = force / m;
+			//mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
+			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			//mass.acc[i] = acc;
+			//mass.force[i].setZero();
 
-			// velocity verlet - Beeman algorithm:http://www.physics.udel.edu/~bnikolic/teaching/phys660/numerical_ode/node5.html
+			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
 			Vec acc = force / m;
-			mass.pos[i] += (mass.vel[i] +  dt/6.0 * (4*mass.acc[i] - mass.prev_acc[i])) * dt;
-			mass.vel[i] += dt/6.0 * (2.0*acc + 5.0 * mass.acc[i] - mass.prev_acc[i]);
-			mass.prev_acc[i] = mass.acc[i];
-			mass.acc[i] = acc;
+			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
+			mass.vel[i] = (pos - mass.pos[i]) / dt;
+			mass.prev_pos[i] = mass.pos[i];
+			mass.pos[i] = pos;
 			mass.force[i].setZero();
 
 #else // euler integration
