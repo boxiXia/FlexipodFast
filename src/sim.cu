@@ -42,6 +42,41 @@ __global__ void SpringUpate(
 
 }
 
+#ifdef VERLET // verlet integration
+__global__ void MassUpateStarter(
+	const MASS mass,
+	const CUDA_GLOBAL_CONSTRAINTS c,
+	const Vec global_acc,
+	const double dt) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < mass.num) {
+		if (mass.fixed[i] == false) {
+			Vec force = global_acc;
+			double m = mass.m[i];
+			force *= m; // force = d_mass.m[i] * global_acc;
+			force += mass.force[i];
+			force += mass.force_extern[i];// add external force [N]
+
+			/*if (mass.constrain) */ {
+				for (int j = 0; j < c.num_planes; j++) { // global constraints
+					c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
+				}
+				for (int j = 0; j < c.num_balls; j++) {
+					c.d_balls[j].applyForce(force, mass.pos[i]);
+				}
+			}
+		// euler integration
+		Vec acc = force / m;
+		mass.acc[i] = acc;
+		mass.prev_acc[i] = acc;
+		//mass.vel[i] += mass.acc[i] * dt;
+		//mass.pos[i] += mass.vel[i] * dt;
+		mass.force[i].setZero();
+		}
+	}
+}
+#endif
+
 __global__ void MassUpate(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
@@ -74,9 +109,16 @@ __global__ void MassUpate(
 			//mass.acc[i] = acc;
 			//mass.force[i].setZero();
 
+			//Vec acc = force / m;
+			//mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
+			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			//mass.acc[i] = acc;
+			//mass.force[i].setZero();
+
 			Vec acc = force / m;
-			mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
-			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			mass.pos[i] += (mass.vel[i] + dt / 6.0 * (4 * mass.acc[i] - mass.prev_acc[i])) * dt;
+			mass.vel[i] += dt / 6.0 * (2.0 * acc + 5.0 * mass.acc[i] - mass.prev_acc[i]);
+			mass.prev_acc[i] = mass.acc[i];
 			mass.acc[i] = acc;
 			mass.force[i].setZero();
 
@@ -116,15 +158,26 @@ __global__ void massUpdateAndRotate(
 
 #ifdef VERLET // verlet integration
 
-			//Vec acc = force / m;
-			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
-			//mass.acc[i] = acc;
-			//mass.force[i].setZero();
 
+			// velocity verlet - Jacob's implementation
+			Vec acc = force / m;
+			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
+			mass.acc[i] = acc;
+			mass.force[i].setZero();
+
+			// velocity verlet
 			Vec acc = force / m;
 			mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
 			mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
+			mass.acc[i] = acc;
+			mass.force[i].setZero();
+
+			// velocity verlet - Beeman algorithm:http://www.physics.udel.edu/~bnikolic/teaching/phys660/numerical_ode/node5.html
+			Vec acc = force / m;
+			mass.pos[i] += (mass.vel[i] +  dt/6.0 * (4*mass.acc[i] - mass.prev_acc[i])) * dt;
+			mass.vel[i] += dt/6.0 * (2.0*acc + 5.0 * mass.acc[i] - mass.prev_acc[i]);
+			mass.prev_acc[i] = mass.acc[i];
 			mass.acc[i] = acc;
 			mass.force[i].setZero();
 
@@ -292,6 +345,14 @@ void Simulation::_run() { // repeatedly start next
 void Simulation::execute() {
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
+#ifdef VERLET
+	SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+	MassUpateStarter << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+	gpuErrchk(cudaPeekAtLastError());
+#endif // VERLET
+
+
+
 	while (true) {
 		if (!bpts.empty() && *bpts.begin() <= T) {
 			cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions

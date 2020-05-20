@@ -43,7 +43,7 @@ constexpr int MASS_THREADS_PER_BLOCK = 64;
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr int  NUM_QUEUED_KERNELS = 120; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
-constexpr int NUM_UPDATE_PER_ROTATION = 6; //number of update per rotation
+constexpr int NUM_UPDATE_PER_ROTATION = 10; //number of update per rotation
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -99,6 +99,9 @@ struct MASS {
 	bool* fixed = nullptr;
 	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
 	int num = 0;
+#ifdef VERLET
+	Vec* prev_acc = nullptr; // a_{n-1}, acceleration at previous timestep
+#endif // VERLET
 	MASS() { }
 	MASS(int num, bool on_host = true) {
 		init(num, on_host);
@@ -119,9 +122,15 @@ struct MASS {
 		gpuErrchk((*malloc)((void**)&fixed, num * sizeof(bool)));
 		gpuErrchk((*malloc)((void**)&constrain, num * sizeof(bool)));
 		this->num = num;
+#ifdef VERLET
+		gpuErrchk((*malloc)((void**)&prev_acc, num * sizeof(Vec)));
+#endif // VERLET
 		if (on_host) {// set vel,acc to 0
 			memset(vel, 0, num * sizeof(Vec));
 			memset(acc, 0, num * sizeof(Vec));
+#ifdef VERLET
+			memset(prev_acc,0,num * sizeof(Vec));
+#endif // VERLET
 		}
 		else {
 			cudaMemset(vel, 0, num * sizeof(Vec));
