@@ -18,7 +18,7 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paralle
 __global__ void SpringUpate(
 	const MASS mass,
 	const SPRING spring
-	) {
+) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < spring.num) {
 		int right = spring.right[i];
@@ -33,10 +33,13 @@ __global__ void SpringUpate(
 			mass.force[right].atomicVecAdd(force); // need atomics here
 			mass.force[left].atomicVecAdd(-force); // removed condition on fixed
 		}
-
+#ifdef ROTATION
 		if (spring.resetable[i]) {
 			spring.rest[i] = length;//reset the spring rest length if this spring is restable
 		}
+#endif // ROTATION
+
+
 	}
 
 }
@@ -64,13 +67,13 @@ __global__ void MassUpateStarter(
 					c.d_balls[j].applyForce(force, mass.pos[i]);
 				}
 			}
-		// starter
-		Vec acc = force / m;
-		mass.acc[i] = acc;
-		mass.prev_pos[i] = mass.pos[i];
-		mass.pos[i] = mass.prev_pos[i] + (mass.vel[i] + 0.5*acc*dt)*dt;
-		mass.vel[i] += 0.5 * acc * dt;
-		mass.force[i].setZero();
+			// starter
+			Vec acc = force / m;
+			mass.acc[i] = acc;
+			mass.prev_pos[i] = mass.pos[i];
+			mass.pos[i] = mass.prev_pos[i] + (mass.vel[i] + 0.5 * acc * dt) * dt;
+			mass.vel[i] += 0.5 * acc * dt;
+			mass.force[i].setZero();
 		}
 	}
 }
@@ -90,7 +93,7 @@ __global__ void MassUpate(
 			force += mass.force[i];
 			force += mass.force_extern[i];// add external force [N]
 
-			/*if (mass.constrain) */{
+			/*if (mass.constrain) */ {
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
 					c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
 				}
@@ -131,6 +134,7 @@ __global__ void MassUpate(
 	}
 }
 
+#ifdef ROTATION
 __global__ void massUpdateAndRotate(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
@@ -185,7 +189,7 @@ __global__ void massUpdateAndRotate(
 			mass.vel[i] += mass.acc[i] * dt;
 			mass.pos[i] += mass.vel[i] * dt;
 			mass.force[i].setZero();
-#endif
+#endif // verlet
 		}
 	}
 	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint
@@ -201,8 +205,7 @@ __global__ void massUpdateAndRotate(
 	}
 }
 
-
-__global__ void rotateJoint(Vec* __restrict__ mass_pos,const JOINT joint) {
+__global__ void rotateJoint(Vec* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
 
@@ -213,10 +216,11 @@ __global__ void rotateJoint(Vec* __restrict__ mass_pos,const JOINT joint) {
 
 		int anchor_id = joint.points.anchorId[i];
 		int mass_id = joint.points.massId[i];
-		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id], 
+		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
 			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
 	}
 }
+#endif // ROTATION
 
 Simulation::Simulation() {
 	//dynamicsUpdate(d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,
@@ -364,8 +368,8 @@ void Simulation::execute() {
 
 					auto end = std::chrono::steady_clock::now();
 					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-					printf("Elapsed time:%d ms for %.1f simulation time (%.2f)\n", 
-						duration,T,T/((double)duration/1000.));
+					printf("Elapsed time:%d ms for %.1f simulation time (%.2f)\n",
+						duration, T, T / ((double)duration / 1000.));
 
 					//for (Constraint* c : constraints) {
 					//	delete c;
@@ -410,23 +414,23 @@ void Simulation::execute() {
 		//cudaEvent_t event_rotation;
 		//cudaEventCreateWithFlags(&event_rotation, cudaEventDisableTiming);
 
-		for (int i = 0; i < (NUM_QUEUED_KERNELS/ NUM_UPDATE_PER_ROTATION); i++) {
+		for (int i = 0; i < (NUM_QUEUED_KERNELS / NUM_UPDATE_PER_ROTATION); i++) {
 
-			for (int j = 0; j < NUM_UPDATE_PER_ROTATION-1; j++){
+			for (int j = 0; j < NUM_UPDATE_PER_ROTATION - 1; j++) {
 
-				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);		
+				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
 				//gpuErrchk(cudaPeekAtLastError());
 			}
 			//cudaEventRecord(event, 0);
 			//cudaStreamWaitEvent(stream[0], event, 0);
-
+#ifdef ROTATION
 			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
 
 			//rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
 			//gpuErrchk(cudaPeekAtLastError());
-
+#endif // ROTATION
 			//cudaEventRecord(event_rotation, stream[0]);
 			//cudaStreamWaitEvent(NULL, event_rotation, 0);
 		}
@@ -439,26 +443,26 @@ void Simulation::execute() {
 		if (fmod(T, 1. / 100) < NUM_QUEUED_KERNELS * dt) {
 			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 
-		//	for (int i = 0; i < joints.anchors.num; i++)
-		//{
-		//	Vec rotation_axis = mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]];
-		//	Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
-		//	Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1]- mass.pos[joints.anchors.rightCoord[i]];//oxyz
-		//	//printf("%f",x_left.norm());
-		//	//printf("\t");
-		//	//printf("%f",x_right.norm());
-		//	//printf("\t");
-		//	//printf("%3.3f\t\t", x_left.dot(x_right) / (x_left.norm() * x_right.norm()));
-		//	printf("%3.3f\t\t", signedAngleBetween(x_left, x_right, rotation_axis));
-		//	//printf("%3.3f\t\t", angleBetween(x_left, x_right));
-		//}
-		//printf("\r");
-		////printf("\n");
+			//	for (int i = 0; i < joints.anchors.num; i++)
+			//{
+			//	Vec rotation_axis = mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]];
+			//	Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
+			//	Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1]- mass.pos[joints.anchors.rightCoord[i]];//oxyz
+			//	//printf("%f",x_left.norm());
+			//	//printf("\t");
+			//	//printf("%f",x_right.norm());
+			//	//printf("\t");
+			//	//printf("%3.3f\t\t", x_left.dot(x_right) / (x_left.norm() * x_right.norm()));
+			//	printf("%3.3f\t\t", signedAngleBetween(x_left, x_right, rotation_axis));
+			//	//printf("%3.3f\t\t", angleBetween(x_left, x_right));
+			//}
+			//printf("\r");
+			////printf("\n");
 		}
 #endif
 
 #ifdef GRAPHICS
-		if (fmod(T, 1./60.1) < NUM_QUEUED_KERNELS * dt) {
+		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
 
 			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp
@@ -466,15 +470,15 @@ void Simulation::execute() {
 			Vec camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
 			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
 			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp); 
+			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
 			camera_dir.normalize();
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
-			
+
 
 			if (glfwGetKey(window, GLFW_KEY_W)) {
-				camera_pos += 0.02*(camera_dir - camera_dir.dot(camera_up)*camera_up);
+				camera_pos += 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
 			}
 			else if (glfwGetKey(window, GLFW_KEY_S)) {
 				camera_pos -= 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
@@ -497,17 +501,21 @@ void Simulation::execute() {
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < joints.size(); i++)
-				{if (jointSpeeds[i] < max_joint_speed) { jointSpeeds[i] += speed_multiplier; }}
+				{
+					if (jointSpeeds[i] < max_joint_speed) { jointSpeeds[i] += speed_multiplier; }
+				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 				for (int i = 0; i < joints.size(); i++)
-				{if (jointSpeeds[i] > -max_joint_speed) { jointSpeeds[i] -= speed_multiplier; }}
+				{
+					if (jointSpeeds[i] > -max_joint_speed) { jointSpeeds[i] -= speed_multiplier; }
+				}
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-					if (jointSpeeds[0] > -max_joint_speed) { jointSpeeds[0] -= speed_multiplier; }
-					if (jointSpeeds[1] > -max_joint_speed) { jointSpeeds[1] -= speed_multiplier; }
-					{if (jointSpeeds[2] < max_joint_speed) { jointSpeeds[2] += speed_multiplier; }}
-					{if (jointSpeeds[3] < max_joint_speed) { jointSpeeds[3] += speed_multiplier; }}
+				if (jointSpeeds[0] > -max_joint_speed) { jointSpeeds[0] -= speed_multiplier; }
+				if (jointSpeeds[1] > -max_joint_speed) { jointSpeeds[1] -= speed_multiplier; }
+				{if (jointSpeeds[2] < max_joint_speed) { jointSpeeds[2] += speed_multiplier; }}
+				{if (jointSpeeds[3] < max_joint_speed) { jointSpeeds[3] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 				if (jointSpeeds[3] > -max_joint_speed) { jointSpeeds[3] -= speed_multiplier; }
@@ -517,7 +525,9 @@ void Simulation::execute() {
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) {
 				for (int i = 0; i < joints.size(); i++)
-				{jointSpeeds[i] = 0.;}
+				{
+					jointSpeeds[i] = 0.;
+				}
 			}
 
 			// update joint speed
@@ -651,7 +661,7 @@ void Simulation::createBall(const Vec& center, const double r) { // creates ball
 	if (ENDED) { throw std::runtime_error("The simulation has ended. New constraints cannot be added."); }
 	Ball* new_ball = new Ball(center, r);
 	constraints.push_back(new_ball);
-	
+
 	CudaBall cuda_ball;
 	cuda_ball._center = center;
 	cuda_ball._radius = r;
@@ -669,7 +679,7 @@ void Simulation::clearConstraints() { // clears global constraints only
 #ifdef GRAPHICS
 void Simulation::setViewport(const Vec& camera_position, const Vec& target_location, const Vec& up_vector) {
 	this->camera_pos = camera_position;
-	this->camera_dir = (target_location- camera_position).normalize();
+	this->camera_dir = (target_location - camera_position).normalize();
 	this->camera_up = up_vector;
 	if (STARTED) { computeMVP(); }
 }
@@ -691,9 +701,9 @@ void Simulation::computeMVP(bool update_view) {
 		// Camera matrix
 		this->View = glm::lookAt(
 			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // camera position in World Space
-			glm::vec3(camera_pos.x+camera_dir.x, 
-					  camera_pos.y + camera_dir.y, 
-					  camera_pos.z + camera_dir.z),	// look at position
+			glm::vec3(camera_pos.x + camera_dir.x,
+				camera_pos.y + camera_dir.y,
+				camera_pos.z + camera_dir.z),	// look at position
 			glm::vec3(camera_up.x, camera_up.y, camera_up.z));  // camera up vector (set to 0,-1,0 to look upside-down)
 	}
 	if (is_resized || update_view) {
@@ -703,20 +713,20 @@ void Simulation::computeMVP(bool update_view) {
 
 inline void Simulation::generateBuffers() {
 
-		glGenBuffers(1, &colorbuffer);//bind color buffer
-		glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-		cudaGLRegisterBufferObject(colorbuffer);
+	glGenBuffers(1, &colorbuffer);//bind color buffer
+	glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
+	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+	cudaGLRegisterBufferObject(colorbuffer);
 
-		glGenBuffers(1, &elementbuffer);//bind element buffer
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
-		cudaGLRegisterBufferObject(elementbuffer);
+	glGenBuffers(1, &elementbuffer);//bind element buffer
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
+	cudaGLRegisterBufferObject(elementbuffer);
 
-		glGenBuffers(1, &vertexbuffer);// bind vertex buffer
-		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-		cudaGLRegisterBufferObject(vertexbuffer);
+	glGenBuffers(1, &vertexbuffer);// bind vertex buffer
+	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+	cudaGLRegisterBufferObject(vertexbuffer);
 
 	//Todo: maybe unbind buffer? see updateBuffers()
 }
@@ -725,20 +735,20 @@ inline void Simulation::resizeBuffers() {
 	//    std::cout << "resizing buffers (" << masses.size() << " masses, " << springs.size() << " springs)." << std::endl;
 	//    std::cout << "resizing buffers (" << d_masses.size() << " device masses, " << d_springs.size() << " device springs)." << std::endl;
 		//cudaGLUnmapBufferObject(colorbuffer);//refer to updateBuffers()
-		cudaGLUnregisterBufferObject(this->colorbuffer);
-		glBindBuffer(GL_ARRAY_BUFFER, this->colorbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-		cudaGLRegisterBufferObject(this->colorbuffer);
+	cudaGLUnregisterBufferObject(this->colorbuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, this->colorbuffer);
+	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+	cudaGLRegisterBufferObject(this->colorbuffer);
 
-		cudaGLUnregisterBufferObject(this->elementbuffer);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->elementbuffer);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
-		cudaGLRegisterBufferObject(this->elementbuffer);
+	cudaGLUnregisterBufferObject(this->elementbuffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->elementbuffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
+	cudaGLRegisterBufferObject(this->elementbuffer);
 
-		cudaGLUnregisterBufferObject(this->vertexbuffer);
-		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-		cudaGLRegisterBufferObject(this->vertexbuffer);
+	cudaGLUnregisterBufferObject(this->vertexbuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+	cudaGLRegisterBufferObject(this->vertexbuffer);
 
 	resize_buffers = false;
 }
@@ -746,15 +756,15 @@ inline void Simulation::resizeBuffers() {
 __global__ void updateVertices(float* __restrict__ gl_ptr, const Vec* __restrict__  pos, const int num_mass) {
 	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
 	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x;i < num_mass;i += blockDim.x * gridDim.x){
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		gl_ptr[3 * i] = (float)pos[i].x;
 		gl_ptr[3 * i + 1] = (float)pos[i].y;
 		gl_ptr[3 * i + 2] = (float)pos[i].z;
 	}
 }
 
-__global__ void updateIndices(unsigned int* __restrict__ gl_ptr, 
-							  const int* __restrict__ left,const int* __restrict__ right, const int num_spring) {
+__global__ void updateIndices(unsigned int* __restrict__ gl_ptr,
+	const int* __restrict__ left, const int* __restrict__ right, const int num_spring) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
 		gl_ptr[2 * i] = (unsigned int)left[i]; // todo check if this is needed
 		gl_ptr[2 * i + 1] = (unsigned int)right[i];
@@ -781,7 +791,7 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 		glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
 		void* colorPointer; // if no masses, springs, or colors are changed/deleted, this can be start only once
 		cudaGLMapBufferObject(&colorPointer, colorbuffer);
-		updateColors<<<massBlocksPerGrid, MASS_THREADS_PER_BLOCK,0, stream[1]>>>((float*)colorPointer, d_mass.color, mass.num);
+		updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[1] >> > ((float*)colorPointer, d_mass.color, mass.num);
 		cudaGLUnmapBufferObject(colorbuffer);
 		update_colors = false;
 	}
@@ -789,7 +799,7 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
 		void* indexPointer; // if no masses or springs are deleted, this can be start only once
 		cudaGLMapBufferObject(&indexPointer, elementbuffer);
-		updateIndices<<<springBlocksPerGrid, THREADS_PER_BLOCK,0,stream[2]>>>((unsigned int*)indexPointer, d_spring.left,d_spring.right, spring.num);
+		updateIndices << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[2] >> > ((unsigned int*)indexPointer, d_spring.left, d_spring.right, spring.num);
 		cudaGLUnmapBufferObject(elementbuffer);
 		update_indices = false;
 	}
@@ -816,7 +826,7 @@ inline void Simulation::draw() {
 		GL_FALSE,           // normalized?
 		0,                  // stride
 		(void*)0            // array buffer offset
-		);
+	);
 
 	glEnableVertexAttribArray(1);
 	glBindBuffer(GL_ARRAY_BUFFER, this->colorbuffer);
@@ -827,7 +837,7 @@ inline void Simulation::draw() {
 		GL_FALSE,                         // normalized?
 		0,                                // stride
 		(void*)0                          // array buffer offset
-		);
+	);
 
 	glDrawArrays(GL_POINTS, 0, mass.num); // 3 indices starting at 0 -> 1 triangle
 	glDrawElements(GL_LINES, 2 * spring.num, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
@@ -862,7 +872,7 @@ void Simulation::createGLFWWindow() {
 	window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
 
 	if (window == NULL) {
-		fprintf(stderr,"Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible.\n");
+		fprintf(stderr, "Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible.\n");
 		getchar();
 		glfwTerminate();
 		exit(1);
