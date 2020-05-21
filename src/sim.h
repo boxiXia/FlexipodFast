@@ -388,7 +388,11 @@ public:
 	void _run();
 	void execute(); // same as above but w/out reset
 
+#ifdef DEBUG_ENERGY
 	double energy(); //compute the total energy of the system
+	double energy_start;
+	double energy_deviation_max = 0;
+#endif // DEBUG_ENERGY
 
 #ifdef GRAPHICS
 	void setViewport(const Vec& camera_position, const Vec& target_location, const Vec& up_vector);

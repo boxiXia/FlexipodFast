@@ -63,7 +63,7 @@ int main()
 
 	const double m = 6e-4;// mass per vertex
 
-	const double spring_constant = 1.5e3; //spring constant for silicone leg
+	const double spring_constant = 2e3; //spring constant for silicone leg
 	//const double spring_damping = 0.1; // damping for spring
 	const double spring_damping = 0; // damping for spring
 

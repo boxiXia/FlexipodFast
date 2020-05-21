@@ -111,13 +111,13 @@ __global__ void MassUpate(
 			//mass.acc[i] = acc;
 			//mass.force[i].setZero();
 
-			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			Vec acc = force / m;
-			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
-			mass.vel[i] = (pos - mass.pos[i]) / dt;
-			mass.prev_pos[i] = mass.pos[i];
-			mass.pos[i] = pos;
-			mass.force[i].setZero();
+			//// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
+			//Vec acc = force / m;
+			//Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
+			//mass.vel[i] = (pos - mass.pos[i]) / dt;
+			//mass.prev_pos[i] = mass.pos[i];
+			//mass.pos[i] = pos;
+			//mass.force[i].setZero();
 
 #else // euler integration
 			mass.acc[i] = force / m;
@@ -333,12 +333,16 @@ void Simulation::_run() { // repeatedly start next
 void Simulation::execute() {
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
+
+#ifdef DEBUG_ENERGY
+	energy_start = energy(); // compute the total energy of the system at T=0
+#endif // DEBUG_ENERGY
+
 #ifdef VERLET
 	SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 	MassUpateStarter << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
 	gpuErrchk(cudaPeekAtLastError());
 #endif // VERLET
-
 
 
 	while (true) {
@@ -449,12 +453,14 @@ void Simulation::execute() {
 #ifdef GRAPHICS
 		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
 
-
 			double e = energy();
-			//if (abs(e - 0.5) > .15) {
-			//	printf("%f\n", e);
-			//}
-			printf("%.3f\t%.3f\n",T,e);
+			if (abs(e - energy_start) > energy_deviation_max) {
+				energy_deviation_max = abs(e - energy_start);
+				printf("%.3f\t%.3f\n", T, energy_deviation_max/ energy_start);
+			}
+			else {
+				printf("%.3f\r", T);
+			}
 			
 
 			//mass.pos[id_oxyz_start].print();
@@ -644,7 +650,6 @@ void Simulation::createPlane(const Vec& abc, const double d, const double FRICTI
 	cuda_contact_plane._FRICTION_S = FRICTION_S;
 
 	d_planes.push_back(cuda_contact_plane);
-
 
 	//d_planes.push_back(CudaContactPlane(*new_plane));
 	update_constraints = true;
