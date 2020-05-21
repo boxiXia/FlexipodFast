@@ -105,19 +105,20 @@ __global__ void MassUpate(
 
 #ifdef VERLET // verlet integration
 			//// velocity verlet - Jacob's implementation
+			//// https://github.com/jacobaustin123/Titan/issues/22
 			//Vec acc = force / m;
 			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
 			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
 			//mass.acc[i] = acc;
 			//mass.force[i].setZero();
 
-			//// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			//Vec acc = force / m;
-			//Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
-			//mass.vel[i] = (pos - mass.pos[i]) / dt;
-			//mass.prev_pos[i] = mass.pos[i];
-			//mass.pos[i] = pos;
-			//mass.force[i].setZero();
+			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
+			Vec acc = force / m;
+			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
+			mass.vel[i] = (pos - mass.pos[i]) / dt;
+			mass.prev_pos[i] = mass.pos[i];
+			mass.pos[i] = pos;
+			mass.force[i].setZero();
 
 #else // euler integration
 			mass.acc[i] = force / m;
