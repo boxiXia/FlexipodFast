@@ -58,9 +58,9 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/src)
 
 add_definitions(-DGRAPHICS) # enable this definition to dispalay graphics
 add_definitions(-DUDP) # enable this definition to send info via DUP
-add_definitions(-DVERLET) # enable this definition to integrate via verlet
-#add_definitions(-DROTATION) # enable this to support rotation in dynamics update
-add_definitions(-DDEBUG_ENERGY) # enable this to debug energy
+#add_definitions(-DVERLET) # enable this definition to integrate via verlet
+add_definitions(-DROTATION) # enable this to support rotation in dynamics update
+#add_definitions(-DDEBUG_ENERGY) # enable this to debug energy
 #add_subdirectory(src/Titan)
 
 add_executable(flexipod 

@@ -38,8 +38,6 @@ __global__ void SpringUpate(
 			spring.rest[i] = length;//reset the spring rest length if this spring is restable
 		}
 #endif // ROTATION
-
-
 	}
 
 }
@@ -101,17 +99,7 @@ __global__ void MassUpate(
 					c.d_balls[j].applyForce(force, mass.pos[i]);
 				}
 			}
-
-
 #ifdef VERLET // verlet integration
-			//// velocity verlet - Jacob's implementation
-			//// https://github.com/jacobaustin123/Titan/issues/22
-			//Vec acc = force / m;
-			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
-			//mass.acc[i] = acc;
-			//mass.force[i].setZero();
-
 			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
 			Vec acc = force / m;
 			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
@@ -156,13 +144,6 @@ __global__ void massUpdateAndRotate(
 			}
 
 #ifdef VERLET // verlet integration
-			//// velocity verlet - Jacob's implementation
-			//Vec acc = force / m;
-			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
-			//mass.acc[i] = acc;
-			//mass.force[i].setZero();
-
 			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
 			Vec acc = force / m;
 			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
@@ -454,14 +435,15 @@ void Simulation::execute() {
 #ifdef GRAPHICS
 		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
 
+#ifdef DEBUG_ENERGY
 			double e = energy();
 			if (abs(e - energy_start) > energy_deviation_max) {
 				energy_deviation_max = abs(e - energy_start);
-				printf("%.3f\t%.3f\n", T, energy_deviation_max/ energy_start);
-			}
-			else {
-				printf("%.3f\r", T);
-			}
+				printf("%.3f\t%.3f\n", T, energy_deviation_max / energy_start);
+		}
+			else { printf("%.3f\r", T); }
+#endif // DEBUG_ENERGY
+
 			
 
 			//mass.pos[id_oxyz_start].print();
@@ -675,7 +657,7 @@ void Simulation::clearConstraints() { // clears global constraints only
 	update_constraints = true;
 }
 
-
+#ifdef DEBUG_ENERGY
 double Simulation::energy() { // compute total energy of the system
 	getAll();
 	cudaDeviceSynchronize();
@@ -692,6 +674,7 @@ double Simulation::energy() { // compute total energy of the system
 	}
 	return e_potential + e_kinetic;
 }
+#endif // DEBUG_ENERGY
 
 #ifdef GRAPHICS
 void Simulation::setViewport(const Vec& camera_position, const Vec& target_location, const Vec& up_vector) {

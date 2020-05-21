@@ -59,13 +59,13 @@ int main()
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 
 	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
-	sim.dt = 2e-5; // timestep
+	sim.dt = 4e-5; // timestep
 
 	const double m = 6e-4;// mass per vertex
 
 	const double spring_constant = 2e3; //spring constant for silicone leg
-	//const double spring_damping = 0.1; // damping for spring
-	const double spring_damping = 0; // damping for spring
+	const double spring_damping = 0.1; // damping for spring
+	//const double spring_damping = 0; // damping for spring
 
 
 	const double scale_high = 2.5;// scaling factor high
@@ -172,8 +172,8 @@ int main()
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
-	// sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
-	sim.createPlane(Vec(0, 0, 1), -1, 0, 0);
+	 sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
+	//sim.createPlane(Vec(0, 0, 1), -1, 0, 0);
 
 
 
