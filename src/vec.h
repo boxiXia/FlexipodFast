@@ -194,6 +194,9 @@ struct __align__(16) Vec {
 		printf("(%2f, %2f, %2f)\n", x, y, z);
 	}
 
+	inline CUDA_CALLABLE_MEMBER  double SquaredSum() const {
+		return x * x + y * y + z * z;
+	}
 
 	inline CUDA_CALLABLE_MEMBER  double norm() const {
 #ifdef __CUDA_ARCH__ 

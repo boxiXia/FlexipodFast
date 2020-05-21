@@ -43,7 +43,7 @@ constexpr int MASS_THREADS_PER_BLOCK = 64;
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr int  NUM_QUEUED_KERNELS = 120; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
-constexpr int NUM_UPDATE_PER_ROTATION = 8; //number of update per rotation
+constexpr int NUM_UPDATE_PER_ROTATION = 6; //number of update per rotation
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -147,6 +147,9 @@ struct MASS {
 		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream));
+#ifdef VERLET
+		gpuErrchk(cudaMemcpyAsync(prev_pos, other.force_extern, num * sizeof(Vec), cudaMemcpyDefault, stream));
+#endif // VERLET
 		//this->num = other.num;
 	}
 	void CopyPosVelAccFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
@@ -384,6 +387,8 @@ public:
 
 	void _run();
 	void execute(); // same as above but w/out reset
+
+	double energy(); //compute the total energy of the system
 
 #ifdef GRAPHICS
 	void setViewport(const Vec& camera_position, const Vec& target_location, const Vec& up_vector);

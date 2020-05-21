@@ -25,7 +25,7 @@ __global__ void SpringUpate(
 		int left = spring.left[i];
 		Vec s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		if (length > 1e-9) {
+		if (length > 1e-10) {
 			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
 			Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 			force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
@@ -104,19 +104,14 @@ __global__ void MassUpate(
 
 
 #ifdef VERLET // verlet integration
-
+			//// velocity verlet - Jacob's implementation
 			//Vec acc = force / m;
 			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
 			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
 			//mass.acc[i] = acc;
 			//mass.force[i].setZero();
 
-			//Vec acc = force / m;
-			//mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
-			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
-			//mass.acc[i] = acc;
-			//mass.force[i].setZero();
-
+			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
 			Vec acc = force / m;
 			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
 			mass.vel[i] = (pos - mass.pos[i]) / dt;
@@ -129,7 +124,7 @@ __global__ void MassUpate(
 			mass.vel[i] += mass.acc[i] * dt;
 			mass.pos[i] += mass.vel[i] * dt;
 			mass.force[i].setZero();
-#endif
+#endif // verlet
 		}
 	}
 }
@@ -160,19 +155,10 @@ __global__ void massUpdateAndRotate(
 			}
 
 #ifdef VERLET // verlet integration
-
-
 			//// velocity verlet - Jacob's implementation
 			//Vec acc = force / m;
 			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
 			//mass.pos[i] += (0.5 * dt * acc + mass.vel[i]) * dt;
-			//mass.acc[i] = acc;
-			//mass.force[i].setZero();
-
-			//// velocity verlet
-			//Vec acc = force / m;
-			//mass.pos[i] += (mass.vel[i] + 0.5 * dt * mass.acc[i]) * dt;
-			//mass.vel[i] += 0.5 * dt * (mass.acc[i] + acc);
 			//mass.acc[i] = acc;
 			//mass.force[i].setZero();
 
@@ -243,15 +229,14 @@ Simulation::Simulation(int num_mass, int num_spring) :Simulation() {
 }
 
 void Simulation::getAll() {//copy from gpu
-	mass.copyFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
-	//spring.copyFrom(d_spring, stream[NUM_CUDA_STREAM - 1]);//don't need to spring
+	mass.copyFrom(d_mass, stream[NUM_CUDA_STREAM - 1]); // mass
+	spring.copyFrom(d_spring, stream[NUM_CUDA_STREAM - 1]);// spring
 	//cudaDeviceSynchronize();
 }
 
 void Simulation::setAll() {//copy form cpu
 	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
 	d_spring.copyFrom(spring, stream[NUM_CUDA_STREAM - 1]);
-
 	//cudaDeviceSynchronize();
 }
 
@@ -464,6 +449,14 @@ void Simulation::execute() {
 #ifdef GRAPHICS
 		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
 
+
+			double e = energy();
+			//if (abs(e - 0.5) > .15) {
+			//	printf("%f\n", e);
+			//}
+			printf("%.3f\t%.3f\n",T,e);
+			
+
 			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp
 			double t_lerp = 0.01;
@@ -497,7 +490,7 @@ void Simulation::execute() {
 				camera_pos.z += 0.02;
 			}
 
-			double speed_multiplier = 0.00005;
+			double speed_multiplier = 0.00001;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < joints.size(); i++)
@@ -566,7 +559,7 @@ void Simulation::execute() {
 				//exit(0); // TODO maybe deal with memory leak here. //key press exit,
 			}
 		}
-#endif
+#endif //GRAPHICS
 	}
 
 }
@@ -674,6 +667,24 @@ void Simulation::createBall(const Vec& center, const double r) { // creates ball
 void Simulation::clearConstraints() { // clears global constraints only
 	constraints.clear();
 	update_constraints = true;
+}
+
+
+double Simulation::energy() { // compute total energy of the system
+	getAll();
+	cudaDeviceSynchronize();
+	double e_potential=0; // potential energy
+	double e_kinetic = 0; //kinetic energy
+	for (int i = 0; i < mass.num; i++)
+	{
+		e_potential += -global_acc.dot(mass.pos[i])*mass.m[i];
+		e_kinetic += 0.5 * mass.vel[i].SquaredSum() * mass.m[i];
+	}
+	for (int i = 0; i < spring.num; i++)
+	{
+		e_potential += 0.5 * spring.k[i] * pow((mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm() - spring.rest[i], 2);
+	}
+	return e_potential + e_kinetic;
 }
 
 #ifdef GRAPHICS

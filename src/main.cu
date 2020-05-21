@@ -59,18 +59,28 @@ int main()
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 
 	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
-	sim.dt = 4e-5; // timestep
+	sim.dt = 2e-5; // timestep
 
 	const double m = 6e-4;// mass per vertex
 
 	const double spring_constant = 1.5e3; //spring constant for silicone leg
-	const double spring_damping = 0.1; // damping for spring
+	//const double spring_damping = 0.1; // damping for spring
+	const double spring_damping = 0; // damping for spring
 
-	const double scale_high = 2.5;// scaling factor
-	const double scale_low = 0.2;
 
-	const double spring_constant_high = spring_constant* scale_high;//spring constant for rigid spring
-	const double spring_constant_low = spring_constant* scale_low;// spring constant for resetable spring
+	const double scale_high = 2.5;// scaling factor high
+	//const double scale_low = 0.5; // scaling factor low
+	double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
+
+	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
+
+	const double spring_constant_restable = spring_constant * 1.0; // spring constant for resetable spring
+	const double spring_damping_restable = spring_damping * 2.0; // spring damping for resetable spring
+
+	// spring coefficient for the probing springs, e.g. coordinates
+	const double spring_constant_probe_anchor = spring_constant * scale_probe; // spring constant for coordiates anchor springs
+	const double spring_constant_probe_self = spring_constant * scale_probe* scale_high; // spring constant for coordiates self springs
+	const double spring_damping_probe = spring_damping * scale_probe;
 
 	printf("total mass:%.2f kg\n", m * num_mass);
 
@@ -101,27 +111,26 @@ int main()
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
-		spring.k[i] = spring_constant_high;
+		spring.k[i] = spring_constant_rigid;
 	}
 	// set higher spring constant for the rotational joints
 	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body +1]; i++)
 	{
-		spring.k[i] = spring_constant_high; // joints anchors
+		spring.k[i] = spring_constant_rigid; // joints anchors
 	}
 	for (int i = bot.idEdges[num_body +1]; i < bot.idEdges[num_body +2]; i++)
 	{
-		spring.k[i] = spring_constant_high; // joints rotation spring
+		spring.k[i] = spring_constant_rigid; // joints rotation spring
 	}
 
 	sim.id_restable_spring_start = bot.idEdges[num_body + 2]; // resetable spring (frictional spring)
 	sim.id_resetable_spring_end = bot.idEdges[num_body + 3];
 	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
-		spring.k[i] = spring_constant_low;// resetable spring, reset the rest length per dynamic update
-		spring.damping[i] = spring_damping*1.5;
+		spring.k[i] = spring_constant_restable;// resetable spring, reset the rest length per dynamic update
+		spring.damping[i] = spring_damping_restable;
 		spring.resetable[i] = true;
 	}
-
 
 	//// the start (inclusive) and end (exclusive) index of the anchor points
 	//double id_joint_anchor_start = bot.idVertices[num_body];
@@ -131,25 +140,23 @@ int main()
 				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,
 	sim.id_oxyz_start = bot.idVertices[num_body + num_joint];
 	sim.id_oxyz_end = bot.idVertices[num_body + num_joint + 1 + 2* num_joint];
-
-	double scale_down = 0.1;
+	
 	// set lower mass for the anchored coordinate systems
 	for (int i = sim.id_oxyz_start; i < sim.id_oxyz_end; i++)
 	{
-		mass.m[i] = m * scale_down; // mass [kg]
+		mass.m[i] = m * scale_probe; // mass [kg]
 	}
 
 	for (int i = bot.idEdges[num_body + 3]; i < bot.idEdges[num_body + 4]; i++)
 	{
-		spring.k[i] = spring_constant * scale_high *scale_down;// oxyz_self_springs
-		spring.damping[i] = spring_damping * scale_down;
+		spring.k[i] = spring_constant_probe_self;// oxyz_self_springs
+		spring.damping[i] = spring_damping_probe;
 	}
 	for (int i = bot.idEdges[num_body + 4]; i < bot.idEdges[num_body + 5]; i++)
 	{
-		spring.k[i] = spring_constant * scale_down;// oxyz_anchor_springs
-		spring.damping[i] = spring_damping * scale_down;
+		spring.k[i] = spring_constant_probe_anchor;// oxyz_anchor_springs
+		spring.damping[i] = spring_damping_probe;
 	}
-
 
 	sim.joints.init(bot.Joints, true);
 	sim.d_joints.init(bot.Joints, false);
@@ -165,12 +172,13 @@ int main()
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
-	sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
+	// sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
+	sim.createPlane(Vec(0, 0, 1), -1, 0, 0);
+
 
 
 	//double runtime = 120;
 	//sim.setBreakpoint(runtime);
-	
 
 	sim.start();
 
