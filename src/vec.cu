@@ -30,15 +30,3 @@ CUDA_CALLABLE_MEMBER Vec slerp(Vec p0, Vec p1, double t) {
 CUDA_CALLABLE_MEMBER double signedAngleBetween(Vec p0, Vec p1, Vec normal) {
 	return atan2(cross(p0, p1).dot(normal), p0.dot(p1));
 }
-
-//CUDA_DEVICE void Vec::atomicVecAdd(const Vec& v) {
-//#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
-//	atomicAdd(&x, v.x);
-//	atomicAdd(&y, v.y);
-//	atomicAdd(&z, v.z);
-//#elif defined(__CUDA_ARCH__) &&__CUDA_ARCH__ < 600
-//	atomicDoubleAdd(&x, v.x);
-//	atomicDoubleAdd(&y, v.y);
-//	atomicDoubleAdd(&z, v.z);
-//#endif
-//}

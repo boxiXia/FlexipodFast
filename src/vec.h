@@ -26,23 +26,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <cuda_device_runtime_api.h>
 #include <device_launch_parameters.h>
 
-//#include<sys/types.h>
-
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
-//https://stackoverflow.com/questions/39274472/error-function-atomicadddouble-double-has-already-been-defined/39287554
-static __inline__ __device__ double atomicDoubleAdd(double* address, double val) {
-	unsigned long long int* address_as_ull = (unsigned long long int*)address;
-	unsigned long long int old = *address_as_ull, assumed;
-	if (val == 0.0)
-		return __longlong_as_double(old);
-	do {
-		assumed = old;
-		old = atomicCAS(address_as_ull, assumed, __double_as_longlong(val + __longlong_as_double(assumed)));
-	} while (assumed != old);
-	return __longlong_as_double(old);
-}
-#endif
-
 // use align to force alignment for gpu memory
 struct __align__(16) Vec {
 	double x;
@@ -246,17 +229,11 @@ struct __align__(16) Vec {
 		return Vec(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
 	}
 
-	//inline CUDA_DEVICE void atomicVecAdd(const Vec& v);
-
 	inline CUDA_DEVICE void Vec::atomicVecAdd(const Vec& v) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
 		atomicAdd(&x, v.x);
 		atomicAdd(&y, v.y);
 		atomicAdd(&z, v.z);
-#elif defined(__CUDA_ARCH__) &&__CUDA_ARCH__ < 600
-		atomicDoubleAdd(&x, v.x);
-		atomicDoubleAdd(&y, v.y);
-		atomicDoubleAdd(&z, v.z);
 #endif
 	}
 

@@ -1,11 +1,11 @@
 # Flexipod simulation
-The simulation engine for the flexipod project, build upon the original [Titan library](https://github.com/jacobaustin123/Titan)[[1]](#ref-1) from Jacob Austin.
+The simulation engine for the flexipod project, it is built upon the original [Titan library](https://github.com/jacobaustin123/Titan)[[1]](#ref-1) from Jacob Austin.
 
 [![Alt text](https://img.youtube.com/vi/eENbrnjF_oA/0.jpg)](https://www.youtube.com/watch?v=eENbrnjF_oA)
 
 
 ## Hardware Requirement:
-**Windows/Linux** machine with Nvidia Graphics card that has **Cuda** support, preferably with compute Capability>6.0. See a list of CUDA enabled graphics card [here](https://developer.nvidia.com/cuda-gpus).
+**Windows/Linux** machine with Nvidia Graphics card that has **Cuda** support, and with compute capability>=6.0. See a list of CUDA enabled graphics cards [here](https://developer.nvidia.com/cuda-gpus).
 
 
 ## Setup
@@ -13,8 +13,9 @@ The simulation engine for the flexipod project, build upon the original [Titan l
 ### 0. (windows) Install visual studio 2019:[link](https://visualstudio.microsoft.com/downloads/)
 and in the installation manager, install with **"Desktop development with c++"**
 
-### 1. Install CUDA (preferably 10.0+):[link](https://developer.nvidia.com/cuda-downloads)
-### 2. Install vcpkg by floowing the [quick start guid](https://github.com/Microsoft/vcpkg#quick-start).
+### 1. Install CUDA 
+Cuda tested with Cuda 10.2,preferably 10.0+,[link](https://developer.nvidia.com/cuda-downloads)
+### 2. Install vcpkg by following the [quick start guide](https://github.com/Microsoft/vcpkg#quick-start).
 
 For example in window, install vcpkg in ```C:\vcpkg``` using git bash:
 ```bash
@@ -27,13 +28,13 @@ cd vcpkg
 To use vcpkg in CMAKE, you can either:
 
 + add it onto your CMake command line as -DCMAKE_TOOLCHAIN_FILE=[vcpkg root]\scripts\buildsystems\vcpkg.cmake.
-+ or setup an invironment variable as: ```VCPKG_ROOT = C:\vcpkg```. This method is included in the [CMakeLists.txt](./CMakeLists.txt) file.
++ or setup an environment variable as: ```VCPKG_ROOT = C:\vcpkg```. This method is included in the [CMakeLists.txt](./CMakeLists.txt) file.
 
-next install some packages with vcpkg
-For windows:
+next, install some packages with vcpkg
+For Windows:
 ```bash
 vcpkg install --triplet x64-windows glew glad glm glfw3 msgpack
-```
+`"
 
 ### 3. Clone the repo
 either to clone (ssh):
@@ -45,7 +46,7 @@ or to clone (HTTPS):
 git clone https://github.com/boxiXia/FlexipodFast.git
 ```
 ### 4. Modify the [CMakeLists.txt](./CMakeLists.txt) file
-find these lines, and modify occording to your GPU architecture
+find these lines, and modify according to your GPU architecture
 ```cmake
 ###### here you must modify to fit your GPU architecture #####
 # check https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
@@ -58,5 +59,5 @@ In Nvidia control panel, go to "Manage 3D Settings" -> "program setting". Add th
 
 
 ## Reference:
-[1](#ref-1) J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,” ICRA 2020, May 2020.
+[1](#ref-1) J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, "Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA," ICRA 2020, May 2020.
 
