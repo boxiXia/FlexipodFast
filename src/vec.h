@@ -43,15 +43,11 @@ static __inline__ __device__ double atomicDoubleAdd(double* address, double val)
 }
 #endif
 
-
-
-
 // use align to force alignment for gpu memory
 struct __align__(16) Vec {
 	double x;
 	double y;
 	double z;
-
 
 	//double data[3] = { 0 }; // initialize data to 0
 
@@ -148,6 +144,9 @@ struct __align__(16) Vec {
 			return y;
 		case 2:
 			return z;
+		default:
+			fprintf(stderr, "C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
+			exit(-1);
 		} // to do remove this
 	}
 
@@ -159,6 +158,9 @@ struct __align__(16) Vec {
 			return y;
 		case 2:
 			return z;
+		default:
+			fprintf(stderr, "C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
+			exit(-1);
 		} // to do remove this
 	}
 	inline CUDA_CALLABLE_MEMBER friend Vec operator+(const Vec& v1, const Vec& v2) {
