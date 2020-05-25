@@ -25,7 +25,7 @@ const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 #include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
-__device__ const double NORMAL = 40000; // normal force coefficient for contact constraints
+__device__ const double NORMAL = 20000; // normal force coefficient for contact constraints
 
 
 
@@ -89,43 +89,6 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec& force, Vec& pos, Vec
         }
     }
 }
-
-
-//void Container::translate(const Vec & displ) {
-//    for (Mass * m : masses) {
-//        m -> pos += displ;
-//    }
-//}
-
-//void Container::rotate(const Vec & axis, double angle) {
-//    Vec com(0, 0, 0);
-//
-//    double total_mass = 0;
-//
-//    for (Mass * m : masses) {
-//        com += m -> m * m -> pos;
-//        total_mass += m -> m;
-//    }
-//
-//    com = com / total_mass; // center of mass as centroid
-//    Vec temp_axis = axis / axis.norm();
-//
-//    for (Mass * m : masses) {
-//        Vec temp = m -> pos - com; // subtract off center of mass
-//        Vec y = temp - dot(temp, temp_axis) * temp_axis; // project onto the given axis and find offset (y coordinate)
-//
-//        if (y.norm() < 0.0001) { // if on the axis, don't do anything
-//            continue;
-//        }
-//
-//        Vec planar(-sin(angle) * y.norm(), cos(angle) * y.norm(), 0); // coordinate in xy space
-//        Vec spatial = planar[0] * cross(temp_axis, y / y.norm()) + y / y.norm() * planar[1] + dot(temp, temp_axis) * temp_axis + com; // return to 3D space, then to COM space, then to absolute space
-//
-//        m -> pos = spatial; // update position
-//    }
-//}
-
-
 
 
 #ifdef GRAPHICS

@@ -69,8 +69,8 @@ __global__ void MassUpateStarter(
 			Vec acc = force / m;
 			mass.acc[i] = acc;
 			mass.prev_pos[i] = mass.pos[i];
-			mass.pos[i] = mass.prev_pos[i] + (mass.vel[i] + 0.5 * acc * dt) * dt;
-			mass.vel[i] += 0.5 * acc * dt;
+			mass.vel[i] += acc * dt;
+			mass.pos[i] = mass.prev_pos[i] + mass.vel[i]* dt;
 			mass.force[i].setZero();
 		}
 	}

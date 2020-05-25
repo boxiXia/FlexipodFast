@@ -136,9 +136,6 @@ struct ContactPlane : public Constraint {
 };
 
 struct CudaContactPlane {
-    //CudaContactPlane() = default;
-    //CUDA_CALLABLE_MEMBER CudaContactPlane(const Vec & normal, double offset);
-    //CudaContactPlane(const ContactPlane & p);
 
     CUDA_CALLABLE_MEMBER  void applyForce(Vec& force, Vec& pos, Vec& vel);
 

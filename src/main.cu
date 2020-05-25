@@ -59,7 +59,7 @@ int main()
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 
 	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
-	sim.dt = 4e-5; // timestep
+	sim.dt = 2e-5; // timestep
 
 	const double m = 6e-4;// mass per vertex
 
