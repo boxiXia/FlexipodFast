@@ -14,6 +14,8 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paralle
 #include <device_launch_parameters.h>
 //#include <cooperative_groups.h>
 
+#define _USE_MATH_DEFINES
+#include <math.h>
 
 __global__ void SpringUpate(
 	const MASS mass,
@@ -70,7 +72,7 @@ __global__ void MassUpateStarter(
 			mass.acc[i] = acc;
 			mass.prev_pos[i] = mass.pos[i];
 			mass.vel[i] += acc * dt;
-			mass.pos[i] = mass.prev_pos[i] + mass.vel[i]* dt;
+			mass.pos[i] = mass.prev_pos[i] + mass.vel[i] * dt;
 			mass.force[i].setZero();
 		}
 	}
@@ -271,7 +273,9 @@ void Simulation::start() {
 
 	update_constraints = false;
 
-	cudaMallocHost((void**)&jointSpeeds, joints.size() * sizeof(double));//initialize joint speed array 
+	cudaMallocHost((void**)&joint_speeds_cmd, joints.size() * sizeof(double));//initialize joint speed (commended) array 
+	cudaMallocHost((void**)&joint_speeds, joints.size() * sizeof(double));//initialize joint speed (measured) array 
+	cudaMallocHost((void**)&joint_angles, joints.size() * sizeof(double));//initialize joint angle (measured) array 
 
 	setAll();// copy mass and spring to gpu
 	gpu_thread = std::thread(&Simulation::_run, this); //TODO: thread
@@ -396,10 +400,13 @@ void Simulation::execute() {
 			//cudaEventRecord(event, 0);
 			//cudaStreamWaitEvent(stream[0], event, 0);
 #ifdef ROTATION
-			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-			massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
 
-			//rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
+			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
+
+			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+
 			//gpuErrchk(cudaPeekAtLastError());
 #endif // ROTATION
 			//cudaEventRecord(event_rotation, stream[0]);
@@ -411,24 +418,44 @@ void Simulation::execute() {
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef UDP
-		if (fmod(T, 1. / 100) < NUM_QUEUED_KERNELS * dt) {
+		if (fmod(T, 1. / 10) < NUM_QUEUED_KERNELS * dt) {
 			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 
-			//	for (int i = 0; i < joints.anchors.num; i++)
-			//{
-			//	Vec rotation_axis = mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]];
-			//	Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
-			//	Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1]- mass.pos[joints.anchors.rightCoord[i]];//oxyz
-			//	//printf("%f",x_left.norm());
-			//	//printf("\t");
-			//	//printf("%f",x_right.norm());
-			//	//printf("\t");
-			//	//printf("%3.3f\t\t", x_left.dot(x_right) / (x_left.norm() * x_right.norm()));
-			//	printf("%3.3f\t\t", signedAngleBetween(x_left, x_right, rotation_axis));
-			//	//printf("%3.3f\t\t", angleBetween(x_left, x_right));
-			//}
-			//printf("\r");
-			////printf("\n");
+			for (int i = 0; i < joints.anchors.num; i++)
+			{
+				Vec rotation_axis = (mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]]).normalize();
+				Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
+				Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
+				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+
+
+				if (joint_speeds_cmd[i] > 0 && angle < joint_angles[i]) {
+					joint_speeds[i] = angle - joint_angles[i] + M_2_PI;
+				}
+				else if (joint_speeds_cmd[i] < 0 && angle > joint_angles[i]) {
+						joint_speeds[i] = angle - joint_angles[i] - M_2_PI;
+				}
+				else {
+					joint_speeds[i] = angle - joint_angles[i];
+				}
+				joint_angles[i] = angle;
+
+				//printf("%f",x_left.norm());
+				//printf("\t");
+				//printf("%f",x_right.norm());
+				//printf("\t");
+				//printf("%3.3f\t\t", x_left.dot(x_right) / (x_left.norm() * x_right.norm()));
+				printf("%- 3.1f\t", angle * M_1_PI*180.0);
+
+				//printf("%3.3f\t%3.3f\t%3.3f\t", x_left.norm(), x_right.norm(), rotation_axis.norm());
+
+
+				//printf("%- 3.1f\t", joint_speeds[i]);
+
+				//printf("%3.3f\t\t", angleBetween(x_left, x_right));
+			}
+			printf("\r");
+			//printf("\n");
 		}
 #endif
 
@@ -440,11 +467,11 @@ void Simulation::execute() {
 			if (abs(e - energy_start) > energy_deviation_max) {
 				energy_deviation_max = abs(e - energy_start);
 				printf("%.3f\t%.3f\n", T, energy_deviation_max / energy_start);
-		}
+			}
 			else { printf("%.3f\r", T); }
 #endif // DEBUG_ENERGY
 
-			
+
 
 			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp
@@ -479,48 +506,44 @@ void Simulation::execute() {
 				camera_pos.z += 0.02;
 			}
 
-			double speed_multiplier = 0.00001;
+			double speed_multiplier = 0.000001;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < joints.size(); i++)
 				{
-					if (jointSpeeds[i] < max_joint_speed) { jointSpeeds[i] += speed_multiplier; }
+					if (joint_speeds_cmd[i] < max_joint_speed) { joint_speeds_cmd[i] += speed_multiplier; }
 				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 				for (int i = 0; i < joints.size(); i++)
 				{
-					if (jointSpeeds[i] > -max_joint_speed) { jointSpeeds[i] -= speed_multiplier; }
+					if (joint_speeds_cmd[i] > -max_joint_speed) { joint_speeds_cmd[i] -= speed_multiplier; }
 				}
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-				if (jointSpeeds[0] > -max_joint_speed) { jointSpeeds[0] -= speed_multiplier; }
-				if (jointSpeeds[1] > -max_joint_speed) { jointSpeeds[1] -= speed_multiplier; }
-				{if (jointSpeeds[2] < max_joint_speed) { jointSpeeds[2] += speed_multiplier; }}
-				{if (jointSpeeds[3] < max_joint_speed) { jointSpeeds[3] += speed_multiplier; }}
+				if (joint_speeds_cmd[0] > -max_joint_speed) { joint_speeds_cmd[0] -= speed_multiplier; }
+				if (joint_speeds_cmd[1] > -max_joint_speed) { joint_speeds_cmd[1] -= speed_multiplier; }
+				{if (joint_speeds_cmd[2] < max_joint_speed) { joint_speeds_cmd[2] += speed_multiplier; }}
+				{if (joint_speeds_cmd[3] < max_joint_speed) { joint_speeds_cmd[3] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-				if (jointSpeeds[3] > -max_joint_speed) { jointSpeeds[3] -= speed_multiplier; }
-				if (jointSpeeds[2] > -max_joint_speed) { jointSpeeds[2] -= speed_multiplier; }
-				{if (jointSpeeds[1] < max_joint_speed) { jointSpeeds[1] += speed_multiplier; }}
-				{if (jointSpeeds[0] < max_joint_speed) { jointSpeeds[0] += speed_multiplier; }}
+				if (joint_speeds_cmd[3] > -max_joint_speed) { joint_speeds_cmd[3] -= speed_multiplier; }
+				if (joint_speeds_cmd[2] > -max_joint_speed) { joint_speeds_cmd[2] -= speed_multiplier; }
+				{if (joint_speeds_cmd[1] < max_joint_speed) { joint_speeds_cmd[1] += speed_multiplier; }}
+				{if (joint_speeds_cmd[0] < max_joint_speed) { joint_speeds_cmd[0] += speed_multiplier; }}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) {
 				for (int i = 0; i < joints.size(); i++)
 				{
-					jointSpeeds[i] = 0.;
+					joint_speeds_cmd[i] = 0.;
 				}
 			}
 
 			// update joint speed
 			for (int k = 0; k < joints.size(); k++) {
-				joints.anchors.theta[k] = k > 1 ? NUM_UPDATE_PER_ROTATION * jointSpeeds[k] : -NUM_UPDATE_PER_ROTATION * jointSpeeds[k];
+				joints.anchors.theta[k] = k > 1 ? NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k] : -NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k];
 			}
 			d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
-
-
-
-
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
@@ -661,11 +684,11 @@ void Simulation::clearConstraints() { // clears global constraints only
 double Simulation::energy() { // compute total energy of the system
 	getAll();
 	cudaDeviceSynchronize();
-	double e_potential=0; // potential energy
+	double e_potential = 0; // potential energy
 	double e_kinetic = 0; //kinetic energy
 	for (int i = 0; i < mass.num; i++)
 	{
-		e_potential += -global_acc.dot(mass.pos[i])*mass.m[i];
+		e_potential += -global_acc.dot(mass.pos[i]) * mass.m[i];
 		e_kinetic += 0.5 * mass.vel[i].SquaredSum() * mass.m[i];
 	}
 	for (int i = 0; i < spring.num; i++)
@@ -817,8 +840,8 @@ void Simulation::updateVertexBuffers() {
 inline void Simulation::draw() {
 	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, this->vertexbuffer);
-	glPointSize(this->pointSize);
-	glLineWidth(this->lineWidth);
+	glPointSize(this->point_size);
+	glLineWidth(this->line_width);
 	glVertexAttribPointer(
 		0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
 		3,                  // size

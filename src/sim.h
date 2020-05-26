@@ -36,6 +36,8 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paralle
 #include<string.h>
 
 
+
+
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr int THREADS_PER_BLOCK = 64;
 constexpr int MASS_THREADS_PER_BLOCK = 64;
@@ -43,7 +45,7 @@ constexpr int MASS_THREADS_PER_BLOCK = 64;
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr int  NUM_QUEUED_KERNELS = 120; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
-constexpr int NUM_UPDATE_PER_ROTATION = 6; //number of update per rotation
+constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -191,7 +193,6 @@ struct SPRING {
 		gpuErrchk(cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream));
-
 		//this->num = other.num;
 	}
 };
@@ -343,9 +344,10 @@ public:
 	SPRING d_spring;
 	JOINT d_joints;
 	
-	double* jointSpeeds; // joint speed in RPM, initialized in start()
-
-	double max_joint_speed = 1e-4;
+	double* joint_angles; // (measured) joint angle array in rad, initialized in start()
+	double* joint_speeds; // (measured) joint speed array in RPM, initialized in start()
+	double* joint_speeds_cmd; // (commended) joint speed array in RPM, initialized in start()
+	double max_joint_speed = 1e-4; // 
 
 
 	//size_t num_mass=0;// refer to mass.num
@@ -422,8 +424,8 @@ private:
 
 
 #ifdef GRAPHICS
-	int lineWidth = 3;
-	int pointSize = 3;
+	int line_width = 3; // line width for rendering the springs
+	int point_size = 3; // point size for rendering the masses
 
 	GLFWwindow* window;
 	int window_width,window_height; // the width and height of the window

@@ -27,6 +27,7 @@ CUDA_CALLABLE_MEMBER Vec slerp(Vec p0, Vec p1, double t) {
 }
 
 // https://stackoverflow.com/questions/14066933/direct-way-of-computing-clockwise-angle-between-2-vectors
+/*compute the clockwise angle between p0 and p1 robtated about the normal, NOTE: normal must be normalized!*/
 CUDA_CALLABLE_MEMBER double signedAngleBetween(Vec p0, Vec p1, Vec normal) {
 	return atan2(cross(p0, p1).dot(normal), p0.dot(p1));
 }
