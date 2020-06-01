@@ -35,15 +35,12 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paralle
 #include<iostream>
 #include<string.h>
 
-
-
-
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr int THREADS_PER_BLOCK = 64;
 constexpr int MASS_THREADS_PER_BLOCK = 64;
 
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
-constexpr int  NUM_QUEUED_KERNELS = 120; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr int  NUM_QUEUED_KERNELS = 100; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
 

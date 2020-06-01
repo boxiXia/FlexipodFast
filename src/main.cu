@@ -164,8 +164,8 @@ int main()
 
 
 	// set max speed for each joint
-	double max_rpm = 200;//maximun revolution per minute
-	sim.max_joint_speed = max_rpm / 60. * 2 * 3.1415926 * sim.dt;
+	double max_rpm = 300;//maximun revolution per minute
+	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI * sim.dt;
 
 	sim.setViewport(Vec(-0.3, 0, 0.3), Vec(0, 0, 0), Vec(0, 0, 1));
 	//sim.setViewport(Vec(.4, -0., .4), Vec(0, -0., -0), Vec(0, 0, 1));

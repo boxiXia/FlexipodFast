@@ -418,8 +418,9 @@ void Simulation::execute() {
 		T += NUM_QUEUED_KERNELS * dt;
 
 #ifdef UDP
-		if (fmod(T, 1. / 10) < NUM_QUEUED_KERNELS * dt) {
+		//if (fmod(T, 1. / 100.0) < NUM_QUEUED_KERNELS * dt) {
 			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
+			cudaDeviceSynchronize();
 
 			for (int i = 0; i < joints.anchors.num; i++)
 			{
@@ -428,35 +429,35 @@ void Simulation::execute() {
 				Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
 				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
 
+				if (i > 1) {
+					angle = -angle;
+				}
 
-				if (joint_speeds_cmd[i] > 0 && angle < joint_angles[i]) {
-					joint_speeds[i] = angle - joint_angles[i] + M_2_PI;
+				if (joint_speeds_cmd[i] > 0 && angle < joint_angles[i]) { // forward turning
+					joint_speeds[i] = angle - joint_angles[i] + 2*M_PI; 
 				}
-				else if (joint_speeds_cmd[i] < 0 && angle > joint_angles[i]) {
-						joint_speeds[i] = angle - joint_angles[i] - M_2_PI;
+				else if (joint_speeds_cmd[i] < 0 && angle > joint_angles[i]) { // backward turning
+						joint_speeds[i] = angle - joint_angles[i] - 2 * M_PI;
 				}
-				else {
+				else { // forward/backward turning
 					joint_speeds[i] = angle - joint_angles[i];
 				}
 				joint_angles[i] = angle;
 
-				//printf("%f",x_left.norm());
-				//printf("\t");
-				//printf("%f",x_right.norm());
-				//printf("\t");
-				//printf("%3.3f\t\t", x_left.dot(x_right) / (x_left.norm() * x_right.norm()));
-				printf("%- 3.1f\t", angle * M_1_PI*180.0);
-
+				//printf("%- 3.1f\t", angle * M_1_PI*180.0);
 				//printf("%3.3f\t%3.3f\t%3.3f\t", x_left.norm(), x_right.norm(), rotation_axis.norm());
+				//printf("%+ 5.1f %+ 5.1f ", joint_speeds_cmd[i]/dt * M_1_PI * 30.0, joint_speeds[i] * M_1_PI * 30.0*100.0);
 
-
-				//printf("%- 3.1f\t", joint_speeds[i]);
-
-				//printf("%3.3f\t\t", angleBetween(x_left, x_right));
 			}
-			printf("\r");
+			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
+				for (int i = 0; i < joints.anchors.num; i++) {
+					printf("%+ 6.1f   ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt));
+				}
+				printf("\r\r");
+			}
+
 			//printf("\n");
-		}
+		//}
 #endif
 
 #ifdef GRAPHICS
