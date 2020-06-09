@@ -75,7 +75,7 @@ int main()
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
 	const double spring_constant_restable = spring_constant * 1.0; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping * 2.0; // spring damping for resetable spring
+	const double spring_damping_restable = spring_damping * 4.0; // spring damping for resetable spring
 
 	// spring coefficient for the probing springs, e.g. coordinates
 	const double spring_constant_probe_anchor = spring_constant * scale_probe; // spring constant for coordiates anchor springs
@@ -172,13 +172,11 @@ int main()
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
-	sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
 	//sim.createPlane(Vec(0, 0, 1), 0, 0, 0);
-
 	//sim.createPlane(Vec(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
-
+	sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
 
 	double runtime = 1200;
 	sim.setBreakpoint(runtime);

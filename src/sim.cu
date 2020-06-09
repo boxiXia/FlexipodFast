@@ -450,23 +450,25 @@ void Simulation::execute() {
 				Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
 				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
 
-				if (joint_speeds_cmd[i] > 0 && angle < joint_angles[i]) { // forward turning
-					joint_speeds[i] = angle - joint_angles[i] + 2*M_PI; 
+				double delta_angle = angle - joint_angles[i];
+				if (delta_angle > M_PI) {
+					joint_speeds[i] = delta_angle - 2 * M_PI;
 				}
-				else if (joint_speeds_cmd[i] < 0 && angle > joint_angles[i]) { // backward turning
-						joint_speeds[i] = angle - joint_angles[i] - 2 * M_PI;
+				else if (delta_angle > -M_PI) {
+					joint_speeds[i] = delta_angle;
 				}
-				else { // forward/backward turning
-					joint_speeds[i] = angle - joint_angles[i];
+				else {
+					joint_speeds[i] = delta_angle + 2 * M_PI;
 				}
 				joint_angles[i] = angle;
+
 			}
 			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-				printf("% 6.1f   ",T); // time
+				printf("% 6.1f: ",T); // time
 
 				for (int i = 0; i < joints.anchors.num; i++) {
 					//printf("%+ 6.1f   ", joint_angles[i] * M_1_PI*180.0);
-					printf("%+ 6.1f   ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
+					printf("%+ 8.1f ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
 				}
 				printf("\r\r");
 			}
