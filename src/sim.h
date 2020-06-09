@@ -40,9 +40,9 @@ constexpr int THREADS_PER_BLOCK = 64;
 constexpr int MASS_THREADS_PER_BLOCK = 64;
 
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
-constexpr int  NUM_QUEUED_KERNELS = 100; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr int  NUM_QUEUED_KERNELS = 125; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
-constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
+constexpr int NUM_UPDATE_PER_ROTATION = 5; //number of update per rotation
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -252,7 +252,7 @@ struct RotPoints { // the points that belongs to the rotational joints
 	int* massId; // index of the left mass and right mass
 	// the directional anchor index of which the mass is rotated about, 
 	int* anchorId;// e.g, k: the k-th anchor,left mass, -k: the k-th anchor, right mass
-	int* dir; // direction: left=+1,right=-1
+	int* dir; // direction: left=-1,right=+1
 	int num; // the length of array "id"
 
 	RotPoints(){}
@@ -281,7 +281,7 @@ struct RotPoints { // the points that belongs to the rotational joints
 				{
 					massId[offset + i] = std_joint.left[i];
 					anchorId[offset + i] = joint_id;
-					dir[offset + i] = 1;
+					dir[offset + i] = -1;
 				}
 				offset += std_joint.left.size();//increment offset by num of left
 
@@ -289,7 +289,7 @@ struct RotPoints { // the points that belongs to the rotational joints
 				{
 					massId[offset + i] = std_joint.right[i];
 					anchorId[offset + i] = joint_id;
-					dir[offset + i] = -1;
+					dir[offset + i] = 1;
 				}
 				offset += std_joint.right.size();//increment offset by num of right
 			}
@@ -342,7 +342,7 @@ public:
 	JOINT d_joints;
 	
 	double* joint_angles; // (measured) joint angle array in rad, initialized in start()
-	double* joint_speeds; // (measured) joint speed array in RPM, initialized in start()
+	double* joint_speeds; // (measured) joint speed array in rad/s, initialized in start()
 	double* joint_speeds_cmd; // (commended) joint speed array in RPM, initialized in start()
 	double max_joint_speed = 1e-4; // 
 

@@ -22,7 +22,8 @@ CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const dou
 CUDA_CALLABLE_MEMBER Vec slerp(Vec p0, Vec p1, double t) {
 	double w = angleBetween(p0, p1);//total angle
 	double s = sin(w);
-	Vec p_lerp = sin((1 - t) * w) / s * p0 + sin(t * w) / s * p1;
+	//fixed numerical instability
+	Vec p_lerp = abs(s)>1e-10? sin((1 - t) * w) / s * p0 + sin(t * w) / s * p1 : p1;
 	return p_lerp;
 }
 

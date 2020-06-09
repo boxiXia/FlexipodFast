@@ -68,7 +68,7 @@ int main()
 	//const double spring_damping = 0; // damping for spring
 
 
-	const double scale_high = 2.5;// scaling factor high
+	const double scale_high = 2;// scaling factor high
 	//const double scale_low = 0.5; // scaling factor low
 	double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
 
@@ -172,14 +172,16 @@ int main()
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
-	//sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
+	sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
+	//sim.createPlane(Vec(0, 0, 1), 0, 0, 0);
+
 	//sim.createPlane(Vec(0, 0, 1), -1, 0, 0);
 
-	//sim.global_acc = Vec(0, 0, -9.8); // global acceleration
+	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
 
 
-	//double runtime = 120;
-	//sim.setBreakpoint(runtime);
+	double runtime = 1200;
+	sim.setBreakpoint(runtime);
 
 	sim.start();
 

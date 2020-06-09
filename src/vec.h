@@ -17,6 +17,17 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #define CUDA_DEVICE
 #endif
 
+
+#if defined(__CUDACC__) // NVCC
+#define MY_ALIGN(n) __align__(n)
+#elif defined(__GNUC__) // GCC
+#define MY_ALIGN(n) __attribute__((aligned(n)))
+#elif defined(_MSC_VER) // MSVC
+#define MY_ALIGN(n) __declspec(align(n))
+#else
+#error "Please provide a definition for MY_ALIGN macro for your host compiler!"
+#endif //https://stackoverflow.com/questions/12778949/cuda-memory-alignment/12779757
+
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -26,8 +37,11 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <cuda_device_runtime_api.h>
 #include <device_launch_parameters.h>
 
-// use align to force alignment for gpu memory
-struct __align__(16) Vec {
+/*
+data sturcture for vector 3
+use align to force alignment for gpu memory
+*/
+struct MY_ALIGN(16) Vec {
 	double x;
 	double y;
 	double z;

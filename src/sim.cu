@@ -27,14 +27,15 @@ __global__ void SpringUpate(
 		int left = spring.left[i];
 		Vec s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		if (length > 1e-10) {
-			s_vec /= length; // normalized to unit vector (direction) //Todo: instablility for small length
-			Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
-			force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
 
-			mass.force[right].atomicVecAdd(force); // need atomics here
-			mass.force[left].atomicVecAdd(-force); // removed condition on fixed
-		}
+		s_vec /= (length > 1e-10 ? length : 1e-10);// normalized to unit vector (direction), check instablility for small length
+
+		Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
+
+		mass.force[right].atomicVecAdd(force); // need atomics here
+		mass.force[left].atomicVecAdd(-force); // removed condition on fixed
+		
 #ifdef ROTATION
 		if (spring.resetable[i]) {
 			spring.rest[i] = length;//reset the spring rest length if this spring is restable
@@ -87,20 +88,23 @@ __global__ void MassUpate(
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
 		if (mass.fixed[i] == false) {
-			Vec force = global_acc;
 			double m = mass.m[i];
+			Vec pos = mass.pos[i];
+			Vec vel = mass.vel[i];
+			Vec force = global_acc;
 			force *= m; // force = d_mass.m[i] * global_acc;
 			force += mass.force[i];
 			force += mass.force_extern[i];// add external force [N]
 
-			/*if (mass.constrain) */ {
+			/*if (mass.constrain)*/ {
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
-					c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
+					c.d_planes[j].applyForce(force, pos, vel); // todo fix this 
 				}
 				for (int j = 0; j < c.num_balls; j++) {
-					c.d_balls[j].applyForce(force, mass.pos[i]);
+					c.d_balls[j].applyForce(force, pos);
 				}
 			}
+
 #ifdef VERLET // verlet integration
 			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
 			Vec acc = force / m;
@@ -111,9 +115,11 @@ __global__ void MassUpate(
 			mass.force[i].setZero();
 
 #else // euler integration
-			mass.acc[i] = force / m;
-			mass.vel[i] += mass.acc[i] * dt;
-			mass.pos[i] += mass.vel[i] * dt;
+			force /= m; // force is now acceleration
+			vel += force * dt; // vel += acc*dt
+			mass.acc[i] = force; // update acceleration
+			mass.vel[i] = vel; // update velocity
+			mass.pos[i] += vel * dt; // update position
 			mass.force[i].setZero();
 #endif // verlet
 		}
@@ -129,19 +135,21 @@ __global__ void massUpdateAndRotate(
 	const double dt) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
-		if (mass.fixed[i] == false) {//this part is same as MassUpate
-			Vec force = global_acc;
+		if (mass.fixed[i] == false) {
 			double m = mass.m[i];
+			Vec pos = mass.pos[i];
+			Vec vel = mass.vel[i];
+			Vec force = global_acc;
 			force *= m; // force = d_mass.m[i] * global_acc;
 			force += mass.force[i];
 			force += mass.force_extern[i];// add external force [N]
 
 			/*if (mass.constrain)*/ {
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
-					c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
+					c.d_planes[j].applyForce(force, pos, vel); // todo fix this 
 				}
 				for (int j = 0; j < c.num_balls; j++) {
-					c.d_balls[j].applyForce(force, mass.pos[i]);
+					c.d_balls[j].applyForce(force, pos);
 				}
 			}
 
@@ -155,9 +163,11 @@ __global__ void massUpdateAndRotate(
 			mass.force[i].setZero();
 
 #else // euler integration
-			mass.acc[i] = force / m;
-			mass.vel[i] += mass.acc[i] * dt;
-			mass.pos[i] += mass.vel[i] * dt;
+			force /= m; // force is now acceleration
+			vel += force * dt; // vel += acc*dt
+			mass.acc[i] = force; // update acceleration
+			mass.vel[i] = vel; // update velocity
+			mass.pos[i] += vel * dt; // update position
 			mass.force[i].setZero();
 #endif // verlet
 		}
@@ -167,6 +177,7 @@ __global__ void massUpdateAndRotate(
 			joint.anchors.dir[i] = (mass.pos[joint.anchors.right[i]] - mass.pos[joint.anchors.left[i]]).normalize();
 		}
 		__syncthreads();
+		__threadfence();
 
 		int anchor_id = joint.points.anchorId[i];
 		int mass_id = joint.points.massId[i];
@@ -178,16 +189,26 @@ __global__ void massUpdateAndRotate(
 __global__ void rotateJoint(Vec* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
-
 		if (i < joint.anchors.num) {
-			joint.anchors.dir[i] = (mass_pos[joint.anchors.right[i]] - mass_pos[joint.anchors.left[i]]).normalize();
+			joint.anchors.dir[i] = (mass_pos[joint.anchors.right[i]] - mass_pos[joint.anchors.left[i]]).normalize ();
 		}
+		__threadfence();
 		__syncthreads();
 
 		int anchor_id = joint.points.anchorId[i];
 		int mass_id = joint.points.massId[i];
+
 		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
 			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
+
+		//Vec anchor_left = mass_pos[joint.anchors.left[anchor_id]];
+		//Vec anchor_right = mass_pos[joint.anchors.right[anchor_id]];
+		////Vec dir = 
+		///*double3*/
+		//Vec dir = (mass_pos[joint.anchors.right[anchor_id]] - mass_pos[joint.anchors.left[anchor_id]]).normalize();
+
+		//mass_pos[mass_id] = AxisAngleRotaion(dir, mass_pos[mass_id],
+		//	joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
 	}
 }
 #endif // ROTATION
@@ -330,7 +351,6 @@ void Simulation::execute() {
 	gpuErrchk(cudaPeekAtLastError());
 #endif // VERLET
 
-
 	while (true) {
 		if (!bpts.empty() && *bpts.begin() <= T) {
 			cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
@@ -401,7 +421,7 @@ void Simulation::execute() {
 			//cudaStreamWaitEvent(stream[0], event, 0);
 #ifdef ROTATION
 
-			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, 0 >> > (d_mass.pos, d_joints);
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK>> > (d_mass.pos, d_joints);
 			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
 
@@ -422,16 +442,13 @@ void Simulation::execute() {
 			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 			cudaDeviceSynchronize();
 
+//#pragma omp parallel for
 			for (int i = 0; i < joints.anchors.num; i++)
 			{
 				Vec rotation_axis = (mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]]).normalize();
 				Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
 				Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
 				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
-
-				if (i > 1) {
-					angle = -angle;
-				}
 
 				if (joint_speeds_cmd[i] > 0 && angle < joint_angles[i]) { // forward turning
 					joint_speeds[i] = angle - joint_angles[i] + 2*M_PI; 
@@ -443,15 +460,13 @@ void Simulation::execute() {
 					joint_speeds[i] = angle - joint_angles[i];
 				}
 				joint_angles[i] = angle;
-
-				//printf("%- 3.1f\t", angle * M_1_PI*180.0);
-				//printf("%3.3f\t%3.3f\t%3.3f\t", x_left.norm(), x_right.norm(), rotation_axis.norm());
-				//printf("%+ 5.1f %+ 5.1f ", joint_speeds_cmd[i]/dt * M_1_PI * 30.0, joint_speeds[i] * M_1_PI * 30.0*100.0);
-
 			}
 			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
+				printf("% 6.1f   ",T); // time
+
 				for (int i = 0; i < joints.anchors.num; i++) {
-					printf("%+ 6.1f   ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt));
+					//printf("%+ 6.1f   ", joint_angles[i] * M_1_PI*180.0);
+					printf("%+ 6.1f   ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
 				}
 				printf("\r\r");
 			}
@@ -465,23 +480,25 @@ void Simulation::execute() {
 
 #ifdef DEBUG_ENERGY
 			double e = energy();
-			if (abs(e - energy_start) > energy_deviation_max) {
-				energy_deviation_max = abs(e - energy_start);
-				printf("%.3f\t%.3f\n", T, energy_deviation_max / energy_start);
-			}
-			else { printf("%.3f\r", T); }
+			//if (abs(e - energy_start) > energy_deviation_max) {
+			//	energy_deviation_max = abs(e - energy_start);
+			//	printf("%.3f\t%.3f\n", T, energy_deviation_max / energy_start);
+			//}
+			//else { printf("%.3f\r", T); }
+			printf("%.3f\t%.3f\n", T, e);
+
 #endif // DEBUG_ENERGY
 
 
-
-			//mass.pos[id_oxyz_start].print();
 			// https://en.wikipedia.org/wiki/Slerp
+			//mass.pos[id_oxyz_start].print();
 			double t_lerp = 0.01;
 			Vec camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
 			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
 			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
 			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
 			camera_dir.normalize();
+
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
@@ -507,44 +524,51 @@ void Simulation::execute() {
 				camera_pos.z += 0.02;
 			}
 
-			double speed_multiplier = 0.000001;
-
+			double speed_multiplier = 0.000005;
+			//double speed_multiplier = 0.0001;
+			bool speed_updated = false;
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
-				for (int i = 0; i < joints.size(); i++)
-				{
-					if (joint_speeds_cmd[i] < max_joint_speed) { joint_speeds_cmd[i] += speed_multiplier; }
-				}
+				if (joint_speeds_cmd[0] < max_joint_speed) { joint_speeds_cmd[0] += speed_multiplier; }
+				if (joint_speeds_cmd[1] < max_joint_speed) { joint_speeds_cmd[1] += speed_multiplier; }
+				if (joint_speeds_cmd[2] > -max_joint_speed) { joint_speeds_cmd[2] -= speed_multiplier; }
+				if (joint_speeds_cmd[3] > -max_joint_speed) { joint_speeds_cmd[3] -= speed_multiplier; }
+				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+				if (joint_speeds_cmd[0] > -max_joint_speed) { joint_speeds_cmd[0] -= speed_multiplier; }
+				if (joint_speeds_cmd[1] > -max_joint_speed) { joint_speeds_cmd[1] -= speed_multiplier; }
+				if (joint_speeds_cmd[2] < max_joint_speed) { joint_speeds_cmd[2] += speed_multiplier; }
+				if (joint_speeds_cmd[3] < max_joint_speed) { joint_speeds_cmd[3] += speed_multiplier; }
+				speed_updated = true;
+			}
+			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 				for (int i = 0; i < joints.size(); i++)
 				{
 					if (joint_speeds_cmd[i] > -max_joint_speed) { joint_speeds_cmd[i] -= speed_multiplier; }
 				}
-			}
-			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-				if (joint_speeds_cmd[0] > -max_joint_speed) { joint_speeds_cmd[0] -= speed_multiplier; }
-				if (joint_speeds_cmd[1] > -max_joint_speed) { joint_speeds_cmd[1] -= speed_multiplier; }
-				{if (joint_speeds_cmd[2] < max_joint_speed) { joint_speeds_cmd[2] += speed_multiplier; }}
-				{if (joint_speeds_cmd[3] < max_joint_speed) { joint_speeds_cmd[3] += speed_multiplier; }}
+				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-				if (joint_speeds_cmd[3] > -max_joint_speed) { joint_speeds_cmd[3] -= speed_multiplier; }
-				if (joint_speeds_cmd[2] > -max_joint_speed) { joint_speeds_cmd[2] -= speed_multiplier; }
-				{if (joint_speeds_cmd[1] < max_joint_speed) { joint_speeds_cmd[1] += speed_multiplier; }}
-				{if (joint_speeds_cmd[0] < max_joint_speed) { joint_speeds_cmd[0] += speed_multiplier; }}
+				for (int i = 0; i < joints.size(); i++)
+				{
+					if (joint_speeds_cmd[i] < max_joint_speed) { joint_speeds_cmd[i] += speed_multiplier; }
+				}
+				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) {
 				for (int i = 0; i < joints.size(); i++)
 				{
 					joint_speeds_cmd[i] = 0.;
 				}
+				speed_updated = true;
+			}
+			if (speed_updated) {// update joint speed
+				for (int k = 0; k < joints.size(); k++) {
+					joints.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k];
+				}
+				d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
 			}
 
-			// update joint speed
-			for (int k = 0; k < joints.size(); k++) {
-				joints.anchors.theta[k] = k > 1 ? NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k] : -NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k];
-			}
-			d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
@@ -781,9 +805,10 @@ __global__ void updateVertices(float* __restrict__ gl_ptr, const Vec* __restrict
 	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
 	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		gl_ptr[3 * i] = (float)pos[i].x;
-		gl_ptr[3 * i + 1] = (float)pos[i].y;
-		gl_ptr[3 * i + 2] = (float)pos[i].z;
+		Vec pos_i = pos[i];
+		gl_ptr[3 * i] = (float)pos_i.x;
+		gl_ptr[3 * i + 1] = (float)pos_i.y;
+		gl_ptr[3 * i + 2] = (float)pos_i.z;
 	}
 }
 
@@ -797,9 +822,10 @@ __global__ void updateIndices(unsigned int* __restrict__ gl_ptr,
 
 __global__ void updateColors(float* __restrict__ gl_ptr, const Vec* __restrict__ color, const int num_mass) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		gl_ptr[3 * i] = (float)color[i].x;
-		gl_ptr[3 * i + 1] = (float)color[i].y;
-		gl_ptr[3 * i + 2] = (float)color[i].z;
+		Vec color_i = color[i];
+		gl_ptr[3 * i] = (float)color_i.x;
+		gl_ptr[3 * i + 1] = (float)color_i.y;
+		gl_ptr[3 * i + 2] = (float)color_i.z;
 	}
 }
 
