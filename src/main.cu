@@ -87,8 +87,8 @@ int main()
 #pragma omp parallel for
 	for (int i = 0; i < num_mass; i++)
 	{
-		mass.pos[i]= bot.vertices[i]; // position (Vec) [m]
-		mass.color[i]= bot.colors[i]; // color (Vec) [0.0-1.0]
+		mass.pos[i]= bot.vertices[i]; // position (Vec3d) [m]
+		mass.color[i]= bot.colors[i]; // color (Vec3d) [0.0-1.0]
 		mass.m[i] = m; // mass [kg]
 		mass.constrain[i] = bot.isSurface[i];// set constrain to true for suface points, and false otherwise
 	}
@@ -167,16 +167,16 @@ int main()
 	double max_rpm = 300;//maximun revolution per minute
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI * sim.dt;
 
-	sim.setViewport(Vec(-0.3, 0, 0.3), Vec(0, 0, 0), Vec(0, 0, 1));
-	//sim.setViewport(Vec(.4, -0., .4), Vec(0, -0., -0), Vec(0, 0, 1));
+	sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
+	//sim.setViewport(Vec3d(.4, -0., .4), Vec3d(0, -0., -0), Vec3d(0, 0, 1));
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
-	//sim.createPlane(Vec(0, 0, 1), 0, 0.5, 0.55);
-	//sim.createPlane(Vec(0, 0, 1), 0, 0, 0);
-	//sim.createPlane(Vec(0, 0, 1), -1, 0, 0);
+	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.5, 0.55);
+	//sim.createPlane(Vec3d(0, 0, 1), 0, 0, 0);
+	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
-	sim.global_acc = Vec(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec(0, 0, 1), 0, 0.6, 0.65);
+	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.6, 0.65);
 
 	double runtime = 1200;
 	sim.setBreakpoint(runtime);

@@ -89,17 +89,17 @@ public:
 
 struct MASS {
 	double* m = nullptr;
-	Vec* pos = nullptr;
-	Vec* vel = nullptr;
-	Vec* acc = nullptr;
-	Vec* force = nullptr;
-	Vec* force_extern = nullptr;
-	Vec* color = nullptr;
+	Vec3d* pos = nullptr;
+	Vec3d* vel = nullptr;
+	Vec3d* acc = nullptr;
+	Vec3d* force = nullptr;
+	Vec3d* force_extern = nullptr;
+	Vec3d* color = nullptr;
 	bool* fixed = nullptr;
 	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
 	int num = 0;
 #ifdef VERLET
-	Vec* prev_pos = nullptr; // x_{n-1}, position at previous timestep
+	Vec3d* prev_pos = nullptr; // x_{n-1}, position at previous timestep
 #endif // VERLET
 	MASS() { }
 	MASS(int num, bool on_host = true) {
@@ -112,49 +112,49 @@ struct MASS {
 		// ref: https://stackoverflow.com/questions/9410/how-do-you-pass-a-function-as-a-parameter-in-c
 		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
 		gpuErrchk((*malloc)((void**)&m, num * sizeof(double)));
-		gpuErrchk((*malloc)((void**)&pos, num * sizeof(Vec)));
-		gpuErrchk((*malloc)((void**)&vel, num * sizeof(Vec)));
-		gpuErrchk((*malloc)((void**)&acc, num * sizeof(Vec)));
-		gpuErrchk((*malloc)((void**)&force, num * sizeof(Vec)));
-		gpuErrchk((*malloc)((void**)&force_extern, num * sizeof(Vec)));
-		gpuErrchk((*malloc)((void**)&color, num * sizeof(Vec)));
+		gpuErrchk((*malloc)((void**)&pos, num * sizeof(Vec3d)));
+		gpuErrchk((*malloc)((void**)&vel, num * sizeof(Vec3d)));
+		gpuErrchk((*malloc)((void**)&acc, num * sizeof(Vec3d)));
+		gpuErrchk((*malloc)((void**)&force, num * sizeof(Vec3d)));
+		gpuErrchk((*malloc)((void**)&force_extern, num * sizeof(Vec3d)));
+		gpuErrchk((*malloc)((void**)&color, num * sizeof(Vec3d)));
 		gpuErrchk((*malloc)((void**)&fixed, num * sizeof(bool)));
 		gpuErrchk((*malloc)((void**)&constrain, num * sizeof(bool)));
 		this->num = num;
 #ifdef VERLET
-		gpuErrchk((*malloc)((void**)&prev_pos, num * sizeof(Vec)));
+		gpuErrchk((*malloc)((void**)&prev_pos, num * sizeof(Vec3d)));
 #endif // VERLET
 		if (on_host) {// set vel,acc to 0
-			memset(vel, 0, num * sizeof(Vec));
-			memset(acc, 0, num * sizeof(Vec));
+			memset(vel, 0, num * sizeof(Vec3d));
+			memset(acc, 0, num * sizeof(Vec3d));
 #ifdef VERLET
-			memset(prev_pos,0,num * sizeof(Vec));
+			memset(prev_pos,0,num * sizeof(Vec3d));
 #endif // VERLET
 		}
 		else {
-			cudaMemset(vel, 0, num * sizeof(Vec));
-			cudaMemset(acc, 0, num * sizeof(Vec));
+			cudaMemset(vel, 0, num * sizeof(Vec3d));
+			cudaMemset(acc, 0, num * sizeof(Vec3d));
 		}
 	}
 	void copyFrom(MASS& other, cudaStream_t stream=(cudaStream_t)0) {
 		gpuErrchk(cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(force, other.force, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(force, other.force, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream));
 #ifdef VERLET
-		gpuErrchk(cudaMemcpyAsync(prev_pos, other.force_extern, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(prev_pos, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
 #endif // VERLET
 		//this->num = other.num;
 	}
 	void CopyPosVelAccFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
-		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
 	}
 };
 
@@ -198,7 +198,7 @@ struct SPRING {
 struct RotAnchors { // the anchors that belongs to the rotational joints
 	int* left; // index of the left anchor of the joint
 	int* right;// index of the right anchor of the joint
-	Vec* dir; // direction of the joint,normalized
+	Vec3d* dir; // direction of the joint,normalized
 	double* theta;// the angular increment per joint update
 
 	int* leftCoord; // the index of left coordintate (oxyz) start for all joints (flat view)
@@ -217,7 +217,7 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 
 		(*malloc)((void**)&left, num * sizeof(int));
 		(*malloc)((void**)&right, num * sizeof(int));
-		(*malloc)((void**)&dir, num * sizeof(Vec));
+		(*malloc)((void**)&dir, num * sizeof(Vec3d));
 		(*malloc)((void**)&theta, num * sizeof(double));
 		(*malloc)((void**)&leftCoord, num * sizeof(int));
 		(*malloc)((void**)&rightCoord, num * sizeof(int));
@@ -236,7 +236,7 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 	void copyFrom(const RotAnchors& other, cudaStream_t stream = (cudaStream_t)0) {
 		cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(dir, other.dir, num * sizeof(Vec), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(dir, other.dir, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(leftCoord, other.leftCoord, num * sizeof(int), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(rightCoord, other.rightCoord, num * sizeof(int), cudaMemcpyDefault, stream);
@@ -324,7 +324,7 @@ class Simulation {
 public:
 	double dt = 0.0001;
 	double T = 0; //simulation time
-	Vec global_acc = Vec(0,0,0); // global acceleration
+	Vec3d global_acc = Vec3d(0,0,0); // global acceleration
 
 	int id_restable_spring_start = 0; // resetable springs start index (inclusive)
 	int id_resetable_spring_end = 0; // resetable springs start index (exclusive)
@@ -371,8 +371,8 @@ public:
 	void setMass();
 	// Global constraints (can be rendered)
 	// creates half-space ax + by + cz < d
-	void createPlane(const Vec& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0);
-	void createBall(const Vec& center, const double r); // creates ball with radius r at position center
+	void createPlane(const Vec3d& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0);
+	void createBall(const Vec3d& center, const double r); // creates ball with radius r at position center
 	void clearConstraints(); // clears global constraints only
 
 	void setBreakpoint(const double time); // tell the program to stop at a fixed time (doesn't hang).
@@ -394,8 +394,8 @@ public:
 #endif // DEBUG_ENERGY
 
 #ifdef GRAPHICS
-	void setViewport(const Vec& camera_position, const Vec& target_location, const Vec& up_vector);
-	void moveViewport(const Vec& displacement);
+	void setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector);
+	void moveViewport(const Vec3d& displacement);
 #endif
 
 private:
@@ -436,10 +436,10 @@ private:
 	glm::mat4 Projection; //projection matrix
 
 	// for projection matrix 
-	Vec camera_pos;// camera position
-	Vec camera_dir;//camera look at direction
-	//Vec looks_at;
-	Vec camera_up;// camera up
+	Vec3d camera_pos;// camera position
+	Vec3d camera_dir;//camera look at direction
+	//Vec3d looks_at;
+	Vec3d camera_up;// camera up
 
 	GLuint vertexbuffer; // handle for vertexbuffer
 	GLuint colorbuffer; // handle for colorbuffer

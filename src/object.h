@@ -55,7 +55,7 @@ public:
 };
 
 struct Ball : public Constraint {
-    Ball(const Vec & center, double radius) {
+    Ball(const Vec3d & center, double radius) {
         _center = center;
         _radius = radius;
 
@@ -66,7 +66,7 @@ struct Ball : public Constraint {
     }
 
     double _radius;
-    Vec _center;
+    Vec3d _center;
 
 #ifdef GRAPHICS
     ~Ball() {
@@ -90,18 +90,18 @@ struct Ball : public Constraint {
 
 struct CudaBall {
     //CudaBall() = default;
-    //CUDA_CALLABLE_MEMBER CudaBall(const Vec & center, double radius);
+    //CUDA_CALLABLE_MEMBER CudaBall(const Vec3d & center, double radius);
     //CUDA_CALLABLE_MEMBER CudaBall(const Ball & b);
 
-    CUDA_CALLABLE_MEMBER void applyForce(Vec& force, Vec& pos);
+    CUDA_CALLABLE_MEMBER void applyForce(Vec3d& force, Vec3d& pos);
 
     double _radius;
-    Vec _center;
+    Vec3d _center;
 };
 
 // creates half-space ax + by + cz < d
 struct ContactPlane : public Constraint {
-    ContactPlane(const Vec & normal, double offset) {
+    ContactPlane(const Vec3d & normal, double offset) {
         _normal = normal / normal.norm();
         _offset = offset;
 
@@ -113,7 +113,7 @@ struct ContactPlane : public Constraint {
 #endif
     }
 
-    Vec _normal;
+    Vec3d _normal;
     double _offset;
 
     double _FRICTION_K;
@@ -137,9 +137,9 @@ struct ContactPlane : public Constraint {
 
 struct CudaContactPlane {
 
-    CUDA_CALLABLE_MEMBER  void applyForce(Vec& force, Vec& pos, Vec& vel);
+    CUDA_CALLABLE_MEMBER  void applyForce(Vec3d& force, Vec3d& pos, Vec3d& vel);
 
-    Vec _normal;
+    Vec3d _normal;
     double _offset;
     double _FRICTION_K = 0.0;
     double _FRICTION_S = 0.0;

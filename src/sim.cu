@@ -25,12 +25,12 @@ __global__ void SpringUpate(
 	if (i < spring.num) {
 		int right = spring.right[i];
 		int left = spring.left[i];
-		Vec s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
+		Vec3d s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
 
 		s_vec /= (length > 1e-10 ? length : 1e-10);// normalized to unit vector (direction), check instablility for small length
 
-		Vec force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
 
 		mass.force[right].atomicVecAdd(force); // need atomics here
@@ -49,12 +49,12 @@ __global__ void SpringUpate(
 __global__ void MassUpateStarter(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
-	const Vec global_acc,
+	const Vec3d global_acc,
 	const double dt) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
 		if (mass.fixed[i] == false) {
-			Vec force = global_acc;
+			Vec3d force = global_acc;
 			double m = mass.m[i];
 			force *= m; // force = d_mass.m[i] * global_acc;
 			force += mass.force[i];
@@ -69,7 +69,7 @@ __global__ void MassUpateStarter(
 				}
 			}
 			// starter
-			Vec acc = force / m;
+			Vec3d acc = force / m;
 			mass.acc[i] = acc;
 			mass.prev_pos[i] = mass.pos[i];
 			mass.vel[i] += acc * dt;
@@ -83,15 +83,15 @@ __global__ void MassUpateStarter(
 __global__ void MassUpate(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
-	const Vec global_acc,
+	const Vec3d global_acc,
 	const double dt) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
 		if (mass.fixed[i] == false) {
 			double m = mass.m[i];
-			Vec pos = mass.pos[i];
-			Vec vel = mass.vel[i];
-			Vec force = global_acc;
+			Vec3d pos = mass.pos[i];
+			Vec3d vel = mass.vel[i];
+			Vec3d force = global_acc;
 			force *= m; // force = d_mass.m[i] * global_acc;
 			force += mass.force[i];
 			force += mass.force_extern[i];// add external force [N]
@@ -107,8 +107,8 @@ __global__ void MassUpate(
 
 #ifdef VERLET // verlet integration
 			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			Vec acc = force / m;
-			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
+			Vec3d acc = force / m;
+			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
 			mass.vel[i] = (pos - mass.pos[i]) / dt;
 			mass.prev_pos[i] = mass.pos[i];
 			mass.pos[i] = pos;
@@ -131,15 +131,15 @@ __global__ void massUpdateAndRotate(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
 	const JOINT joint,
-	const Vec global_acc,
+	const Vec3d global_acc,
 	const double dt) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
 		if (mass.fixed[i] == false) {
 			double m = mass.m[i];
-			Vec pos = mass.pos[i];
-			Vec vel = mass.vel[i];
-			Vec force = global_acc;
+			Vec3d pos = mass.pos[i];
+			Vec3d vel = mass.vel[i];
+			Vec3d force = global_acc;
 			force *= m; // force = d_mass.m[i] * global_acc;
 			force += mass.force[i];
 			force += mass.force_extern[i];// add external force [N]
@@ -155,8 +155,8 @@ __global__ void massUpdateAndRotate(
 
 #ifdef VERLET // verlet integration
 			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			Vec acc = force / m;
-			Vec pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
+			Vec3d acc = force / m;
+			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
 			mass.vel[i] = (pos - mass.pos[i]) / dt;
 			mass.prev_pos[i] = mass.pos[i];
 			mass.pos[i] = pos;
@@ -186,7 +186,7 @@ __global__ void massUpdateAndRotate(
 	}
 }
 
-__global__ void rotateJoint(Vec* __restrict__ mass_pos, const JOINT joint) {
+__global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
 		if (i < joint.anchors.num) {
@@ -201,11 +201,11 @@ __global__ void rotateJoint(Vec* __restrict__ mass_pos, const JOINT joint) {
 		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
 			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
 
-		//Vec anchor_left = mass_pos[joint.anchors.left[anchor_id]];
-		//Vec anchor_right = mass_pos[joint.anchors.right[anchor_id]];
-		////Vec dir = 
+		//Vec3d anchor_left = mass_pos[joint.anchors.left[anchor_id]];
+		//Vec3d anchor_right = mass_pos[joint.anchors.right[anchor_id]];
+		////Vec3d dir = 
 		///*double3*/
-		//Vec dir = (mass_pos[joint.anchors.right[anchor_id]] - mass_pos[joint.anchors.left[anchor_id]]).normalize();
+		//Vec3d dir = (mass_pos[joint.anchors.right[anchor_id]] - mass_pos[joint.anchors.left[anchor_id]]).normalize();
 
 		//mass_pos[mass_id] = AxisAngleRotaion(dir, mass_pos[mass_id],
 		//	joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
@@ -445,9 +445,9 @@ void Simulation::execute() {
 //#pragma omp parallel for
 			for (int i = 0; i < joints.anchors.num; i++)
 			{
-				Vec rotation_axis = (mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]]).normalize();
-				Vec x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
-				Vec x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
+				Vec3d rotation_axis = (mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]]).normalize();
+				Vec3d x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
+				Vec3d x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
 				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
 
 				double delta_angle = angle - joint_angles[i];
@@ -495,7 +495,7 @@ void Simulation::execute() {
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
 			double t_lerp = 0.01;
-			Vec camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
+			Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
 			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
 			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
 			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
@@ -514,10 +514,10 @@ void Simulation::execute() {
 			}
 
 			if (glfwGetKey(window, GLFW_KEY_A)) {
-				camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.02, Vec());
+				camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.02, Vec3d());
 			}
 			else if (glfwGetKey(window, GLFW_KEY_D)) {
-				camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.02, Vec());
+				camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.02, Vec3d());
 			}
 			else if (glfwGetKey(window, GLFW_KEY_Q)) {
 				camera_pos.z -= 0.02;
@@ -669,7 +669,7 @@ void Simulation::freeGPU() {
 
 
 // creates half-space ax + by + cz < d
-void Simulation::createPlane(const Vec& abc, const double d, const double FRICTION_K, const double FRICTION_S) { // creates half-space ax + by + cz < d
+void Simulation::createPlane(const Vec3d& abc, const double d, const double FRICTION_K, const double FRICTION_S) { // creates half-space ax + by + cz < d
 	if (ENDED) { throw std::runtime_error("The simulation has ended. New objects cannot be created."); }
 	ContactPlane* new_plane = new ContactPlane(abc, d);
 	new_plane->_FRICTION_K = FRICTION_K;
@@ -688,7 +688,7 @@ void Simulation::createPlane(const Vec& abc, const double d, const double FRICTI
 	update_constraints = true;
 }
 
-void Simulation::createBall(const Vec& center, const double r) { // creates ball with radius r at position center
+void Simulation::createBall(const Vec3d& center, const double r) { // creates ball with radius r at position center
 	if (ENDED) { throw std::runtime_error("The simulation has ended. New constraints cannot be added."); }
 	Ball* new_ball = new Ball(center, r);
 	constraints.push_back(new_ball);
@@ -727,13 +727,13 @@ double Simulation::energy() { // compute total energy of the system
 #endif // DEBUG_ENERGY
 
 #ifdef GRAPHICS
-void Simulation::setViewport(const Vec& camera_position, const Vec& target_location, const Vec& up_vector) {
+void Simulation::setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector) {
 	this->camera_pos = camera_position;
 	this->camera_dir = (target_location - camera_position).normalize();
 	this->camera_up = up_vector;
 	if (STARTED) { computeMVP(); }
 }
-void Simulation::moveViewport(const Vec& displacement) {
+void Simulation::moveViewport(const Vec3d& displacement) {
 	this->camera_pos += displacement;
 	if (STARTED) { computeMVP(); } // compute perspective projection matrix
 }
@@ -803,11 +803,11 @@ inline void Simulation::resizeBuffers() {
 	resize_buffers = false;
 }
 
-__global__ void updateVertices(float* __restrict__ gl_ptr, const Vec* __restrict__  pos, const int num_mass) {
+__global__ void updateVertices(float* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
 	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
 	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		Vec pos_i = pos[i];
+		Vec3d pos_i = pos[i];
 		gl_ptr[3 * i] = (float)pos_i.x;
 		gl_ptr[3 * i + 1] = (float)pos_i.y;
 		gl_ptr[3 * i + 2] = (float)pos_i.z;
@@ -822,9 +822,9 @@ __global__ void updateIndices(unsigned int* __restrict__ gl_ptr,
 	}
 }
 
-__global__ void updateColors(float* __restrict__ gl_ptr, const Vec* __restrict__ color, const int num_mass) {
+__global__ void updateColors(float* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		Vec color_i = color[i];
+		Vec3d color_i = color[i];
 		gl_ptr[3 * i] = (float)color_i.x;
 		gl_ptr[3 * i + 1] = (float)color_i.y;
 		gl_ptr[3 * i + 2] = (float)color_i.z;

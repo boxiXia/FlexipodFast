@@ -38,99 +38,130 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <device_launch_parameters.h>
 
 /*
-data sturcture for vector 3
+index 2 (int)
+*/
+struct MY_ALIGN(8) Vec2i {
+	double x, y;
+
+	CUDA_CALLABLE_MEMBER Vec2i() {
+		x = 0;
+		y = 0;
+	} // default
+	CUDA_CALLABLE_MEMBER Vec2i(const Vec2i& v) {
+		x = v.x;
+		y = v.y;
+	} // copy constructor
+	CUDA_CALLABLE_MEMBER Vec2i(double x, double y) {
+		this->x = x;
+		this->y = y;
+	} // initialization from x, y, and z values
+
+	CUDA_CALLABLE_MEMBER Vec2i& operator=(const Vec2i& v) {
+		x = v.x;
+		y = v.y;
+		return *this;
+	}
+	Vec2i(const std::vector<int>& v) {
+		x = v[0];
+		y = v[1];
+	}
+	Vec2i& operator=(const std::vector<int>& v) {
+		x = v[0];
+		y = v[1];
+		return *this;
+	}
+};
+
+/*
+vector 3 (double)
 use align to force alignment for gpu memory
 */
-struct MY_ALIGN(16) Vec {
-	double x;
-	double y;
-	double z;
+struct MY_ALIGN(8) Vec3d {
+	double x, y, z;
 
-	//double data[3] = { 0 }; // initialize data to 0
-
-	CUDA_CALLABLE_MEMBER Vec() {
+	CUDA_CALLABLE_MEMBER Vec3d() {
 		x = 0;
 		y = 0;
 		z = 0;
 	} // default
 
-	CUDA_CALLABLE_MEMBER Vec(const Vec& v) {
+	CUDA_CALLABLE_MEMBER Vec3d(const Vec3d& v) {
 		x = v.x;
 		y = v.y;
 		z = v.z;
 	} // copy constructor
-	//CUDA_CALLABLE_MEMBER Vec(const Vec& v) = default;
+	//CUDA_CALLABLE_MEMBER Vec3d(const Vec3d& v) = default;
 
-	CUDA_CALLABLE_MEMBER Vec(double x, double y, double z) {
+	CUDA_CALLABLE_MEMBER Vec3d(double x, double y, double z) {
 		this->x = x;
 		this->y = y;
 		this->z = z;
 	} // initialization from x, y, and z values
 
-	CUDA_CALLABLE_MEMBER Vec& operator=(const Vec& v) {
+	CUDA_CALLABLE_MEMBER Vec3d& operator=(const Vec3d& v) {
 		x = v.x;
 		y = v.y;
 		z = v.z;
 		return *this;
 	}
 
-	Vec(const std::vector<double>& v) {
+	Vec3d(const std::vector<double>& v) {
 		x = v[0];
 		y = v[1];
 		z = v[2];
 	}
 
-	Vec& operator=(const std::vector<double>& v) {
+	Vec3d& operator=(const std::vector<double>& v) {
 		x = v[0];
 		y = v[1];
 		z = v[2];
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec& operator+=(const Vec& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator+=(const Vec3d& v) {
 		x += v.x;
 		y += v.y;
 		z += v.z;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec& operator-=(const Vec& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator-=(const Vec3d& v) {
 		x -= v.x;
 		y -= v.y;
 		z -= v.z;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec& operator*=(const Vec& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator*=(const Vec3d& v) {
 		x *= v.x;
 		y *= v.y;
 		z *= v.z;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec& operator*=(const double& d) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator*=(const double& d) {
 		x *= d;
 		y *= d;
 		z *= d;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec& operator/=(const Vec& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator/=(const Vec3d& v) {
 		x /= v.x;
 		y /= v.y;
 		z /= v.z;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec& operator/=(const double& d) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator/=(const double& d) {
 		x /= d;
 		y /= d;
 		z /= d;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec operator-() const {
-		return Vec(-x, -y, -z);
+	inline CUDA_CALLABLE_MEMBER Vec3d operator-() const {
+		return Vec3d(-x, -y, -z);
 	}
 
 	CUDA_CALLABLE_MEMBER double& operator [] (int n) {
@@ -160,32 +191,32 @@ struct MY_ALIGN(16) Vec {
 			exit(-1);
 		} // to do remove this
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec operator+(const Vec& v1, const Vec& v2) {
-		return Vec(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator+(const Vec3d& v1, const Vec3d& v2) {
+		return Vec3d(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec operator-(const Vec& v1, const Vec& v2) {
-		return Vec(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z);
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator-(const Vec3d& v1, const Vec3d& v2) {
+		return Vec3d(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const double x, const Vec& v) {
-		return Vec(v.x * x, v.y * x, v.z * x);
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const double x, const Vec3d& v) {
+		return Vec3d(v.x * x, v.y * x, v.z * x);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v, const double x) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec3d& v, const double x) {
 		return x * v;
-	} // double times Vec
-	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec& v1, const Vec& v2) {
+	} // double times Vec3d
+	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec3d& v1, const Vec3d& v2) {
 		return (v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2]);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec operator*(const Vec& v1, const Vec& v2) {
-		return Vec(v1.x * v2.x, v1.y * v2.y, v1.z * v2.z);
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec3d& v1, const Vec3d& v2) {
+		return Vec3d(v1.x * v2.x, v1.y * v2.y, v1.z * v2.z);
 	} // Multiplies two Vecs (elementwise)
-	inline CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v, const double x) {
-		return Vec(v.x / x, v.y / x, v.z / x);
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator/(const Vec3d& v, const double x) {
+		return Vec3d(v.x / x, v.y / x, v.z / x);
 	} //  vector over double
-	inline CUDA_CALLABLE_MEMBER friend Vec operator/(const Vec& v1, const Vec& v2) {
-		return Vec(v1.x / v2.x, v1.y / v2.y, v1.z / v2.z);
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator/(const Vec3d& v1, const Vec3d& v2) {
+		return Vec3d(v1.x / v2.x, v1.y / v2.y, v1.z / v2.z);
 	} // divides two Vecs (elementwise)
 
-	friend std::ostream& operator << (std::ostream& strm, const Vec& v) {
+	friend std::ostream& operator << (std::ostream& strm, const Vec3d& v) {
 		return strm << "(" << v[0] << ", " << v[1] << ", " << v[2] << ")";
 	} // print
 
@@ -205,7 +236,7 @@ struct MY_ALIGN(16) Vec {
 #endif
 	} // gives vector norm
 
-	CUDA_CALLABLE_MEMBER Vec normalize() {
+	CUDA_CALLABLE_MEMBER Vec3d normalize() {
 		double n = this->norm();
 		//if (n<1e-8)
 		//{// Todo: change this
@@ -231,19 +262,19 @@ struct MY_ALIGN(16) Vec {
 		z = 0;
 	}
 
-	inline CUDA_CALLABLE_MEMBER double dot(const Vec& b) { // dot product
+	inline CUDA_CALLABLE_MEMBER double dot(const Vec3d& b) { // dot product
 		return x * b.x + y * b.y + z * b.z; // preferably use this version
 	}
 
-	inline friend CUDA_CALLABLE_MEMBER double dot(const Vec& a, const Vec& b){
+	inline friend CUDA_CALLABLE_MEMBER double dot(const Vec3d& a, const Vec3d& b){
 		return a.x * b.x + a.y * b.y + a.z * b.z;
 	}// dot product
 
-	inline friend CUDA_CALLABLE_MEMBER Vec cross(const Vec& v1, const Vec& v2) {
-		return Vec(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
+	inline friend CUDA_CALLABLE_MEMBER Vec3d cross(const Vec3d& v1, const Vec3d& v2) {
+		return Vec3d(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
 	}
 
-	inline CUDA_DEVICE void Vec::atomicVecAdd(const Vec& v) {
+	inline CUDA_DEVICE void Vec3d::atomicVecAdd(const Vec3d& v) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
 		atomicAdd(&x, v.x);
 		atomicAdd(&y, v.y);
@@ -253,18 +284,18 @@ struct MY_ALIGN(16) Vec {
 
 	// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
 	// rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
-	friend CUDA_CALLABLE_MEMBER Vec AxisAngleRotaion(const Vec& k, const Vec& v_, const double& theta, const Vec& offset);
+	friend CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d& k, const Vec3d& v_, const double& theta, const Vec3d& offset);
 
 
 
-	inline friend CUDA_CALLABLE_MEMBER double angleBetween(Vec p0, Vec p1) {
+	inline friend CUDA_CALLABLE_MEMBER double angleBetween(Vec3d p0, Vec3d p1) {
 		return acos(p0.dot(p1) / (p0.norm() * p1.norm()));
 	}
 
-	friend CUDA_CALLABLE_MEMBER double signedAngleBetween(Vec p0, Vec p1, Vec normal);
+	friend CUDA_CALLABLE_MEMBER double signedAngleBetween(Vec3d p0, Vec3d p1, Vec3d normal);
 
 
-	friend CUDA_CALLABLE_MEMBER Vec slerp(Vec p0, Vec p1, double t);
+	friend CUDA_CALLABLE_MEMBER Vec3d slerp(Vec3d p0, Vec3d p1, double t);
 };
 
 
