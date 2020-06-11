@@ -41,7 +41,7 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 index 2 (int)
 */
 struct MY_ALIGN(8) Vec2i {
-	double x, y;
+	int x, y;
 
 	CUDA_CALLABLE_MEMBER Vec2i() {
 		x = 0;
@@ -51,10 +51,10 @@ struct MY_ALIGN(8) Vec2i {
 		x = v.x;
 		y = v.y;
 	} // copy constructor
-	CUDA_CALLABLE_MEMBER Vec2i(double x, double y) {
+	CUDA_CALLABLE_MEMBER Vec2i(int x, int y) {
 		this->x = x;
 		this->y = y;
-	} // initialization from x, y, and z values
+	} // initialization from x, y values
 
 	CUDA_CALLABLE_MEMBER Vec2i& operator=(const Vec2i& v) {
 		x = v.x;
