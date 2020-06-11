@@ -23,18 +23,17 @@ __global__ void SpringUpate(
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < spring.num) {
-		int right = spring.right[i];
-		int left = spring.left[i];
-		Vec3d s_vec = mass.pos[right] - mass.pos[left];// the vector from left to right
+		Vec2i e = spring.edge[i];
+		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
 
 		s_vec /= (length > 1e-10 ? length : 1e-10);// normalized to unit vector (direction), check instablility for small length
 
 		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
-		force += s_vec.dot(mass.vel[left] - mass.vel[right]) * spring.damping[i] * s_vec;// damping
+		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
 
-		mass.force[right].atomicVecAdd(force); // need atomics here
-		mass.force[left].atomicVecAdd(-force); // removed condition on fixed
+		mass.force[e.y].atomicVecAdd(force); // need atomics here
+		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
 		
 #ifdef ROTATION
 		if (spring.resetable[i]) {
@@ -174,15 +173,17 @@ __global__ void massUpdateAndRotate(
 	}
 	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint
 		if (i < joint.anchors.num) {
-			joint.anchors.dir[i] = (mass.pos[joint.anchors.right[i]] - mass.pos[joint.anchors.left[i]]).normalize();
+			Vec2i e = joint.anchors.edge[i];
+			joint.anchors.dir[i] = (mass.pos[e.y] - mass.pos[e.x]).normalize();
 		}
-		__syncthreads();
 		__threadfence();
+		__syncthreads();
 
 		int anchor_id = joint.points.anchorId[i];
 		int mass_id = joint.points.massId[i];
+
 		mass.pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass.pos[mass_id],
-			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass.pos[joint.anchors.left[anchor_id]]);
+			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass.pos[joint.anchors.edge[anchor_id].x]);
 	}
 }
 
@@ -190,7 +191,8 @@ __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
 		if (i < joint.anchors.num) {
-			joint.anchors.dir[i] = (mass_pos[joint.anchors.right[i]] - mass_pos[joint.anchors.left[i]]).normalize ();
+			Vec2i e = joint.anchors.edge[i];
+			joint.anchors.dir[i] = (mass_pos[e.y] - mass_pos[e.x]).normalize ();
 		}
 		__threadfence();
 		__syncthreads();
@@ -199,7 +201,7 @@ __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 		int mass_id = joint.points.massId[i];
 
 		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
-			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
+			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.edge[anchor_id].x]);
 
 		//Vec3d anchor_left = mass_pos[joint.anchors.left[anchor_id]];
 		//Vec3d anchor_right = mass_pos[joint.anchors.right[anchor_id]];
@@ -445,7 +447,8 @@ void Simulation::execute() {
 //#pragma omp parallel for
 			for (int i = 0; i < joints.anchors.num; i++)
 			{
-				Vec3d rotation_axis = (mass.pos[joints.anchors.right[i]] - mass.pos[joints.anchors.left[i]]).normalize();
+				Vec2i anchor_edge = joints.anchors.edge[i];
+				Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
 				Vec3d x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
 				Vec3d x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
 				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
@@ -461,7 +464,6 @@ void Simulation::execute() {
 					joint_speeds[i] = delta_angle + 2 * M_PI;
 				}
 				joint_angles[i] = angle;
-
 			}
 			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
 				printf("% 6.1f: ",T); // time
@@ -814,11 +816,12 @@ __global__ void updateVertices(float* __restrict__ gl_ptr, const Vec3d* __restri
 	}
 }
 
-__global__ void updateIndices(unsigned int* __restrict__ gl_ptr,
-	const int* __restrict__ left, const int* __restrict__ right, const int num_spring) {
+__global__ void updateIndices(unsigned int* __restrict__ gl_ptr, const Vec2i* __restrict__ edge, const int num_spring) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
-		gl_ptr[2 * i] = (unsigned int)left[i]; // todo check if this is needed
-		gl_ptr[2 * i + 1] = (unsigned int)right[i];
+		Vec2i e = edge[i];
+
+		gl_ptr[2 * i] = (unsigned int)e.x; // todo check if this is needed
+		gl_ptr[2 * i + 1] = (unsigned int)e.y;
 	}
 }
 
@@ -851,7 +854,7 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
 		void* indexPointer; // if no masses or springs are deleted, this can be start only once
 		cudaGLMapBufferObject(&indexPointer, elementbuffer);
-		updateIndices << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[2] >> > ((unsigned int*)indexPointer, d_spring.left, d_spring.right, spring.num);
+		updateIndices << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[2] >> > ((unsigned int*)indexPointer, d_spring.edge, spring.num);
 		cudaGLUnmapBufferObject(elementbuffer);
 		update_indices = false;
 	}

@@ -95,11 +95,10 @@ int main()
 #pragma omp parallel for
 	for (int i = 0; i < num_spring; i++)
 	{
-		spring.left[i] = bot.edges[i][0]; // the left mass index of the spring
-		spring.right[i] = bot.edges[i][1]; // the right mass index of the spring
+		spring.edge[i] = bot.edges[i]; // the (left,right) mass index of the spring
 		spring.k[i] = spring_constant; // spring constant
 		spring.damping[i] = spring_damping; // spring constant
-		spring.rest[i] = (mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm(); // spring rest length
+		spring.rest[i] = (mass.pos[spring.edge[i].x] - mass.pos[spring.edge[i].y]).norm(); // spring rest length
 		spring.resetable[i] = false; // set all spring as non-resetable
 	}
 

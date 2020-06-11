@@ -55,7 +55,6 @@ struct MY_ALIGN(8) Vec2i {
 		this->x = x;
 		this->y = y;
 	} // initialization from x, y values
-
 	CUDA_CALLABLE_MEMBER Vec2i& operator=(const Vec2i& v) {
 		x = v.x;
 		y = v.y;

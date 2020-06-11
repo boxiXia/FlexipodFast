@@ -162,8 +162,7 @@ struct SPRING {
 	double* k = nullptr; // spring constant (N/m)
 	double* rest = nullptr; // spring rest length (meters)
 	double* damping = nullptr; // damping on the masses.
-	int* left = nullptr; // index of left mass
-	int* right = nullptr; // index of right mass
+	Vec2i* edge = nullptr;// (left,right) mass indices of the spring
 	bool* resetable = nullptr; // a flag indicating whether to reset every dynamic update
 	int num =0;
 	SPRING() {}
@@ -178,8 +177,7 @@ struct SPRING {
 		gpuErrchk((*malloc)((void**)&k, num * sizeof(double)));
 		gpuErrchk((*malloc)((void**)&rest, num * sizeof(double)));
 		gpuErrchk((*malloc)((void**)&damping, num * sizeof(double)));
-		gpuErrchk((*malloc)((void**)&left, num * sizeof(int)));
-		gpuErrchk((*malloc)((void**)&right, num * sizeof(int)));
+		gpuErrchk((*malloc)((void**)&edge, num * sizeof(Vec2i)));
 		gpuErrchk((*malloc)((void**)&resetable, num * sizeof(bool)));
 		this->num = num;
 	}
@@ -187,8 +185,7 @@ struct SPRING {
 		gpuErrchk(cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault,stream));
 		gpuErrchk(cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault,stream));
 		gpuErrchk(cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream));
+		gpuErrchk(cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream));
 		gpuErrchk(cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream));
 		//this->num = other.num;
 	}
@@ -196,8 +193,7 @@ struct SPRING {
 
 
 struct RotAnchors { // the anchors that belongs to the rotational joints
-	int* left; // index of the left anchor of the joint
-	int* right;// index of the right anchor of the joint
+	Vec2i* edge; // index of the (left,right) anchor of the joint
 	Vec3d* dir; // direction of the joint,normalized
 	double* theta;// the angular increment per joint update
 
@@ -215,8 +211,7 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device	
 
-		(*malloc)((void**)&left, num * sizeof(int));
-		(*malloc)((void**)&right, num * sizeof(int));
+		(*malloc)((void**)&edge, num * sizeof(Vec2i));
 		(*malloc)((void**)&dir, num * sizeof(Vec3d));
 		(*malloc)((void**)&theta, num * sizeof(double));
 		(*malloc)((void**)&leftCoord, num * sizeof(int));
@@ -225,8 +220,7 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 		if (on_host) { // copy the std_joints to this
 			for (int joint_id = 0; joint_id < num; joint_id++)
 			{
-				left[joint_id] = std_joints[joint_id].anchor[0];
-				right[joint_id] = std_joints[joint_id].anchor[1];
+				edge[joint_id] = std_joints[joint_id].anchor;
 				leftCoord[joint_id] = std_joints[joint_id].leftCoord;
 				rightCoord[joint_id] = std_joints[joint_id].rightCoord;
 			}
@@ -234,8 +228,7 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 	}
 
 	void copyFrom(const RotAnchors& other, cudaStream_t stream = (cudaStream_t)0) {
-		cudaMemcpyAsync(left, other.left, num * sizeof(int), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(right, other.right, num * sizeof(int), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(dir, other.dir, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(leftCoord, other.leftCoord, num * sizeof(int), cudaMemcpyDefault, stream);
