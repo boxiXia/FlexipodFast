@@ -443,7 +443,6 @@ void Simulation::execute() {
 		//if (fmod(T, 1. / 100.0) < NUM_QUEUED_KERNELS * dt) {
 			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 			cudaDeviceSynchronize();
-
 //#pragma omp parallel for
 			for (int i = 0; i < joints.anchors.num; i++)
 			{
@@ -472,6 +471,10 @@ void Simulation::execute() {
 					//printf("%+ 6.1f   ", joint_angles[i] * M_1_PI*180.0);
 					printf("%+ 8.1f ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
 				}
+
+				Vec3d body_com = mass.pos[id_oxyz_start];//body center of mass
+				printf("(%+ 7.2f %+ 7.2f %+ 7.2f) ", body_com.x, body_com.y, body_com.z);
+
 				printf("\r\r");
 			}
 
@@ -596,7 +599,7 @@ void Simulation::execute() {
 
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
 				bpts.insert(T);// break at current time T
-				printf("window closed\n");
+				printf("\nwindow closed\n");
 				//exit(0); // TODO maybe deal with memory leak here. //key press exit,
 			}
 		}

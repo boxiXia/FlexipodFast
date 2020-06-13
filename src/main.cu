@@ -74,8 +74,10 @@ int main()
 
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
-	const double spring_constant_restable = spring_constant * 1.0; // spring constant for resetable spring
+	//const double spring_constant_restable = spring_constant * 1.0; // spring constant for resetable spring
 	const double spring_damping_restable = spring_damping * 4.0; // spring damping for resetable spring
+	const double spring_constant_restable = 0; // spring constant for resetable spring
+	//const double spring_damping_restable = 0; // spring damping for resetable spring
 
 	// spring coefficient for the probing springs, e.g. coordinates
 	const double spring_constant_probe_anchor = spring_constant * scale_probe; // spring constant for coordiates anchor springs
