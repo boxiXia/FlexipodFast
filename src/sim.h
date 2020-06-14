@@ -98,6 +98,8 @@ struct MASS {
 	bool* fixed = nullptr;
 	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
 	int num = 0;
+	inline int size() { return num; }
+
 #ifdef VERLET
 	Vec3d* prev_pos = nullptr; // x_{n-1}, position at previous timestep
 #endif // VERLET
@@ -105,21 +107,23 @@ struct MASS {
 	MASS(int num, bool on_host = true) {
 		init(num, on_host);
 	}
+
 	void init(int num, bool on_host = true) {
 		cudaError_t(*malloc)(void**, size_t);
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
 		// ref: https://stackoverflow.com/questions/9410/how-do-you-pass-a-function-as-a-parameter-in-c
 		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
-		gpuErrchk((*malloc)((void**)&m, num * sizeof(double)));
-		gpuErrchk((*malloc)((void**)&pos, num * sizeof(Vec3d)));
-		gpuErrchk((*malloc)((void**)&vel, num * sizeof(Vec3d)));
-		gpuErrchk((*malloc)((void**)&acc, num * sizeof(Vec3d)));
-		gpuErrchk((*malloc)((void**)&force, num * sizeof(Vec3d)));
-		gpuErrchk((*malloc)((void**)&force_extern, num * sizeof(Vec3d)));
-		gpuErrchk((*malloc)((void**)&color, num * sizeof(Vec3d)));
-		gpuErrchk((*malloc)((void**)&fixed, num * sizeof(bool)));
-		gpuErrchk((*malloc)((void**)&constrain, num * sizeof(bool)));
+		(*malloc)((void**)&m, num * sizeof(double));
+		(*malloc)((void**)&pos, num * sizeof(Vec3d));
+		(*malloc)((void**)&vel, num * sizeof(Vec3d));
+		(*malloc)((void**)&acc, num * sizeof(Vec3d));
+		(*malloc)((void**)&force, num * sizeof(Vec3d));
+		(*malloc)((void**)&force_extern, num * sizeof(Vec3d));
+		(*malloc)((void**)&color, num * sizeof(Vec3d));
+		(*malloc)((void**)&fixed, num * sizeof(bool));
+		(*malloc)((void**)&constrain, num * sizeof(bool));
+		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 #ifdef VERLET
 		gpuErrchk((*malloc)((void**)&prev_pos, num * sizeof(Vec3d)));
@@ -137,24 +141,27 @@ struct MASS {
 		}
 	}
 	void copyFrom(MASS& other, cudaStream_t stream=(cudaStream_t)0) {
-		gpuErrchk(cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(force, other.force, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream));
+		cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(force, other.force, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream);
 #ifdef VERLET
 		gpuErrchk(cudaMemcpyAsync(prev_pos, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
 #endif // VERLET
 		//this->num = other.num;
+		gpuErrchk(cudaPeekAtLastError());
 	}
 	void CopyPosVelAccFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
-		gpuErrchk(cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
+		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		gpuErrchk(cudaPeekAtLastError());
+
 	}
 };
 
@@ -165,6 +172,8 @@ struct SPRING {
 	Vec2i* edge = nullptr;// (left,right) mass indices of the spring
 	bool* resetable = nullptr; // a flag indicating whether to reset every dynamic update
 	int num =0;
+	inline int size() { return num; }
+
 	SPRING() {}
 	SPRING(int num, bool on_host = true) {
 		init(num, on_host);
@@ -174,19 +183,21 @@ struct SPRING {
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
 		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
-		gpuErrchk((*malloc)((void**)&k, num * sizeof(double)));
-		gpuErrchk((*malloc)((void**)&rest, num * sizeof(double)));
-		gpuErrchk((*malloc)((void**)&damping, num * sizeof(double)));
-		gpuErrchk((*malloc)((void**)&edge, num * sizeof(Vec2i)));
-		gpuErrchk((*malloc)((void**)&resetable, num * sizeof(bool)));
+		(*malloc)((void**)&k, num * sizeof(double));
+		(*malloc)((void**)&rest, num * sizeof(double));
+		(*malloc)((void**)&damping, num * sizeof(double));
+		(*malloc)((void**)&edge, num * sizeof(Vec2i));
+		(*malloc)((void**)&resetable, num * sizeof(bool));
+		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
 	void copyFrom(const SPRING& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
-		gpuErrchk(cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault,stream));
-		gpuErrchk(cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault,stream));
-		gpuErrchk(cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream));
+		cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault,stream);
+		cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault,stream);
+		cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream);
+		gpuErrchk(cudaPeekAtLastError());
 		//this->num = other.num;
 	}
 };
@@ -201,12 +212,13 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 	int* rightCoord;// the index of right coordintate (oxyz) start for all joints (flat view)
 
 	int num; // num of anchor
+	inline int size() { return num; }
+
 	RotAnchors(){}
 	RotAnchors(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);}
 
-	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
-		num = std_joints.size();
-
+	void init(int num, bool on_host = true) {
+		this->num = num;
 		cudaError_t(*malloc)(void**, size_t);
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device	
@@ -217,6 +229,11 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 		(*malloc)((void**)&leftCoord, num * sizeof(int));
 		(*malloc)((void**)&rightCoord, num * sizeof(int));
 		gpuErrchk(cudaPeekAtLastError());
+	}
+
+	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
+		init(std_joints.size(), on_host);
+
 		if (on_host) { // copy the std_joints to this
 			for (int joint_id = 0; joint_id < num; joint_id++)
 			{
@@ -247,22 +264,26 @@ struct RotPoints { // the points that belongs to the rotational joints
 	int* anchorId;// e.g, k: the k-th anchor,left mass, -k: the k-th anchor, right mass
 	int* dir; // direction: left=-1,right=+1
 	int num; // the length of array "id"
+	inline int size() { return num; }
 
 	RotPoints(){}
 	RotPoints(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); }
-	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
-		num = 0;
-		for each (auto & std_joint in std_joints)
-		{num += std_joint.left.size() + std_joint.right.size();}// get the total number of the points in all joints
-
+	void init(int num, bool on_host = true) {
+		this->num = num;
 		// allocate on host or device
 		cudaError_t(*malloc)(void**, size_t);
 		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
 		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
-		gpuErrchk((*malloc)((void**)&massId, num * sizeof(int)));
-		gpuErrchk((*malloc)((void**)&anchorId, num * sizeof(int)));
-		gpuErrchk((*malloc)((void**)&dir, num * sizeof(int)));
-
+		(*malloc)((void**)&massId, num * sizeof(int));
+		(*malloc)((void**)&anchorId, num * sizeof(int));
+		(*malloc)((void**)&dir, num * sizeof(int));
+		gpuErrchk(cudaPeekAtLastError());
+	}
+	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
+		num = 0;
+		for each (auto & std_joint in std_joints)
+		{num += std_joint.left.size() + std_joint.right.size();}// get the total number of the points in all joints
+		init(num, on_host);
 
 		if (on_host) { // copy the std_joints to this
 			int offset = 0;//offset the index by "offset"
@@ -289,9 +310,11 @@ struct RotPoints { // the points that belongs to the rotational joints
 		}
 	}
 	void copyFrom(const RotPoints& other, cudaStream_t stream = (cudaStream_t)0) {
-		gpuErrchk(cudaMemcpyAsync(massId, other.massId, num * sizeof(int), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(anchorId, other.anchorId, num * sizeof(int), cudaMemcpyDefault, stream));
-		gpuErrchk(cudaMemcpyAsync(dir, other.dir, num * sizeof(int), cudaMemcpyDefault, stream));
+		cudaMemcpyAsync(massId, other.massId, num * sizeof(int), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(anchorId, other.anchorId, num * sizeof(int), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(dir, other.dir, num * sizeof(int), cudaMemcpyDefault, stream);
+		gpuErrchk(cudaPeekAtLastError());
+
 	}
 };
 

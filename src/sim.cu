@@ -470,7 +470,7 @@ void Simulation::execute() {
 
 				for (int i = 0; i < joints.anchors.num; i++) {
 					//printf("%+ 6.1f   ", joint_angles[i] * M_1_PI*180.0);
-					printf("%+ 8.1f ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
+					printf("%+ 7.1f ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
 				}
 
 				Vec3d body_com = mass.pos[id_oxyz_start];//body center of mass
