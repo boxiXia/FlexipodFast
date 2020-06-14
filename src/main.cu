@@ -42,6 +42,7 @@
 
 int main()
 {
+	// for time measurement
 	auto start = std::chrono::steady_clock::now();
 
 	const int num_body = 5;//number of bodies
@@ -52,7 +53,6 @@ int main()
 	const int num_spring = bot.edges.size(); // number of spring
 
 	const int num_joint = bot.Joints.size();//number of rotational joint
-
 
 	Simulation sim(num_mass, num_spring); // Simulation object
 	MASS& mass = sim.mass; // reference variable for sim.mass
@@ -169,22 +169,17 @@ int main()
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI * sim.dt;
 
 	sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
-	//sim.setViewport(Vec3d(.4, -0., .4), Vec3d(0, -0., -0), Vec3d(0, 0, 1));
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
-	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.5, 0.55);
-	//sim.createPlane(Vec3d(0, 0, 1), 0, 0, 0);
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
-	//sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.6, 0.65);
+	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.6, 0.65);
 
 	double runtime = 1200;
 	sim.setBreakpoint(runtime);
 
 	sim.start();
-
-	//auto start = std::chrono::steady_clock::now();
 
 	while (sim.RUNNING) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));

@@ -187,23 +187,6 @@ __global__ void massUpdateAndRotate(
 	}
 }
 
-__global__ void applyTorque(const MASS mass, const JOINT joint) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < joint.points.num) {
-		if (i < joint.anchors.num) {
-			Vec2i e = joint.anchors.edge[i];
-			joint.anchors.dir[i] = (mass.pos[e.y] - mass.pos[e.x]).normalize();
-		}
-		__threadfence();
-		__syncthreads();
-
-		int anchor_id = joint.points.anchorId[i];
-		int mass_id = joint.points.massId[i];
-		Vec3d p = mass.pos[mass_id];
-		Vec3d r = p - mass.pos[joint.anchors.edge[anchor_id].x];
-		mass.force[mass_id] += joint.anchors.theta[anchor_id] * double(joint.points.dir[i]) * cross(joint.anchors.dir[anchor_id], r)*10000;
-	}
-}
 
 __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -441,9 +424,7 @@ void Simulation::execute() {
 			//cudaStreamWaitEvent(stream[0], event, 0);
 #ifdef ROTATION
 
-
-			applyTorque << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_joints);
-			//rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK>> > (d_mass.pos, d_joints);
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK>> > (d_mass.pos, d_joints);
 			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
 
@@ -493,7 +474,7 @@ void Simulation::execute() {
 				}
 
 				Vec3d body_com = mass.pos[id_oxyz_start];//body center of mass
-				printf("(%+ 7.2f %+ 7.2f %+ 7.2f) ", body_com.x, body_com.y, body_com.z);
+				printf("(%+ 6.2f %+ 6.2f %+ 6.2f) ", body_com.x, body_com.y, body_com.z);
 
 				printf("\r\r");
 			}
