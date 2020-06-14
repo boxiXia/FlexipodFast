@@ -93,7 +93,7 @@ struct CudaBall {
     //CUDA_CALLABLE_MEMBER CudaBall(const Vec3d & center, double radius);
     //CUDA_CALLABLE_MEMBER CudaBall(const Ball & b);
 
-    CUDA_CALLABLE_MEMBER void applyForce(Vec3d& force, Vec3d& pos);
+    CUDA_CALLABLE_MEMBER void applyForce(Vec3d& force, const Vec3d& pos);
 
     double _radius;
     Vec3d _center;
@@ -137,7 +137,7 @@ struct ContactPlane : public Constraint {
 
 struct CudaContactPlane {
 
-    CUDA_CALLABLE_MEMBER  void applyForce(Vec3d& force, Vec3d& pos, Vec3d& vel);
+    CUDA_CALLABLE_MEMBER  void applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel);
 
     Vec3d _normal;
     double _offset;

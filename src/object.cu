@@ -39,7 +39,7 @@ __device__ const double NORMAL = 20000; // normal force coefficient for contact 
 //    _radius = b._radius;
 //}
 
-CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, Vec3d& pos) {
+CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
     double dist = (pos - _center).norm();
     if (dist < _radius) {
         force += NORMAL * (pos - _center) / dist;
@@ -61,7 +61,7 @@ CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, Vec3d& pos) {
 //    _FRICTION_K = p._FRICTION_K;
 //}
 
-CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, Vec3d& pos, Vec3d& vel) {
+CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
     //    m -> force += (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // TODO fix this for the host
     
     double disp = _normal.dot(pos) - _offset; // displacement into the plane
