@@ -176,8 +176,8 @@ int main()
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0, 0);
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
-	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.6, 0.65);
+	//sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
+	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.6, 0.65);
 
 	double runtime = 1200;
 	sim.setBreakpoint(runtime);
