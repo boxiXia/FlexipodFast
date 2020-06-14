@@ -497,14 +497,14 @@ void Simulation::execute() {
 #endif // DEBUG_ENERGY
 
 
-			// https://en.wikipedia.org/wiki/Slerp
-			//mass.pos[id_oxyz_start].print();
-			double t_lerp = 0.01;
-			Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
-			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
-			camera_dir.normalize();
+			//// https://en.wikipedia.org/wiki/Slerp
+			////mass.pos[id_oxyz_start].print();
+			//double t_lerp = 0.01;
+			//Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
+			///*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			//// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			//camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
+			//camera_dir.normalize();
 
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
