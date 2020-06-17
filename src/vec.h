@@ -37,6 +37,8 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <cuda_device_runtime_api.h>
 #include <device_launch_parameters.h>
 
+#include <msgpack.hpp>
+
 /*
 index 2 (int)
 */
@@ -77,6 +79,7 @@ use align to force alignment for gpu memory
 */
 struct MY_ALIGN(8) Vec3d {
 	double x, y, z;
+	MSGPACK_DEFINE(x, y, z);
 
 	CUDA_CALLABLE_MEMBER Vec3d() {
 		x = 0;

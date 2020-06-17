@@ -61,10 +61,10 @@ int main()
 	
 	sim.dt = 5e-5; // timestep
 
-	const double m = 6e-4;// mass per vertex
+	const double m = 5e-4;// mass per vertex
 
-	const double spring_constant = 2e3; //spring constant for silicone leg
-	const double spring_damping = 0.1; // damping for spring
+	const double spring_constant =m*3e6; //spring constant for silicone leg
+	const double spring_damping = m*1.5e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
@@ -159,14 +159,14 @@ int main()
 		spring.damping[i] = spring_damping_probe;
 	}
 
-	sim.joints.init(bot.Joints, true);
-	sim.d_joints.init(bot.Joints, false);
-	sim.d_joints.copyFrom(sim.joints);
+	sim.joint.init(bot.Joints, true);
+	sim.d_joint.init(bot.Joints, false);
+	sim.d_joint.copyFrom(sim.joint);
 
 
 	// set max speed for each joint
 	double max_rpm = 300;//maximun revolution per minute
-	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI * sim.dt;
+	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI * sim.dt;//max joint speed in rad/s
 
 	sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
 

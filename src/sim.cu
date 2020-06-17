@@ -216,6 +216,7 @@ __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 }
 #endif // ROTATION
 
+
 Simulation::Simulation() {
 	//dynamicsUpdate(d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,
 	//	d_spring.k,d_spring.rest,d_spring.damping,d_spring.left,d_spring.right,
@@ -261,7 +262,7 @@ inline int Simulation::computeBlocksPerGrid(const int threadsPerBlock, const int
 inline void Simulation::updateCudaParameters() {
 	massBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, mass.num);
 	springBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, spring.num);
-	jointBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, d_joints.points.num);
+	jointBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, d_joint.points.num);
 }
 
 void Simulation::setBreakpoint(const double time) {
@@ -274,6 +275,24 @@ void Simulation::pause(const double t) {
 	if (ENDED && !FREED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
 	setBreakpoint(t);
 	waitForEvent();
+}
+
+/*backup the robot mass/spring/joint state */
+void Simulation::backupState() {
+	backup_spring = SPRING(spring, true);
+	backup_mass = MASS(mass, true);
+	backup_joint = JOINT(joint, true);
+}
+/*restore the robot mass/spring/joint state to the backedup state */
+void Simulation::resetState() {
+	for (int i = 0; i < joint.size(); i++) { joint_speeds_cmd[i] = 0.; }
+	d_mass.copyFrom(backup_mass, stream[NUM_CUDA_STREAM - 1]);
+	d_spring.copyFrom(backup_spring, stream[NUM_CUDA_STREAM - 1]);
+	d_joint.copyFrom(backup_joint, stream[NUM_CUDA_STREAM - 1]);
+	size_t nbytes = joint.size() * sizeof(double);
+	memset(joint_speeds_cmd, 0, nbytes);
+	memset(joint_speeds, 0, nbytes);
+	memset(joint_angles, 0, nbytes);
 }
 
 void Simulation::start() {
@@ -297,11 +316,14 @@ void Simulation::start() {
 
 	update_constraints = false;
 
-	cudaMallocHost((void**)&joint_speeds_cmd, joints.size() * sizeof(double));//initialize joint speed (commended) array 
-	cudaMallocHost((void**)&joint_speeds, joints.size() * sizeof(double));//initialize joint speed (measured) array 
-	cudaMallocHost((void**)&joint_angles, joints.size() * sizeof(double));//initialize joint angle (measured) array 
+	cudaMallocHost((void**)&joint_speeds_cmd, joint.size() * sizeof(double));//initialize joint speed (commended) array 
+	cudaMallocHost((void**)&joint_speeds, joint.size() * sizeof(double));//initialize joint speed (measured) array 
+	cudaMallocHost((void**)&joint_angles, joint.size() * sizeof(double));//initialize joint angle (measured) array 
 
 	setAll();// copy mass and spring to gpu
+
+	backupState();// backup the robot mass/spring/joint state
+
 	gpu_thread = std::thread(&Simulation::_run, this); //TODO: thread
 }
 
@@ -414,6 +436,17 @@ void Simulation::execute() {
 
 		for (int i = 0; i < (NUM_QUEUED_KERNELS / NUM_UPDATE_PER_ROTATION); i++) {
 
+#ifdef ROTATION
+
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK>> > (d_mass.pos, d_joint);
+			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
+
+			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+
+			//gpuErrchk(cudaPeekAtLastError());
+#endif // ROTATION
+
 			for (int j = 0; j < NUM_UPDATE_PER_ROTATION - 1; j++) {
 
 				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
@@ -422,16 +455,6 @@ void Simulation::execute() {
 			}
 			//cudaEventRecord(event, 0);
 			//cudaStreamWaitEvent(stream[0], event, 0);
-#ifdef ROTATION
-
-			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK>> > (d_mass.pos, d_joints);
-			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joints, global_acc, dt);
-
-			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
-
-			//gpuErrchk(cudaPeekAtLastError());
-#endif // ROTATION
 			//cudaEventRecord(event_rotation, stream[0]);
 			//cudaStreamWaitEvent(NULL, event_rotation, 0);
 		}
@@ -445,12 +468,12 @@ void Simulation::execute() {
 			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 			cudaDeviceSynchronize();
 //#pragma omp parallel for
-			for (int i = 0; i < joints.anchors.num; i++)
+			for (int i = 0; i < joint.anchors.num; i++)
 			{
-				Vec2i anchor_edge = joints.anchors.edge[i];
+				Vec2i anchor_edge = joint.anchors.edge[i];
 				Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
-				Vec3d x_left = mass.pos[joints.anchors.leftCoord[i] + 1] - mass.pos[joints.anchors.leftCoord[i]];//oxyz
-				Vec3d x_right = mass.pos[joints.anchors.rightCoord[i] + 1] - mass.pos[joints.anchors.rightCoord[i]];//oxyz
+				Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+				Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
 				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
 
 				double delta_angle = angle - joint_angles[i];
@@ -466,15 +489,18 @@ void Simulation::execute() {
 				joint_angles[i] = angle;
 			}
 			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-				printf("% 6.1f: ",T); // time
+				printf("% 6.1f:",T); // time
 
-				for (int i = 0; i < joints.anchors.num; i++) {
+				for (int i = 0; i < joint.anchors.num; i++) {
 					//printf("%+ 6.1f   ", joint_angles[i] * M_1_PI*180.0);
-					printf("%+ 7.1f ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
+					printf("% 4.0f ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
 				}
 
-				Vec3d body_com = mass.pos[id_oxyz_start];//body center of mass
-				printf("(%+ 6.2f %+ 6.2f %+ 6.2f) ", body_com.x, body_com.y, body_com.z);
+				Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
+				Vec3d com_acc = mass.acc[id_oxyz_start];//body center of mass acceleration
+
+				printf("x(%+ 6.2f %+ 6.2f %+ 6.2f) ", com_pos.x, com_pos.y, com_pos.z);
+				printf("a(%+ 6.1f %+ 6.1f %+ 6.1f) ", com_acc.x, com_acc.y, com_acc.z);
 
 				printf("\r\r");
 			}
@@ -498,14 +524,14 @@ void Simulation::execute() {
 #endif // DEBUG_ENERGY
 
 
-			//// https://en.wikipedia.org/wiki/Slerp
-			////mass.pos[id_oxyz_start].print();
-			//double t_lerp = 0.01;
-			//Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
-			///*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			//// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			//camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
-			//camera_dir.normalize();
+			// https://en.wikipedia.org/wiki/Slerp
+			//mass.pos[id_oxyz_start].print();
+			double t_lerp = 0.01;
+			Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
+			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
+			camera_dir.normalize();
 
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
@@ -550,31 +576,32 @@ void Simulation::execute() {
 				speed_updated = true;
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-				for (int i = 0; i < joints.size(); i++)
+				for (int i = 0; i < joint.size(); i++)
 				{
 					if (joint_speeds_cmd[i] > -max_joint_speed) { joint_speeds_cmd[i] -= speed_multiplier; }
 				}
 				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-				for (int i = 0; i < joints.size(); i++)
+				for (int i = 0; i < joint.size(); i++)
 				{
 					if (joint_speeds_cmd[i] < max_joint_speed) { joint_speeds_cmd[i] += speed_multiplier; }
 				}
 				speed_updated = true;
 			}
-			else if (glfwGetKey(window, GLFW_KEY_0)) {
-				for (int i = 0; i < joints.size(); i++)
-				{
-					joint_speeds_cmd[i] = 0.;
-				}
+			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
+				for (int i = 0; i < joint.size(); i++) {joint_speeds_cmd[i] = 0.;}
 				speed_updated = true;
 			}
+			else if (glfwGetKey(window, GLFW_KEY_R)) { // reset
+				resetState();// restore the robot mass/spring/joint state to the backedup state
+			}
+
 			if (speed_updated) {// update joint speed
-				for (int k = 0; k < joints.size(); k++) {
-					joints.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k];
+				for (int k = 0; k < joint.size(); k++) {
+					joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k];
 				}
-				d_joints.anchors.copyThetaFrom(joints.anchors, stream[0]);
+				d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
 			}
 
 

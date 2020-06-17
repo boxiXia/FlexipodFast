@@ -54,6 +54,30 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 	}
 }
 
+/*  helper function to free device/host memory given host_or_device_ptr */
+using cudaFreeFcnType = cudaError_t(*)(void*); // helper type for the free memory function
+inline cudaFreeFcnType FreeMemoryFcn(void* host_or_device_ptr) {
+	cudaFreeFcnType freeMemory;
+	cudaPointerAttributes attributes;
+	gpuErrchk(cudaPointerGetAttributes(&attributes, host_or_device_ptr));
+	if (attributes.memoryType == cudaMemoryType::cudaMemoryTypeHost) {// host memory
+		freeMemory = &cudaFreeHost;}
+	else {freeMemory = &cudaFree;}// device memory
+	printf("Memory type for d_data %i\n", attributes.memoryType);
+	return freeMemory;
+}
+
+/*  helper function to allocate device/host memory
+	choose the appropriate device/host free memory function given a array pointer, e.g:
+	cudaFreeFcnType freeMemory = FreeMemoryFcn((void*)m);
+	freeMemory((void*)m);*/
+using cudaMallocFcnType = cudaError_t(*)(void**, size_t);
+inline cudaMallocFcnType allocateMemoryFcn(bool on_host) {// ref: https://www.cprogramming.com/tutorial/function-pointers.html
+	cudaMallocFcnType allocateMemory;
+	if (on_host) { allocateMemory = &cudaMallocHost; }// if allocateMemory = cudaMallocHost: allocate on host
+	else { allocateMemory = &cudaMalloc; }
+	return allocateMemory;
+}
 
 struct StdJoint {
 	std::vector<int> left;// the indices of the left points
@@ -87,6 +111,10 @@ public:
 	}
 };
 
+struct ModelState {
+	Vec3d com;
+};
+
 struct MASS {
 	double* m = nullptr;
 	Vec3d* pos = nullptr;
@@ -104,30 +132,30 @@ struct MASS {
 	Vec3d* prev_pos = nullptr; // x_{n-1}, position at previous timestep
 #endif // VERLET
 	MASS() { }
-	MASS(int num, bool on_host = true) {
+	MASS(int num, bool on_host) {
 		init(num, on_host);
 	}
-
+	/* initialize and copy the state from other MASS object. must keep the second argument*/
+	MASS(MASS other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		init(other.num, on_host);
+		copyFrom(other, stream);
+	}
 	void init(int num, bool on_host = true) {
-		cudaError_t(*malloc)(void**, size_t);
-		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
-		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
-		// ref: https://stackoverflow.com/questions/9410/how-do-you-pass-a-function-as-a-parameter-in-c
-		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
-		(*malloc)((void**)&m, num * sizeof(double));
-		(*malloc)((void**)&pos, num * sizeof(Vec3d));
-		(*malloc)((void**)&vel, num * sizeof(Vec3d));
-		(*malloc)((void**)&acc, num * sizeof(Vec3d));
-		(*malloc)((void**)&force, num * sizeof(Vec3d));
-		(*malloc)((void**)&force_extern, num * sizeof(Vec3d));
-		(*malloc)((void**)&color, num * sizeof(Vec3d));
-		(*malloc)((void**)&fixed, num * sizeof(bool));
-		(*malloc)((void**)&constrain, num * sizeof(bool));
+		cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function
+		allocateMemory((void**)&m, num * sizeof(double));
+		allocateMemory((void**)&pos, num * sizeof(Vec3d));
+		allocateMemory((void**)&vel, num * sizeof(Vec3d));
+		allocateMemory((void**)&acc, num * sizeof(Vec3d));
+		allocateMemory((void**)&force, num * sizeof(Vec3d));
+		allocateMemory((void**)&force_extern, num * sizeof(Vec3d));
+		allocateMemory((void**)&color, num * sizeof(Vec3d));
+		allocateMemory((void**)&fixed, num * sizeof(bool));
+		allocateMemory((void**)&constrain, num * sizeof(bool));
+#ifdef VERLET
+		gpuErrchk(allocateMemory((void**)&prev_pos, num * sizeof(Vec3d)));
+#endif // VERLET
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
-#ifdef VERLET
-		gpuErrchk((*malloc)((void**)&prev_pos, num * sizeof(Vec3d)));
-#endif // VERLET
 		if (on_host) {// set vel,acc to 0
 			memset(vel, 0, num * sizeof(Vec3d));
 			memset(acc, 0, num * sizeof(Vec3d));
@@ -139,8 +167,11 @@ struct MASS {
 			cudaMemset(vel, 0, num * sizeof(Vec3d));
 			cudaMemset(acc, 0, num * sizeof(Vec3d));
 		}
+
+
 	}
-	void copyFrom(MASS& other, cudaStream_t stream=(cudaStream_t)0) {
+
+	void copyFrom(const MASS& other, cudaStream_t stream=(cudaStream_t)0) {
 		cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
@@ -175,19 +206,22 @@ struct SPRING {
 	inline int size() { return num; }
 
 	SPRING() {}
-	SPRING(int num, bool on_host = true) {
+	SPRING(int num, bool on_host) {
 		init(num, on_host);
 	}
+	/* initialize and copy the state from other SPRING object. must keep the second argument*/
+	SPRING(SPRING other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		init(other.num, on_host);
+		copyFrom(other, stream);
+	}
+
 	void init(int num, bool on_host = true) { // initialize
-		cudaError_t(*malloc)(void**, size_t);
-		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
-		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
-		// ref: https://www.cprogramming.com/tutorial/function-pointers.html
-		(*malloc)((void**)&k, num * sizeof(double));
-		(*malloc)((void**)&rest, num * sizeof(double));
-		(*malloc)((void**)&damping, num * sizeof(double));
-		(*malloc)((void**)&edge, num * sizeof(Vec2i));
-		(*malloc)((void**)&resetable, num * sizeof(bool));
+		cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function
+		allocateMemory((void**)&k, num * sizeof(double));
+		allocateMemory((void**)&rest, num * sizeof(double));
+		allocateMemory((void**)&damping, num * sizeof(double));
+		allocateMemory((void**)&edge, num * sizeof(Vec2i));
+		allocateMemory((void**)&resetable, num * sizeof(bool));
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
@@ -217,17 +251,19 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 	RotAnchors(){}
 	RotAnchors(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);}
 
-	void init(int num, bool on_host = true) {
+	/* initialize and copy the state from other RotAnchors object. must keep the second argument*/
+	RotAnchors(RotAnchors other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		init(other.num, on_host);
+		copyFrom(other, stream);
+	}
+	void init(int num, bool on_host) {
 		this->num = num;
-		cudaError_t(*malloc)(void**, size_t);
-		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
-		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device	
-
-		(*malloc)((void**)&edge, num * sizeof(Vec2i));
-		(*malloc)((void**)&dir, num * sizeof(Vec3d));
-		(*malloc)((void**)&theta, num * sizeof(double));
-		(*malloc)((void**)&leftCoord, num * sizeof(int));
-		(*malloc)((void**)&rightCoord, num * sizeof(int));
+		cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function
+		allocateMemory((void**)&edge, num * sizeof(Vec2i));
+		allocateMemory((void**)&dir, num * sizeof(Vec3d));
+		allocateMemory((void**)&theta, num * sizeof(double));
+		allocateMemory((void**)&leftCoord, num * sizeof(int));
+		allocateMemory((void**)&rightCoord, num * sizeof(int));
 		gpuErrchk(cudaPeekAtLastError());
 	}
 
@@ -267,16 +303,19 @@ struct RotPoints { // the points that belongs to the rotational joints
 	inline int size() { return num; }
 
 	RotPoints(){}
-	RotPoints(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); }
+	RotPoints(std::vector<StdJoint> std_joints, bool on_host) { init(std_joints, on_host); }
+	/* initialize and copy the state from other RotPoints object. must keep the second argument*/
+	RotPoints(RotPoints other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		init(other.num, on_host);
+		copyFrom(other, stream);
+	}
 	void init(int num, bool on_host = true) {
 		this->num = num;
 		// allocate on host or device
-		cudaError_t(*malloc)(void**, size_t);
-		if (on_host) { malloc = &cudaMallocHost; }// if malloc = cudaMallocHost: allocate on host
-		else { malloc = &cudaMalloc; }// if malloc = cudaMalloc: allocate on device		
-		(*malloc)((void**)&massId, num * sizeof(int));
-		(*malloc)((void**)&anchorId, num * sizeof(int));
-		(*malloc)((void**)&dir, num * sizeof(int));
+		cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function	
+		allocateMemory((void**)&massId, num * sizeof(int));
+		allocateMemory((void**)&anchorId, num * sizeof(int));
+		allocateMemory((void**)&dir, num * sizeof(int));
 		gpuErrchk(cudaPeekAtLastError());
 	}
 	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
@@ -324,6 +363,13 @@ struct JOINT {
 
 	JOINT() {};
 	JOINT(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);};
+
+	/* initialize and copy the state from other JOINT object. must keep the second argument*/
+	JOINT(JOINT other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		points = RotPoints(other.points, on_host, stream);
+		anchors = RotAnchors(other.anchors, on_host, stream);
+	}
+
 	void copyFrom(const JOINT& other, cudaStream_t stream = (cudaStream_t)0) {
 		points.copyFrom(other.points, stream); // copy from the other points
 		anchors.copyFrom(other.anchors, stream); // copy from the other anchor
@@ -351,21 +397,29 @@ public:
 	// host
 	MASS mass; // a flat fiew of all masses
 	SPRING spring; // a flat fiew of all springs
-	JOINT joints;// a flat view of all joints
+	JOINT joint;// a flat view of all joints
 	// device
 	MASS d_mass;
 	SPRING d_spring;
-	JOINT d_joints;
+	JOINT d_joint;
+
+	// host (backup);
+	MASS backup_mass;
+	SPRING backup_spring;
+	JOINT backup_joint;
+
+	void backupState();//backup the robot mass/spring/joint state
+	void resetState();// restore the robot mass/spring/joint state to the backedup state
 	
 	double* joint_angles; // (measured) joint angle array in rad, initialized in start()
 	double* joint_speeds; // (measured) joint speed array in rad/s, initialized in start()
-	double* joint_speeds_cmd; // (commended) joint speed array in RPM, initialized in start()
+	double* joint_speeds_cmd; // (commended) joint speed array in rad/s, initialized in start()
 	double max_joint_speed = 1e-4; // 
 
 
 	//size_t num_mass=0;// refer to mass.num
 	//size_t num_spring=0;//refer to spring.num
-	//int num_joint = 4; //refer to joints.size()
+	//int num_joint = 4; //refer to joint.size()
 
 
 	// control
