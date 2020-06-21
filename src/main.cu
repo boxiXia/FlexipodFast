@@ -63,14 +63,14 @@ int main()
 
 	const double m = 5e-4;// mass per vertex
 
-	const double spring_constant =m*3e6; //spring constant for silicone leg
-	const double spring_damping = m*1.5e2; // damping for spring
+	const double spring_constant =m*2e6; //spring constant for silicone leg
+	const double spring_damping = m*2e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
 	const double scale_high = 2;// scaling factor high
 	//const double scale_low = 0.5; // scaling factor low
-	double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
+	const double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
 
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
@@ -165,8 +165,8 @@ int main()
 
 
 	// set max speed for each joint
-	double max_rpm = 300;//maximun revolution per minute
-	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI * sim.dt;//max joint speed in rad/s
+	double max_rpm = 250;//maximun revolution per minute
+	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 
 	sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
 

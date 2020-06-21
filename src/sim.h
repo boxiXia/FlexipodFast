@@ -112,7 +112,14 @@ public:
 };
 
 struct ModelState {
-	Vec3d com;
+	Vec3d com_pos; // (measured) position of the body com (nominal)
+	Vec3d com_acc; // (measured) acceleration of the body com (nomial)
+	Vec3d ox; // (measured) normalized ox direction of the body com (nominal)
+	Vec3d oy; // (measured) normalized oy direction of the body com (nominal)
+	double joint_angles[4]; // (measured) joint angle array in rad, initialized in start()
+	double joint_speeds[4]; // (measured) joint speed array in rad/s, initialized in start()
+	double joint_speeds_cmd[4]; // (commended) joint speed array in rad/s, initialized in start()
+	// TODO: change the constant "4"
 };
 
 struct MASS {

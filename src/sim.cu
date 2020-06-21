@@ -478,29 +478,44 @@ void Simulation::execute() {
 
 				double delta_angle = angle - joint_angles[i];
 				if (delta_angle > M_PI) {
-					joint_speeds[i] = delta_angle - 2 * M_PI;
+					joint_speeds[i] = (delta_angle - 2 * M_PI)/ (NUM_QUEUED_KERNELS * dt);
 				}
 				else if (delta_angle > -M_PI) {
-					joint_speeds[i] = delta_angle;
+					joint_speeds[i] = delta_angle / (NUM_QUEUED_KERNELS * dt);
 				}
 				else {
-					joint_speeds[i] = delta_angle + 2 * M_PI;
+					joint_speeds[i] = (delta_angle + 2 * M_PI) / (NUM_QUEUED_KERNELS * dt);
 				}
 				joint_angles[i] = angle;
 			}
 			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-				printf("% 6.1f:",T); // time
+				printf("% 6.1f",T); // time
 
+				printf("|t");
 				for (int i = 0; i < joint.anchors.num; i++) {
-					//printf("%+ 6.1f   ", joint_angles[i] * M_1_PI*180.0);
-					printf("% 4.0f ", joint_speeds[i] * M_1_PI * 30.0 / (NUM_QUEUED_KERNELS * dt)); // display joint speed in RPM
+					printf("% 4.0f", joint_angles[i] * M_1_PI * 180.0); // display joint angle in deg
+				}
+				printf("|w");
+				for (int i = 0; i < joint.anchors.num; i++) {
+					printf("% 4.0f", joint_speeds[i] * M_1_PI * 30.0); // display joint speed in RPM
+				}
+
+				printf("|wc");
+				for (int i = 0; i < joint.anchors.num; i++) {
+					printf("% 4.0f", joint_speeds_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
 				}
 
 				Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
 				Vec3d com_acc = mass.acc[id_oxyz_start];//body center of mass acceleration
 
-				printf("x(%+ 6.2f %+ 6.2f %+ 6.2f) ", com_pos.x, com_pos.y, com_pos.z);
-				printf("a(%+ 6.1f %+ 6.1f %+ 6.1f) ", com_acc.x, com_acc.y, com_acc.z);
+				//Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
+				//Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
+				//oy = (oy - oy.dot(ox) * ox).normalize();
+				//printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
+				//printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
+
+				printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
+				printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
 
 				printf("\r\r");
 			}
@@ -523,7 +538,6 @@ void Simulation::execute() {
 
 #endif // DEBUG_ENERGY
 
-
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
 			double t_lerp = 0.01;
@@ -533,10 +547,7 @@ void Simulation::execute() {
 			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
 			camera_dir.normalize();
 
-
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
-
-
 
 			if (glfwGetKey(window, GLFW_KEY_W)) {
 				camera_pos += 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
@@ -558,7 +569,7 @@ void Simulation::execute() {
 				camera_pos.z += 0.02;
 			}
 
-			double speed_multiplier = 0.000005;
+			double speed_multiplier = 0.1;
 			//double speed_multiplier = 0.0001;
 			bool speed_updated = false;
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
@@ -599,7 +610,7 @@ void Simulation::execute() {
 
 			if (speed_updated) {// update joint speed
 				for (int k = 0; k < joint.size(); k++) {
-					joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k];
+					joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k] * dt;
 				}
 				d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
 			}
