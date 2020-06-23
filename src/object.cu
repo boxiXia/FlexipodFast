@@ -25,7 +25,7 @@ const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 #include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
-__device__ const double NORMAL = 20000; // normal force coefficient for contact constraints
+__device__ const double NORMAL = 10000; // normal force coefficient for contact constraints
 
 
 

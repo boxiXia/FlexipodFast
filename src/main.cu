@@ -64,7 +64,7 @@ int main()
 	const double m = 5e-4;// mass per vertex
 
 	const double spring_constant =m*2e6; //spring constant for silicone leg
-	const double spring_damping = m*2e2; // damping for spring
+	const double spring_damping = m*1e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
@@ -75,7 +75,7 @@ int main()
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
 	const double spring_constant_restable = spring_constant * 1.0; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping * 4.0; // spring damping for resetable spring
+	const double spring_damping_restable = spring_damping * 8.0; // spring damping for resetable spring
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
 
