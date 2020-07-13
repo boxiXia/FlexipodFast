@@ -59,7 +59,9 @@ int main()
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 
 	
-	sim.dt = 5e-5; // timestep
+	//sim.dt = 5e-5; // timestep
+	sim.dt = 2.5e-5; // timestep
+
 
 	const double m = 5e-4;// mass per vertex
 
@@ -168,7 +170,9 @@ int main()
 	double max_rpm = 250;//maximun revolution per minute
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 
-	sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
+	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
+	sim.setViewport(Vec3d(0.1, -0.6, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));
+
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);

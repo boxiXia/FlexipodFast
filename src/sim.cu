@@ -468,7 +468,7 @@ void Simulation::execute() {
 			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 			cudaDeviceSynchronize();
 //#pragma omp parallel for
-			for (int i = 0; i < joint.anchors.num; i++)
+			for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
 			{
 				Vec2i anchor_edge = joint.anchors.edge[i];
 				Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
@@ -487,7 +487,19 @@ void Simulation::execute() {
 					joint_speeds[i] = (delta_angle + 2 * M_PI) / (NUM_QUEUED_KERNELS * dt);
 				}
 				joint_angles[i] = angle;
+
+				/// <summary>
+				/// keep the joint angle to 0 rad
+				/// </summary>
+				joint_speeds_cmd[i] = -joint_angles[i]*50;
+				if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
+				if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
+				joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
 			}
+			// update joint speed
+			d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
+
+
 			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
 				printf("% 6.1f",T); // time
 
