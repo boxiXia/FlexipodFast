@@ -193,6 +193,11 @@ struct MY_ALIGN(8) Vec3d {
 			exit(-1);
 		} // to do remove this
 	}
+
+	//CUDA_CALLABLE_MEMBER friend double operator=(double* v1, const Vec3d& v2) {
+
+	//}
+
 	inline CUDA_CALLABLE_MEMBER friend Vec3d operator+(const Vec3d& v1, const Vec3d& v2) {
 		return Vec3d(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
 	}

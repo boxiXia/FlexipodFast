@@ -59,8 +59,8 @@ int main()
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 
 	
-	//sim.dt = 5e-5; // timestep
-	sim.dt = 2.5e-5; // timestep
+	sim.dt = 5e-5; // timestep
+	//sim.dt = 2.5e-5; // timestep
 
 
 	const double m = 5e-4;// mass per vertex

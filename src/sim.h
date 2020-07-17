@@ -35,6 +35,12 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paralle
 #include<iostream>
 #include<string.h>
 
+#ifdef UDP
+#include "Network.h"
+#endif
+
+
+
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr int THREADS_PER_BLOCK = 64;
 constexpr int MASS_THREADS_PER_BLOCK = 64;
@@ -496,6 +502,21 @@ private:
 	CUDA_GLOBAL_CONSTRAINTS d_constraints;
 	bool update_constraints = true;
 
+#ifdef UDP
+	//Todo
+	std::string ip_remote = "127.0.0.1"; // remote ip
+	int port_remote = 32000; // remote port
+	UdpDataSend msg_send; // message to be sent
+
+	WSASession Session;
+	UDPSocket sender_socket;
+
+	int port_local = 32001;
+	UdpDataReceive msg_rec; // message that is received
+
+	void UdpReceive();
+	std::thread udp_receive_thread;
+#endif //UDP
 
 #ifdef GRAPHICS
 	int line_width = 3; // line width for rendering the springs

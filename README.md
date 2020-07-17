@@ -8,7 +8,7 @@ The simulation engine for the flexipod project, it is built upon the original [T
 **Windows/Linux** machine with Nvidia Graphics card that has **Cuda** support, and with compute capability>=6.0. See a list of CUDA enabled graphics cards [here](https://developer.nvidia.com/cuda-gpus).
 
 
-## Setup
+## Setup (c++)
 
 ### 0. (windows) Install visual studio 2019:[link](https://visualstudio.microsoft.com/downloads/)
 and in the installation manager, install with **"Desktop development with c++"**
@@ -51,6 +51,19 @@ find these lines, and modify according to your GPU architecture
 ###### here you must modify to fit your GPU architecture #####
 # check https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
 string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
+```
+
+## setup (python)
+
+#### 0. create a anaconda environment
+
+#### 1. install dependency
+
+install visualization tools for jupyter notebook:
+```
+pip install ipywidgets
+jupyter nbextension enable --py widgetsnbextension
+pip install bqplot
 ```
 
 ## Troubleshoot

@@ -52,6 +52,8 @@ set(ALL_GL_LIBS GLEW::GLEW glm glfw glad::glad)
 
 find_package(msgpack CONFIG CONFIG)
 
+find_package(asio CONFIG REQUIRED)
+
 # include directories
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src)
@@ -70,6 +72,7 @@ add_executable(flexipod
     src/object.h src/object.cu
     src/sim.h src/sim.cu) 
 
+
 set_target_properties(flexipod PROPERTIES 
                       POSITION_INDEPENDENT_CODE ON
                       CUDA_SEPARABLE_COMPILATION ON)
@@ -79,11 +82,17 @@ target_link_libraries(flexipod PRIVATE
         OpenMP::OpenMP_CXX
         ${ALL_GL_LIBS}
         cuda)# cudart
+
+#target_link_libraries(flexipod PRIVATE asio asio::asio)
+
+
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
+
 
 add_executable(testNetwork
     src/testNetwork.cpp
     src/network.h
+    src/network.cpp
 )
  target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
 
