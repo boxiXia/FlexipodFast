@@ -59,11 +59,13 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src)
 
 add_definitions(-DGRAPHICS) # enable this definition to display graphics
-add_definitions(-DUDP) # enable this definition to send info via DUP
 #add_definitions(-DVERLET) # enable this definition to integrate via Verlet integration
 add_definitions(-DROTATION) # enable this to support rotation in dynamics update
 #add_definitions(-DDEBUG_ENERGY) # enable this to debug energy
 #add_subdirectory(src/Titan)
+
+
+
 
 add_executable(flexipod 
     src/main.cu 
@@ -72,6 +74,12 @@ add_executable(flexipod
     src/object.h src/object.cu
     src/sim.h src/sim.cu) 
 
+option(USE_UDP "Enter UDP mode" ON)
+if(USE_UDP)
+    message(STATUS "UDP ON")
+    add_definitions(-DUDP) # enable this definition to send info via DUP
+    target_link_libraries(flexipod PRIVATE asio asio::asio)
+endif()
 
 set_target_properties(flexipod PROPERTIES 
                       POSITION_INDEPENDENT_CODE ON
@@ -82,9 +90,6 @@ target_link_libraries(flexipod PRIVATE
         OpenMP::OpenMP_CXX
         ${ALL_GL_LIBS}
         cuda)# cudart
-
-#target_link_libraries(flexipod PRIVATE asio asio::asio)
-
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
 

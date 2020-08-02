@@ -14,9 +14,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paralle
 #include <device_launch_parameters.h>
 //#include <cooperative_groups.h>
 
-#define _USE_MATH_DEFINES
-#include <math.h>
-
 
 
 
@@ -308,7 +305,7 @@ void Simulation::UdpReceive() {
 	receiver_socket.Bind(port_local);
 	int n_bytes_received;
 	sockaddr_in add;
-	while (true) {
+	while (!ENDED) {
 		add = receiver_socket.RecvFrom(buffer, sizeof(buffer), n_bytes_received);
 		msgpack::object_handle oh = msgpack::unpack(buffer, n_bytes_received);
 		msgpack::object obj = oh.get();
@@ -319,6 +316,16 @@ void Simulation::UdpReceive() {
 			msg_rec.jointSpeed[1],
 			msg_rec.jointSpeed[2],
 			msg_rec.jointSpeed[3]);
+
+		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
+		{// update joint_speeds_cmd
+			joint_speeds_cmd[i] = msg_rec.jointSpeed[i];
+			if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
+			if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
+			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
+		}
+		// update joint speed
+		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
@@ -356,14 +363,11 @@ void Simulation::start() {
 
 #ifdef UDP
 //Todo
-	sender_socket.SetRemoteAddress(ip_remote, port_remote); // set up remote ip and port
 
 	udp_receive_thread = std::thread(&Simulation::UdpReceive, this); //TODO: thread
 
 #endif //UDP
 
-//#ifdef UDP
-//#endif //UDP
 
 	gpu_thread = std::thread(&Simulation::_run, this); //TODO: thread
 }
@@ -410,6 +414,12 @@ void Simulation::execute() {
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
 
+#ifdef UDP
+	udp::endpoint destination = udp::endpoint(asio::ip::address::from_string(ip_remote), port_remote);//remote destination
+	asio::io_context io_context;
+	udp::socket socket{ io_context };
+	socket.open(udp::v4());
+#endif // UDP
 
 
 #ifdef DEBUG_ENERGY
@@ -578,8 +588,6 @@ void Simulation::execute() {
 
 				//printf("\r\r");
 
-
-#ifdef UDP
 				msg_send.T = T;
 				for (int i = 0; i < 4; i++)
 				{
@@ -598,15 +606,14 @@ void Simulation::execute() {
 				msgpack::pack(ss, msg_send);
 				std::string const& data = ss.str();
 
-				//sender_socket.Send(data.c_str(), data.size());
-				sender_socket.SendTo(ip_remote, port_remote, data.c_str(), data.size());
+				// Send data
+				socket.send_to(asio::buffer(data.c_str(), data.size()), destination);
 
-#endif// UDP
 			}
 
 			//printf("\n");
 		//}
-#endif
+#endif // UDP
 
 #ifdef GRAPHICS
 		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
@@ -622,14 +629,14 @@ void Simulation::execute() {
 
 #endif // DEBUG_ENERGY
 
-			//// https://en.wikipedia.org/wiki/Slerp
-			////mass.pos[id_oxyz_start].print();
-			//double t_lerp = 0.01;
-			//Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
-			///*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			//// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			//camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
-			//camera_dir.normalize();
+			// https://en.wikipedia.org/wiki/Slerp
+			//mass.pos[id_oxyz_start].print();
+			double t_lerp = 0.01;
+			Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
+			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
+			camera_dir.normalize();
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
