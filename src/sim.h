@@ -1,5 +1,5 @@
-/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
-ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,” ICRA 2020, May 2020.
+ï»¿/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
+ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, ï¿½Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,ï¿½ ICRA 2020, May 2020.
 */
 
 #ifndef TITAN_SIM_H
@@ -40,8 +40,8 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paralle
 
 #ifdef UDP
 #include "Network.h"
-#include <asio.hpp>
-using namespace asio::ip;
+typedef WsaUdpServer UdpServer;
+
 #endif
 
 
@@ -72,8 +72,9 @@ inline cudaFreeFcnType FreeMemoryFcn(void* host_or_device_ptr) {
 	cudaPointerAttributes attributes;
 	gpuErrchk(cudaPointerGetAttributes(&attributes, host_or_device_ptr));
 	if (attributes.memoryType == cudaMemoryType::cudaMemoryTypeHost) {// host memory
-		freeMemory = &cudaFreeHost;}
-	else {freeMemory = &cudaFree;}// device memory
+		freeMemory = &cudaFreeHost;
+	}
+	else { freeMemory = &cudaFree; }// device memory
 	printf("Memory type for d_data %i\n", attributes.memoryType);
 	return freeMemory;
 }
@@ -178,7 +179,7 @@ struct MASS {
 			memset(vel, 0, num * sizeof(Vec3d));
 			memset(acc, 0, num * sizeof(Vec3d));
 #ifdef VERLET
-			memset(prev_pos,0,num * sizeof(Vec3d));
+			memset(prev_pos, 0, num * sizeof(Vec3d));
 #endif // VERLET
 		}
 		else {
@@ -189,7 +190,7 @@ struct MASS {
 
 	}
 
-	void copyFrom(const MASS& other, cudaStream_t stream=(cudaStream_t)0) {
+	void copyFrom(const MASS& other, cudaStream_t stream = (cudaStream_t)0) {
 		cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
@@ -220,7 +221,7 @@ struct SPRING {
 	double* damping = nullptr; // damping on the masses.
 	Vec2i* edge = nullptr;// (left,right) mass indices of the spring
 	bool* resetable = nullptr; // a flag indicating whether to reset every dynamic update
-	int num =0;
+	int num = 0;
 	inline int size() { return num; }
 
 	SPRING() {}
@@ -244,8 +245,8 @@ struct SPRING {
 		this->num = num;
 	}
 	void copyFrom(const SPRING& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
-		cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault,stream);
-		cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault,stream);
+		cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream);
@@ -266,8 +267,8 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 	int num; // num of anchor
 	inline int size() { return num; }
 
-	RotAnchors(){}
-	RotAnchors(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);}
+	RotAnchors() {}
+	RotAnchors(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); }
 
 	/* initialize and copy the state from other RotAnchors object. must keep the second argument*/
 	RotAnchors(RotAnchors other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
@@ -320,7 +321,7 @@ struct RotPoints { // the points that belongs to the rotational joints
 	int num; // the length of array "id"
 	inline int size() { return num; }
 
-	RotPoints(){}
+	RotPoints() {}
 	RotPoints(std::vector<StdJoint> std_joints, bool on_host) { init(std_joints, on_host); }
 	/* initialize and copy the state from other RotPoints object. must keep the second argument*/
 	RotPoints(RotPoints other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
@@ -339,7 +340,9 @@ struct RotPoints { // the points that belongs to the rotational joints
 	void init(std::vector<StdJoint> std_joints, bool on_host = true) {
 		num = 0;
 		for each (auto & std_joint in std_joints)
-		{num += std_joint.left.size() + std_joint.right.size();}// get the total number of the points in all joints
+		{
+			num += std_joint.left.size() + std_joint.right.size();
+		}// get the total number of the points in all joints
 		init(num, on_host);
 
 		if (on_host) { // copy the std_joints to this
@@ -380,7 +383,7 @@ struct JOINT {
 	RotAnchors anchors;
 
 	JOINT() {};
-	JOINT(std::vector<StdJoint> std_joints, bool on_host = true) {init(std_joints, on_host);};
+	JOINT(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); };
 
 	/* initialize and copy the state from other JOINT object. must keep the second argument*/
 	JOINT(JOINT other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
@@ -404,7 +407,7 @@ class Simulation {
 public:
 	double dt = 0.0001;
 	double T = 0; //simulation time
-	Vec3d global_acc = Vec3d(0,0,0); // global acceleration
+	Vec3d global_acc = Vec3d(0, 0, 0); // global acceleration
 
 	int id_restable_spring_start = 0; // resetable springs start index (inclusive)
 	int id_resetable_spring_end = 0; // resetable springs start index (exclusive)
@@ -428,7 +431,7 @@ public:
 
 	void backupState();//backup the robot mass/spring/joint state
 	void resetState();// restore the robot mass/spring/joint state to the backedup state
-	
+
 	double* joint_angles; // (measured) joint angle array in rad, initialized in start()
 	double* joint_speeds; // (measured) joint speed array in rad/s, initialized in start()
 	double* joint_speeds_cmd; // (commended) joint speed array in rad/s, initialized in start()
@@ -492,15 +495,12 @@ public:
 public:
 	std::string ip_remote = "127.0.0.1"; // remote ip
 	int port_remote = 32000; // remote port
-	
-	UdpDataSend msg_send; // message to be sent
-
-
 	int port_local = 32001;
+
+	UdpDataSend msg_send; // message to be sent
 	UdpDataReceive msg_rec; // message that is received
 
-	void UdpReceive();
-	std::thread udp_receive_thread;
+	UdpServer udp_server;
 #endif //UDP
 
 private:
@@ -531,7 +531,7 @@ private:
 	int point_size = 3; // point size for rendering the masses
 
 	GLFWwindow* window;
-	int window_width,window_height; // the width and height of the window
+	int window_width, window_height; // the width and height of the window
 
 	GLuint VertexArrayID; // handle for the vertex array object
 	GLuint programID;  // handle for the shader program

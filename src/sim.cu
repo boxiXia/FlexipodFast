@@ -1,5 +1,5 @@
-/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
-ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,” ICRA 2020, May 2020.
+ï»¿/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
+ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, ï¿½Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,ï¿½ ICRA 2020, May 2020.
 */
 
 #define GLM_FORCE_PURE
@@ -34,7 +34,7 @@ __global__ void SpringUpate(
 
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
 		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
-		
+
 #ifdef ROTATION
 		if (spring.resetable[i]) {
 			spring.rest[i] = length;//reset the spring rest length if this spring is restable
@@ -105,7 +105,7 @@ __global__ void MassUpate(
 			}
 
 #ifdef VERLET // verlet integration
-			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
+			// Stï¿½rmerï¿½Verlet:https://en.wikipedia.org/wiki/Verlet_integration
 			Vec3d acc = force / m;
 			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
 			mass.vel[i] = (pos - mass.pos[i]) / dt;
@@ -153,7 +153,7 @@ __global__ void massUpdateAndRotate(
 			}
 
 #ifdef VERLET // verlet integration
-			// Störmer–Verlet:https://en.wikipedia.org/wiki/Verlet_integration
+			// Stï¿½rmerï¿½Verlet:https://en.wikipedia.org/wiki/Verlet_integration
 			Vec3d acc = force / m;
 			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
 			mass.vel[i] = (pos - mass.pos[i]) / dt;
@@ -193,7 +193,7 @@ __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	if (i < joint.points.num) {
 		if (i < joint.anchors.num) {
 			Vec2i e = joint.anchors.edge[i];
-			joint.anchors.dir[i] = (mass_pos[e.y] - mass_pos[e.x]).normalize ();
+			joint.anchors.dir[i] = (mass_pos[e.y] - mass_pos[e.x]).normalize();
 		}
 		__threadfence();
 		__syncthreads();
@@ -295,42 +295,6 @@ void Simulation::resetState() {
 	memset(joint_angles, 0, nbytes);
 }
 
-#ifdef UDP
-void Simulation::UdpReceive() {
-	WSASession Session;
-	UDPSocket receiver_socket;
-	/*UdpDataReceive msg_rec;//defined in sim.h*/
-	char buffer[128];
-
-	receiver_socket.Bind(port_local);
-	int n_bytes_received;
-	sockaddr_in add;
-	while (!ENDED) {
-		add = receiver_socket.RecvFrom(buffer, sizeof(buffer), n_bytes_received);
-		msgpack::object_handle oh = msgpack::unpack(buffer, n_bytes_received);
-		msgpack::object obj = oh.get();
-
-		obj.convert(msg_rec);
-		printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
-			msg_rec.jointSpeed[0],
-			msg_rec.jointSpeed[1],
-			msg_rec.jointSpeed[2],
-			msg_rec.jointSpeed[3]);
-
-		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
-		{// update joint_speeds_cmd
-			joint_speeds_cmd[i] = msg_rec.jointSpeed[i];
-			if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
-			if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
-			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
-		}
-		// update joint speed
-		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-}
-#endif //UDP
 
 void Simulation::start() {
 	if (ENDED) { throw std::runtime_error("The simulation has ended. Cannot call sim.start() after the end of the simulation."); }
@@ -363,8 +327,7 @@ void Simulation::start() {
 
 #ifdef UDP
 //Todo
-
-	udp_receive_thread = std::thread(&Simulation::UdpReceive, this); //TODO: thread
+	udp_server.run();
 
 #endif //UDP
 
@@ -413,14 +376,6 @@ void Simulation::_run() { // repeatedly start next
 void Simulation::execute() {
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
-
-#ifdef UDP
-	udp::endpoint destination = udp::endpoint(asio::ip::address::from_string(ip_remote), port_remote);//remote destination
-	asio::io_context io_context;
-	udp::socket socket{ io_context };
-	socket.open(udp::v4());
-#endif // UDP
-
 
 #ifdef DEBUG_ENERGY
 	energy_start = energy(); // compute the total energy of the system at T=0
@@ -493,7 +448,7 @@ void Simulation::execute() {
 
 #ifdef ROTATION
 
-			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK>> > (d_mass.pos, d_joint);
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
 			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
 
@@ -520,99 +475,114 @@ void Simulation::execute() {
 
 #ifdef UDP
 		//if (fmod(T, 1. / 100.0) < NUM_QUEUED_KERNELS * dt) {
-			mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
-			cudaDeviceSynchronize();
-//#pragma omp parallel for
-			for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
+		mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
+		cudaDeviceSynchronize();
+		//#pragma omp parallel for
+		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
+		{
+			Vec2i anchor_edge = joint.anchors.edge[i];
+			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
+			Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+			Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+
+			double delta_angle = angle - joint_angles[i];
+			if (delta_angle > M_PI) {
+				joint_speeds[i] = (delta_angle - 2 * M_PI) / (NUM_QUEUED_KERNELS * dt);
+			}
+			else if (delta_angle > -M_PI) {
+				joint_speeds[i] = delta_angle / (NUM_QUEUED_KERNELS * dt);
+			}
+			else {
+				joint_speeds[i] = (delta_angle + 2 * M_PI) / (NUM_QUEUED_KERNELS * dt);
+			}
+			joint_angles[i] = angle;
+
+			///// <summary>
+			///// keep the joint angle to 0 rad
+			///// </summary>
+			//joint_speeds_cmd[i] = -joint_angles[i]*50;
+			//if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
+			//if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
+			//joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
+
+		}
+		// update joint speed
+		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
+
+
+		if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
+			Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
+			Vec3d com_acc = mass.acc[id_oxyz_start];//body center of mass acceleration
+
+			Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
+			Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
+			oy = (oy - oy.dot(ox) * ox).normalize();
+
+
+			//printf("% 6.1f",T); // time
+			//printf("|t");
+			//for (int i = 0; i < joint.anchors.num; i++) {
+			//	printf("% 4.0f", joint_angles[i] * M_1_PI * 180.0); // display joint angle in deg
+			//}
+			//printf("|w");
+			//for (int i = 0; i < joint.anchors.num; i++) {
+			//	printf("% 4.0f", joint_speeds[i] * M_1_PI * 30.0); // display joint speed in RPM
+			//}
+
+			//printf("|wc");
+			//for (int i = 0; i < joint.anchors.num; i++) {
+			//	printf("% 4.0f", joint_speeds_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
+			//}
+
+			////printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
+			////printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
+
+			//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
+			//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
+
+			//printf("\r\r");
+
+			msg_send.T = T;
+			for (int i = 0; i < 4; i++)
 			{
-				Vec2i anchor_edge = joint.anchors.edge[i];
-				Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
-				Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
-				Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
-				double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+				msg_send.jointAngle[i] = joint_angles[i];
+				//msg_send.orientation[i] = cos(T + i);
+			}
 
-				double delta_angle = angle - joint_angles[i];
-				if (delta_angle > M_PI) {
-					joint_speeds[i] = (delta_angle - 2 * M_PI)/ (NUM_QUEUED_KERNELS * dt);
-				}
-				else if (delta_angle > -M_PI) {
-					joint_speeds[i] = delta_angle / (NUM_QUEUED_KERNELS * dt);
-				}
-				else {
-					joint_speeds[i] = (delta_angle + 2 * M_PI) / (NUM_QUEUED_KERNELS * dt);
-				}
-				joint_angles[i] = angle;
+			for (size_t i = 0; i < 3; i++)
+			{
+				msg_send.acceleration[i] = com_acc[i];
+				msg_send.position[i] = com_pos[i];
+				msg_send.orientation[i] = ox[i];
+				msg_send.orientation[3 + i] = oy[i];
+			}
 
-				///// <summary>
-				///// keep the joint angle to 0 rad
-				///// </summary>
-				//joint_speeds_cmd[i] = -joint_angles[i]*50;
-				//if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
-				//if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
-				//joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
+		}
 
+		udp_server.msg_send = msg_send;
+		udp_server.flag_should_send = true;
+		if (udp_server.flag_new_received) {
+			msg_rec = udp_server.msg_rec;
+			printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
+				msg_rec.jointSpeed[0],
+				msg_rec.jointSpeed[1],
+				msg_rec.jointSpeed[2],
+				msg_rec.jointSpeed[3]);
+
+			for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
+			{// update joint_speeds_cmd
+				joint_speeds_cmd[i] = msg_rec.jointSpeed[i];
+				if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
+				if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
+				joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
 			}
 			// update joint speed
 			d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
+		}
 
-
-			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-				Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
-				Vec3d com_acc = mass.acc[id_oxyz_start];//body center of mass acceleration
-
-				Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
-				Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
-				oy = (oy - oy.dot(ox) * ox).normalize();
-
-
-				//printf("% 6.1f",T); // time
-				//printf("|t");
-				//for (int i = 0; i < joint.anchors.num; i++) {
-				//	printf("% 4.0f", joint_angles[i] * M_1_PI * 180.0); // display joint angle in deg
-				//}
-				//printf("|w");
-				//for (int i = 0; i < joint.anchors.num; i++) {
-				//	printf("% 4.0f", joint_speeds[i] * M_1_PI * 30.0); // display joint speed in RPM
-				//}
-
-				//printf("|wc");
-				//for (int i = 0; i < joint.anchors.num; i++) {
-				//	printf("% 4.0f", joint_speeds_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
-				//}
-
-				////printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
-				////printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
-
-				//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
-				//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
-
-				//printf("\r\r");
-
-				msg_send.T = T;
-				for (int i = 0; i < 4; i++)
-				{
-					msg_send.jointAngle[i] = joint_angles[i];
-					//msg_send.orientation[i] = cos(T + i);
-				}
-				
-				for (size_t i = 0; i < 3; i++)
-				{
-					msg_send.acceleration[i] = com_acc[i];
-					msg_send.position[i] = com_pos[i];
-					msg_send.orientation[i] = ox[i];
-					msg_send.orientation[3+i] = oy[i];
-				}
-				std::stringstream ss;
-				msgpack::pack(ss, msg_send);
-				std::string const& data = ss.str();
-
-				// Send data
-				socket.send_to(asio::buffer(data.c_str(), data.size()), destination);
-
-			}
-
-			//printf("\n");
-		//}
+		//printf("\n");
+	//}
 #endif // UDP
 
 #ifdef GRAPHICS
@@ -692,7 +662,7 @@ void Simulation::execute() {
 				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
-				for (int i = 0; i < joint.size(); i++) {joint_speeds_cmd[i] = 0.;}
+				for (int i = 0; i < joint.size(); i++) { joint_speeds_cmd[i] = 0.; }
 				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_R)) { // reset
@@ -767,10 +737,7 @@ Simulation::~Simulation() {
 			exit(1);
 		}
 #ifdef UDP
-		//if (gpu_thread.joinable()) {
-		//	udp_receive_thread.join();
-		//}
-		udp_receive_thread.join();
+		udp_server.flag_should_close = true;
 #endif // UDP
 
 	}
@@ -886,7 +853,7 @@ void Simulation::computeMVP(bool update_view) {
 	bool is_resized = width != window_width || height != window_height;
 	if (is_resized) { // window is resized
 		glfwGetFramebufferSize(window, &window_width, &window_height);
-		// Projection matrix : 60° Field of View, 4:3 ratio, display range : 0.01 unit <-> 100 units
+		// Projection matrix : 60ï¿½ Field of View, 4:3 ratio, display range : 0.01 unit <-> 100 units
 		this->Projection = glm::perspective(glm::radians(60.0f), (float)window_width / (float)window_height, 0.01f, 100.0f);
 	}
 	if (update_view) {

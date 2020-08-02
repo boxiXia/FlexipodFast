@@ -95,9 +95,11 @@ target_link_libraries(flexipod PRIVATE
 
 
 add_executable(testNetwork
-    src/testNetwork.cpp
+    "src/testNetwork.cu"
     src/network.h
     src/network.cpp
 )
  target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
-
+target_link_libraries(testNetwork PRIVATE asio asio::asio)
+target_link_libraries(testNetwork PRIVATE cuda)
+target_include_directories(testNetwork PUBLIC ${CUDA_INCLUDE_DIRS} src)
