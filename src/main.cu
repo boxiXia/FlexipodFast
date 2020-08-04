@@ -63,7 +63,7 @@ int main()
 	//sim.dt = 2.5e-5; // timestep
 
 
-	const double m = 5e-4;// mass per vertex
+	const double m = 8e-4;// mass per vertex
 
 	const double spring_constant =m*2e6; //spring constant for silicone leg
 	const double spring_damping = m*1e2; // damping for spring
@@ -76,7 +76,7 @@ int main()
 
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
-	const double spring_constant_restable = spring_constant * 1.0; // spring constant for resetable spring
+	const double spring_constant_restable = spring_constant * 2.0; // spring constant for resetable spring
 	const double spring_damping_restable = spring_damping * 8.0; // spring damping for resetable spring
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
@@ -167,7 +167,7 @@ int main()
 
 
 	// set max speed for each joint
-	double max_rpm = 250;//maximun revolution per minute
+	double max_rpm = 380;//maximun revolution per minute
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));

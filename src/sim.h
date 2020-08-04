@@ -51,7 +51,7 @@ constexpr int THREADS_PER_BLOCK = 64;
 constexpr int MASS_THREADS_PER_BLOCK = 64;
 
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
-constexpr int  NUM_QUEUED_KERNELS = 100; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr int  NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 constexpr int NUM_UPDATE_PER_ROTATION = 5; //number of update per rotation
 
@@ -434,7 +434,11 @@ public:
 
 	double* joint_angles; // (measured) joint angle array in rad, initialized in start()
 	double* joint_speeds; // (measured) joint speed array in rad/s, initialized in start()
+	double* joint_speeds_desired; // (desired) joint speed array in rad/s, initialized in start()
 	double* joint_speeds_cmd; // (commended) joint speed array in rad/s, initialized in start()
+	double* joint_speeds_error; // difference between joint_speeds_cm and joint_speeds
+	double* joint_speeds_error_integral; // integral of the error between joint_speeds_cm and joint_speeds
+
 	double max_joint_speed = 1e-4; // 
 
 

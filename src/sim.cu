@@ -35,6 +35,32 @@ __global__ void SpringUpate(
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
 		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
 
+//#ifdef ROTATION
+//		if (spring.resetable[i]) {
+//			spring.rest[i] = length;//reset the spring rest length if this spring is restable
+//		}
+//#endif // ROTATION
+	}
+
+}
+
+__global__ void SpringUpateReset(
+	const MASS mass,
+	const SPRING spring
+) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < spring.num) {
+		Vec2i e = spring.edge[i];
+		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
+		double length = s_vec.norm(); // current spring length
+		s_vec /= (length > 1e-10 ? length : 1e-10);// normalized to unit vector (direction), check instablility for small length
+
+		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
+
+		mass.force[e.y].atomicVecAdd(force); // need atomics here
+		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
+
 #ifdef ROTATION
 		if (spring.resetable[i]) {
 			spring.rest[i] = length;//reset the spring rest length if this spring is restable
@@ -283,7 +309,7 @@ void Simulation::backupState() {
 	backup_mass = MASS(mass, true);
 	backup_joint = JOINT(joint, true);
 }
-/*restore the robot mass/spring/joint state to the backedup state */
+/*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
 void Simulation::resetState() {
 	for (int i = 0; i < joint.size(); i++) { joint_speeds_cmd[i] = 0.; }
 	d_mass.copyFrom(backup_mass, stream[NUM_CUDA_STREAM - 1]);
@@ -317,7 +343,10 @@ void Simulation::start() {
 
 	update_constraints = false;
 
+	cudaMallocHost((void**)&joint_speeds_error_integral, joint.size() * sizeof(double));//initialize joint speed error integral array 
+	cudaMallocHost((void**)&joint_speeds_error, joint.size() * sizeof(double));//initialize joint speed error array 
 	cudaMallocHost((void**)&joint_speeds_cmd, joint.size() * sizeof(double));//initialize joint speed (commended) array 
+	cudaMallocHost((void**)&joint_speeds_desired, joint.size() * sizeof(double));//initialize joint speed (desired) array 
 	cudaMallocHost((void**)&joint_speeds, joint.size() * sizeof(double));//initialize joint speed (measured) array 
 	cudaMallocHost((void**)&joint_angles, joint.size() * sizeof(double));//initialize joint angle (measured) array 
 
@@ -449,7 +478,7 @@ void Simulation::execute() {
 #ifdef ROTATION
 
 			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
-			SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
 
 			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
@@ -507,19 +536,48 @@ void Simulation::execute() {
 			//joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
 
 		}
-		// update joint speed
-		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
 
+		Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
+		Vec3d com_acc = mass.acc[id_oxyz_start];//body center of mass acceleration
+
+		Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
+		Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
+		oy = (oy - oy.dot(ox) * ox).normalize();
+
+		msg_send.T = T;
+		for (int i = 0; i < 4; i++)
+		{
+			msg_send.jointAngle[i] = joint_angles[i];
+			msg_send.jointSpeed[i] = joint_speeds[i];
+		}
+
+		for (size_t i = 0; i < 3; i++)
+		{
+			msg_send.acceleration[i] = com_acc[i];
+			msg_send.position[i] = com_pos[i];
+			msg_send.orientation[i] = ox[i];
+			msg_send.orientation[3 + i] = oy[i];
+		}
+
+		
+
+		udp_server.msg_send = msg_send;
+		udp_server.flag_should_send = true;
+		if (udp_server.flag_new_received) {
+			msg_rec = udp_server.msg_rec;
+			udp_server.flag_new_received = false;
+			printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
+				msg_rec.jointSpeed[0],
+				msg_rec.jointSpeed[1],
+				msg_rec.jointSpeed[2],
+				msg_rec.jointSpeed[3]);
+
+			for (int i = 0; i < joint.anchors.num; i++) {
+				joint_speeds_desired[i] = msg_rec.jointSpeed[i];//update joint speed from received udp packet
+			}
+		}
 
 		if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-			Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
-			Vec3d com_acc = mass.acc[id_oxyz_start];//body center of mass acceleration
-
-			Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
-			Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
-			oy = (oy - oy.dot(ox) * ox).normalize();
-
-
 			//printf("% 6.1f",T); // time
 			//printf("|t");
 			//for (int i = 0; i < joint.anchors.num; i++) {
@@ -540,50 +598,29 @@ void Simulation::execute() {
 
 			//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
 			//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
-
 			//printf("\r\r");
-
-			msg_send.T = T;
-			for (int i = 0; i < 4; i++)
-			{
-				msg_send.jointAngle[i] = joint_angles[i];
-				//msg_send.orientation[i] = cos(T + i);
-			}
-
-			for (size_t i = 0; i < 3; i++)
-			{
-				msg_send.acceleration[i] = com_acc[i];
-				msg_send.position[i] = com_pos[i];
-				msg_send.orientation[i] = ox[i];
-				msg_send.orientation[3 + i] = oy[i];
-			}
-
 		}
-
-		udp_server.msg_send = msg_send;
-		udp_server.flag_should_send = true;
-		if (udp_server.flag_new_received) {
-			msg_rec = udp_server.msg_rec;
-			printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
-				msg_rec.jointSpeed[0],
-				msg_rec.jointSpeed[1],
-				msg_rec.jointSpeed[2],
-				msg_rec.jointSpeed[3]);
-
-			for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
-			{// update joint_speeds_cmd
-				joint_speeds_cmd[i] = msg_rec.jointSpeed[i];
-				if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
-				if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
-				joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
-			}
-			// update joint speed
-			d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
-		}
-
 		//printf("\n");
 	//}
 #endif // UDP
+
+		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
+		{// update joint_speeds_cmd
+
+			joint_speeds_error[i] = joint_speeds_desired[i] - joint_speeds[i];
+
+			joint_speeds_error_integral[i] += joint_speeds_error[i]; // simple proportional control
+			if (joint_speeds_error_integral[i] > max_joint_speed) { joint_speeds_error_integral[i] = max_joint_speed; }
+			if (joint_speeds_error_integral[i] < -max_joint_speed) { joint_speeds_error_integral[i] = -max_joint_speed; }
+
+			joint_speeds_cmd[i] = 0.1 * joint_speeds_error[i] + 1.0 * joint_speeds_error_integral[i];
+
+			if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
+			if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
+			joint.anchors.theta[i] = 0.5 * NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
+		}
+		// update joint speed
+		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
 
 #ifdef GRAPHICS
 		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
@@ -634,35 +671,35 @@ void Simulation::execute() {
 			//double speed_multiplier = 0.0001;
 			bool speed_updated = false;
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
-				if (joint_speeds_cmd[0] < max_joint_speed) { joint_speeds_cmd[0] += speed_multiplier; }
-				if (joint_speeds_cmd[1] < max_joint_speed) { joint_speeds_cmd[1] += speed_multiplier; }
-				if (joint_speeds_cmd[2] > -max_joint_speed) { joint_speeds_cmd[2] -= speed_multiplier; }
-				if (joint_speeds_cmd[3] > -max_joint_speed) { joint_speeds_cmd[3] -= speed_multiplier; }
+				if (joint_speeds_desired[0] < max_joint_speed) { joint_speeds_desired[0] += speed_multiplier; }
+				if (joint_speeds_desired[1] < max_joint_speed) { joint_speeds_desired[1] += speed_multiplier; }
+				if (joint_speeds_desired[2] > -max_joint_speed) { joint_speeds_desired[2] -= speed_multiplier; }
+				if (joint_speeds_desired[3] > -max_joint_speed) { joint_speeds_desired[3] -= speed_multiplier; }
 				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
-				if (joint_speeds_cmd[0] > -max_joint_speed) { joint_speeds_cmd[0] -= speed_multiplier; }
-				if (joint_speeds_cmd[1] > -max_joint_speed) { joint_speeds_cmd[1] -= speed_multiplier; }
-				if (joint_speeds_cmd[2] < max_joint_speed) { joint_speeds_cmd[2] += speed_multiplier; }
-				if (joint_speeds_cmd[3] < max_joint_speed) { joint_speeds_cmd[3] += speed_multiplier; }
+				if (joint_speeds_desired[0] > -max_joint_speed) { joint_speeds_desired[0] -= speed_multiplier; }
+				if (joint_speeds_desired[1] > -max_joint_speed) { joint_speeds_desired[1] -= speed_multiplier; }
+				if (joint_speeds_desired[2] < max_joint_speed) { joint_speeds_desired[2] += speed_multiplier; }
+				if (joint_speeds_desired[3] < max_joint_speed) { joint_speeds_desired[3] += speed_multiplier; }
 				speed_updated = true;
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 				for (int i = 0; i < joint.size(); i++)
 				{
-					if (joint_speeds_cmd[i] > -max_joint_speed) { joint_speeds_cmd[i] -= speed_multiplier; }
+					if (joint_speeds_desired[i] > -max_joint_speed) { joint_speeds_desired[i] -= speed_multiplier; }
 				}
 				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 				for (int i = 0; i < joint.size(); i++)
 				{
-					if (joint_speeds_cmd[i] < max_joint_speed) { joint_speeds_cmd[i] += speed_multiplier; }
+					if (joint_speeds_desired[i] < max_joint_speed) { joint_speeds_desired[i] += speed_multiplier; }
 				}
 				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
-				for (int i = 0; i < joint.size(); i++) { joint_speeds_cmd[i] = 0.; }
+				for (int i = 0; i < joint.size(); i++) { joint_speeds_desired[i] = 0.; }
 				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_R)) { // reset
@@ -671,7 +708,7 @@ void Simulation::execute() {
 
 			if (speed_updated) {// update joint speed
 				for (int k = 0; k < joint.size(); k++) {
-					joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[k] * dt;
+					joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_desired[k] * dt;
 				}
 				d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
 			}

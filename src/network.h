@@ -20,20 +20,29 @@
 #pragma comment (lib, "ws2_32")
 
 
+
+enum UDP_HEADER:int{
+    RESET=15,
+    ROBOT_STATE_REPORT=14,
+    MOTOR_SPEED_COMMEND=13,
+    MOTOR_POS_COMMEND=12};
+
+
 class UdpDataSend {/*the info to be sent to the high level controller*/
 public:
-    int header = 11;
+    int header = (int)(UDP_HEADER::ROBOT_STATE_REPORT);
     double T = 0;
     double jointAngle[4] = { 0 };
+    double jointSpeed[4] = { 0 };
     double orientation[6] = { 0 };
     double acceleration[3] = { 0 };
     double position[3] = { 0 };
-    MSGPACK_DEFINE(header, T, jointAngle, orientation, acceleration, position);
+    MSGPACK_DEFINE(header, T, jointAngle, jointSpeed, orientation, acceleration, position);
 };
 
 class UdpDataReceive {/*the high level command to be received */
 public:
-    int header = 12;
+    int header = (int)(UDP_HEADER::MOTOR_SPEED_COMMEND);
     double T;
     double jointSpeed[4] = { 0 };
     MSGPACK_DEFINE(header, T, jointSpeed);
