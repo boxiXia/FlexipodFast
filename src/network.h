@@ -26,11 +26,11 @@ enum UDP_HEADER:int{
     ROBOT_STATE_REPORT=14,
     MOTOR_SPEED_COMMEND=13,
     MOTOR_POS_COMMEND=12};
-
+MSGPACK_ADD_ENUM(UDP_HEADER); // msgpack macro,refer to https://github.com/msgpack/msgpack-c/blob/cpp_master/example/cpp03/enum.cpp
 
 class UdpDataSend {/*the info to be sent to the high level controller*/
 public:
-    int header = (int)(UDP_HEADER::ROBOT_STATE_REPORT);
+    UDP_HEADER header = UDP_HEADER::ROBOT_STATE_REPORT;
     double T = 0;
     double jointAngle[4] = { 0 };
     double jointSpeed[4] = { 0 };
@@ -42,7 +42,7 @@ public:
 
 class UdpDataReceive {/*the high level command to be received */
 public:
-    int header = (int)(UDP_HEADER::MOTOR_SPEED_COMMEND);
+    UDP_HEADER header = UDP_HEADER::MOTOR_SPEED_COMMEND;
     double T;
     double jointSpeed[4] = { 0 };
     MSGPACK_DEFINE(header, T, jointSpeed);
@@ -218,7 +218,7 @@ public:
                     //TODO use condition variable
                     flag_new_received = true;
 
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    std::this_thread::sleep_for(std::chrono::microseconds(10));
                 }
             }
             catch (std::system_error) {
@@ -325,7 +325,7 @@ public:
                         flag_new_received = true;
                     }
                 });
-            io_context.run_for(std::chrono::duration<int, std::milli>(100));
+            io_context.run_for(std::chrono::duration<int, std::milli>(10));
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
     }

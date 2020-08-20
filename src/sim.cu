@@ -310,15 +310,28 @@ void Simulation::backupState() {
 	backup_joint = JOINT(joint, true);
 }
 /*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
-void Simulation::resetState() {
-	for (int i = 0; i < joint.size(); i++) { joint_speeds_cmd[i] = 0.; }
+void Simulation::resetState() {//TODO...fix bug
+	
 	d_mass.copyFrom(backup_mass, stream[NUM_CUDA_STREAM - 1]);
 	d_spring.copyFrom(backup_spring, stream[NUM_CUDA_STREAM - 1]);
 	d_joint.copyFrom(backup_joint, stream[NUM_CUDA_STREAM - 1]);
-	size_t nbytes = joint.size() * sizeof(double);
-	memset(joint_speeds_cmd, 0, nbytes);
-	memset(joint_speeds, 0, nbytes);
-	memset(joint_angles, 0, nbytes);
+	//size_t nbytes = joint.size() * sizeof(double);
+	//memset(joint_speeds_cmd, 0, nbytes);
+	//memset(joint_speeds, 0, nbytes);
+	//memset(joint_angles, 0, nbytes);
+	//memset(joint_speeds_desired, 0, nbytes);
+	//memset(joint_speeds_error, 0, nbytes);
+	//memset(joint_speeds_error_integral, 0, nbytes);
+	for (int i = 0; i < joint.size(); i++) { 
+		joint_speeds_cmd[i] = 0.; 
+		joint_speeds[i] = 0.;
+		joint_angles[i] = 0.;
+		joint_speeds_desired[i] = 0.;
+		joint_speeds_error[i] = 0.;
+		joint_speeds_error_integral[i] = 0.;
+
+	}
+
 }
 
 
@@ -559,10 +572,11 @@ void Simulation::execute() {
 			msg_send.orientation[3 + i] = oy[i];
 		}
 
-		
+
 
 		udp_server.msg_send = msg_send;
 		udp_server.flag_should_send = true;
+		// receiving message
 		if (udp_server.flag_new_received) {
 			msg_rec = udp_server.msg_rec;
 			udp_server.flag_new_received = false;
@@ -572,8 +586,18 @@ void Simulation::execute() {
 				msg_rec.jointSpeed[2],
 				msg_rec.jointSpeed[3]);
 
-			for (int i = 0; i < joint.anchors.num; i++) {
-				joint_speeds_desired[i] = msg_rec.jointSpeed[i];//update joint speed from received udp packet
+			switch (msg_rec.header)
+			{
+			case UDP_HEADER::RESET: // reset
+				resetState();// restore the robot mass/spring/joint state to the backedup state
+				break;
+			case UDP_HEADER::MOTOR_SPEED_COMMEND:
+				for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
+					joint_speeds_desired[i] = msg_rec.jointSpeed[i];
+				}
+				break;
+			default:
+				break;
 			}
 		}
 
