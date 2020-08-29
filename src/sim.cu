@@ -637,7 +637,7 @@ void Simulation::execute() {
 			if (joint_speeds_error_integral[i] > max_joint_speed) { joint_speeds_error_integral[i] = max_joint_speed; }
 			if (joint_speeds_error_integral[i] < -max_joint_speed) { joint_speeds_error_integral[i] = -max_joint_speed; }
 
-			joint_speeds_cmd[i] = 0.1 * joint_speeds_error[i] + 1.0 * joint_speeds_error_integral[i];
+			joint_speeds_cmd[i] = 1.0 * joint_speeds_error[i] + 0.5 * joint_speeds_error_integral[i];
 
 			if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
 			if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
@@ -730,12 +730,12 @@ void Simulation::execute() {
 				resetState();// restore the robot mass/spring/joint state to the backedup state
 			}
 
-			if (speed_updated) {// update joint speed
-				for (int k = 0; k < joint.size(); k++) {
-					joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_desired[k] * dt;
-				}
-				d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
-			}
+			//if (speed_updated) {// update joint speed
+			//	for (int k = 0; k < joint.size(); k++) {
+			//		joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_desired[k] * dt;
+			//	}
+			//	d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
+			//}
 
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
