@@ -25,7 +25,7 @@ const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 #include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
-__device__ const double NORMAL = 10000; // normal force coefficient for contact constraints
+__device__ const double NORMAL = 1000; // normal force coefficient for contact constraints
 
 
 
@@ -61,34 +61,70 @@ CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
 //    _FRICTION_K = p._FRICTION_K;
 //}
 
+//CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
+//    //    m -> force += (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // TODO fix this for the host
+//    
+//    double disp = _normal.dot(pos) - _offset; // displacement into the plane
+//#ifdef __CUDA_ARCH__
+//    if(signbit(disp)){ // Determine whether the floating-point value a is negative:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1g2bd7d6942a8b25ae518636dab9ad78a7
+//#else
+//    if (disp < 0) {// if inside the plane
+//#endif
+//        Vec3d f_normal = _normal.dot(force) * _normal; // normal force
+//
+//        if (_FRICTION_S > 0 || _FRICTION_K > 0) {
+//            Vec3d v_t = vel - _normal.dot(vel) * _normal; // velocity tangential to the plane
+//            double v_t_norm = v_t.norm();
+//
+//            if (v_t_norm > 1e-10) { // kinetic friction domain
+//                double friction_mag = _FRICTION_K * f_normal.norm();
+//                force -=  friction_mag / v_t_norm * v_t;
+//            }
+//            else { // static friction
+//                Vec3d f_t = force - f_normal; //  force tangential to the plain
+//                if (_FRICTION_S * f_normal.norm() > f_t.norm()) {
+//                    force -= f_t;
+//                }
+//            }
+//        }
+//        force -= disp * _normal * NORMAL;// displacement force
+//    }
+//}
+
+
 CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
     //    m -> force += (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // TODO fix this for the host
-    
+
     double disp = _normal.dot(pos) - _offset; // displacement into the plane
-    Vec3d f_normal = _normal.dot(force) * _normal; // normal force
 #ifdef __CUDA_ARCH__
-    if(signbit(disp)){ // Determine whether the floating-point value a is negative:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1g2bd7d6942a8b25ae518636dab9ad78a7
+    if (signbit(disp)) { // Determine whether the floating-point value a is negative:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1g2bd7d6942a8b25ae518636dab9ad78a7
 #else
     if (disp < 0) {// if inside the plane
 #endif
-        force -= disp * _normal * NORMAL;// displacement force
+        ////Vec3d f_normal = _normal.dot(force) * _normal; // normal force (only if infinite stiff)
+        Vec3d f_normal = -disp * _normal * NORMAL; // ground spring model
         if (_FRICTION_S > 0 || _FRICTION_K > 0) {
-            Vec3d v_perp = vel - _normal.dot(vel) * _normal; // perpendicular velocity
-            double v_norm = v_perp.norm();
-
-            if (v_norm > 1e-7) { // kinetic friction domain
-                double friction_mag = _FRICTION_K * f_normal.norm();
-                force -= v_perp * friction_mag / v_norm;
+            Vec3d v_t = vel - _normal.dot(vel) * _normal; // velocity tangential to the plane
+            double v_t_norm = v_t.norm();
+            if (v_t_norm > 1e-8) { // kinetic friction domain
+                //      <----friction magnitude------>   <-friction direction->
+                force -= _FRICTION_K * f_normal.norm() / v_t_norm * v_t;
             }
             else { // static friction
-                Vec3d f_perp = force - f_normal; // perpendicular force
-                if (_FRICTION_S * f_normal.norm() > f_perp.norm()) {
-                    force -= f_perp;
+                Vec3d f_t = force - f_normal; //  force tangential to the plain
+                if (_FRICTION_S * f_normal.norm() > f_t.norm()) {
+                    force -= f_t;
+                }
+                else {// kinetic friction again
+                    //       <----friction magnitude------> <- friction direction->
+                    force -= _FRICTION_K * f_normal.norm() / v_t_norm * v_t;
                 }
             }
         }
+        force -= disp * _normal * NORMAL;// displacement force
     }
-}
+    }
+
 
 
 #ifdef GRAPHICS

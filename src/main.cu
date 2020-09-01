@@ -65,7 +65,7 @@ int main()
 	const double m = 8e-4;// mass per vertex
 
 	const double spring_constant =m*2e6; //spring constant for silicone leg
-	const double spring_damping = m*3e2; // damping for spring
+	const double spring_damping = m*2e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
@@ -76,7 +76,7 @@ int main()
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
 	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping* 3; // spring damping for resetable spring
+	const double spring_damping_restable = spring_damping* scale_high; // spring damping for resetable spring
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
 
@@ -177,7 +177,7 @@ int main()
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 1.0, 0.9);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.6);
 
 	double runtime = 1200;
 	sim.setBreakpoint(runtime);

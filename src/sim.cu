@@ -27,7 +27,7 @@ __global__ void SpringUpate(
 		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
 
-		s_vec /= (length > 1e-10 ? length : 1e-10);// normalized to unit vector (direction), check instablility for small length
+		s_vec /= (length > 1e-12 ? length : 1e-12);// normalized to unit vector (direction), check instablility for small length
 
 		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
@@ -53,7 +53,7 @@ __global__ void SpringUpateReset(
 		Vec2i e = spring.edge[i];
 		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		s_vec /= (length > 1e-10 ? length : 1e-10);// normalized to unit vector (direction), check instablility for small length
+		s_vec /= (length > 1e-12 ? length : 1e-12);// normalized to unit vector (direction), check instablility for small length
 
 		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
@@ -493,7 +493,6 @@ void Simulation::execute() {
 			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
 			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
-
 			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
 
 			//gpuErrchk(cudaPeekAtLastError());

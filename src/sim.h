@@ -53,7 +53,7 @@ constexpr int MASS_THREADS_PER_BLOCK = 64;
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr int  NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
-constexpr int NUM_UPDATE_PER_ROTATION = 5; //number of update per rotation
+constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
