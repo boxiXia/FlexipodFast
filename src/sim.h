@@ -147,9 +147,6 @@ struct MASS {
 	int num = 0;
 	inline int size() { return num; }
 
-#ifdef VERLET
-	Vec3d* prev_pos = nullptr; // x_{n-1}, position at previous timestep
-#endif // VERLET
 	MASS() { }
 	MASS(int num, bool on_host) {
 		init(num, on_host);
@@ -170,17 +167,12 @@ struct MASS {
 		allocateMemory((void**)&color, num * sizeof(Vec3d));
 		allocateMemory((void**)&fixed, num * sizeof(bool));
 		allocateMemory((void**)&constrain, num * sizeof(bool));
-#ifdef VERLET
-		gpuErrchk(allocateMemory((void**)&prev_pos, num * sizeof(Vec3d)));
-#endif // VERLET
+
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 		if (on_host) {// set vel,acc to 0
 			memset(vel, 0, num * sizeof(Vec3d));
 			memset(acc, 0, num * sizeof(Vec3d));
-#ifdef VERLET
-			memset(prev_pos, 0, num * sizeof(Vec3d));
-#endif // VERLET
 		}
 		else {
 			cudaMemset(vel, 0, num * sizeof(Vec3d));
@@ -200,9 +192,7 @@ struct MASS {
 		cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream);
-#ifdef VERLET
-		gpuErrchk(cudaMemcpyAsync(prev_pos, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream));
-#endif // VERLET
+
 		//this->num = other.num;
 		gpuErrchk(cudaPeekAtLastError());
 	}

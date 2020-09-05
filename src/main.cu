@@ -58,8 +58,8 @@ int main()
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 
 	
-	sim.dt = 5e-5; // timestep
-	//sim.dt = 2.5e-5; // timestep
+	//sim.dt = 5e-5; // timestep
+	sim.dt = 2.5e-5; // timestep
 
 
 	const double m = 7.5e-4;// mass per vertex
@@ -77,6 +77,10 @@ int main()
 
 	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
 	const double spring_damping_restable = spring_damping* scale_high; // spring damping for resetable spring
+
+	//const double spring_constant_restable = spring_constant * 0.1; // spring constant for resetable spring
+	//const double spring_damping_restable = spring_damping * 0.1; // spring damping for resetable spring
+
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
 

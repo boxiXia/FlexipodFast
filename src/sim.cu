@@ -70,40 +70,6 @@ __global__ void SpringUpateReset(
 
 }
 
-#ifdef VERLET // verlet integration
-__global__ void MassUpateStarter(
-	const MASS mass,
-	const CUDA_GLOBAL_CONSTRAINTS c,
-	const Vec3d global_acc,
-	const double dt) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < mass.num) {
-		if (mass.fixed[i] == false) {
-			Vec3d force = global_acc;
-			double m = mass.m[i];
-			force *= m; // force = d_mass.m[i] * global_acc;
-			force += mass.force[i];
-			force += mass.force_extern[i];// add external force [N]
-
-			/*if (mass.constrain) */ {
-				for (int j = 0; j < c.num_planes; j++) { // global constraints
-					c.d_planes[j].applyForce(force, mass.pos[i], mass.vel[i]); // todo fix this 
-				}
-				for (int j = 0; j < c.num_balls; j++) {
-					c.d_balls[j].applyForce(force, mass.pos[i]);
-				}
-			}
-			// starter
-			Vec3d acc = force / m;
-			mass.acc[i] = acc;
-			mass.prev_pos[i] = mass.pos[i];
-			mass.vel[i] += acc * dt;
-			mass.pos[i] = mass.prev_pos[i] + mass.vel[i] * dt;
-			mass.force[i].setZero();
-		}
-	}
-}
-#endif
 
 __global__ void MassUpate(
 	const MASS mass,
@@ -128,23 +94,14 @@ __global__ void MassUpate(
 				}
 			}
 
-#ifdef VERLET // verlet integration
-			// St�rmer�Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			Vec3d acc = force / m + global_acc;
-			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
-			mass.vel[i] = (pos - mass.pos[i]) / dt;
-			mass.prev_pos[i] = mass.pos[i];
-			mass.pos[i] = pos;
-			mass.force[i].setZero();
-
-#else // euler integration
+// euler integration
 			force = force/m+ global_acc; // force is now acceleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
 			mass.vel[i] = vel; // update velocity
 			mass.pos[i] += vel * dt; // update position
 			mass.force[i].setZero();
-#endif // verlet
+
 		}
 	}
 }
@@ -174,23 +131,13 @@ __global__ void massUpdateAndRotate(
 				}
 			}
 
-#ifdef VERLET // verlet integration
-			// St�rmer�Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			Vec3d acc = force / m + global_acc;
-			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
-			mass.vel[i] = (pos - mass.pos[i]) / dt;
-			mass.prev_pos[i] = mass.pos[i];
-			mass.pos[i] = pos;
-			mass.force[i].setZero();
-
-#else // euler integration
+// euler integration
 			force = force / m + global_acc; // force is now acceleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
 			mass.vel[i] = vel; // update velocity
 			mass.pos[i] += vel * dt; // update position
 			mass.force[i].setZero();
-#endif // verlet
 		}
 	}
 	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint
@@ -419,11 +366,6 @@ void Simulation::execute() {
 	energy_start = energy(); // compute the total energy of the system at T=0
 #endif // DEBUG_ENERGY
 
-#ifdef VERLET
-	SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-	MassUpateStarter << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
-	gpuErrchk(cudaPeekAtLastError());
-#endif // VERLET
 
 	while (true) {
 		if (!bpts.empty() && *bpts.begin() <= T) {
