@@ -153,7 +153,7 @@ public:
             throw std::system_error(WSAGetLastError(), std::system_category(), "Bind failed");
     }
 
-    void SetTimeout(int microsecond = 10000) {
+    void SetTimeout(int microsecond = 1e5) {
         struct timeval tv;
         tv.tv_sec = 0;
         tv.tv_usec = microsecond;
@@ -193,13 +193,14 @@ public:
         this->port_local = port_local;
         this->ip_remote = ip_remote;
         socket.Bind(port_local);
+        socket.SetTimeout();
     }
 
     /* loop for receiving the udp packet */
     void do_receive()
     {
         WSASession Session;
-        while (true) {
+        while (!flag_should_close) {
             int n_bytes_received;
             try {
                 sockaddr_in add = socket.RecvFrom(recv_buffer_, sizeof(recv_buffer_), n_bytes_received);

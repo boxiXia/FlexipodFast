@@ -62,7 +62,7 @@ int main()
 	//sim.dt = 2.5e-5; // timestep
 
 
-	const double m = 8e-4;// mass per vertex
+	const double m = 7.5e-4;// mass per vertex
 
 	const double spring_constant =m*2e6; //spring constant for silicone leg
 	const double spring_damping = m*2e2; // damping for spring
@@ -85,7 +85,7 @@ int main()
 	const double spring_constant_probe_self = spring_constant * scale_probe* scale_high; // spring constant for coordiates self springs
 	const double spring_damping_probe = spring_damping * scale_probe;
 
-	printf("total mass:%.2f kg\n", m * num_mass);
+	
 
 #pragma omp parallel for
 	for (int i = 0; i < num_mass; i++)
@@ -165,8 +165,13 @@ int main()
 	sim.d_joint.copyFrom(sim.joint);
 
 
+	double total_mass = 0;
+#pragma omp parallel for shared (total_mass,mass.m) reduction(+:total_mass)
+	for (int i = 0; i < num_mass; i++){total_mass += mass.m[i];}
+	printf("total mass:%.2f kg\n", m * num_mass);
+
 	// set max speed for each joint
-	double max_rpm = 480;//maximun revolution per minute
+	double max_rpm = 600;//maximun revolution per minute
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));

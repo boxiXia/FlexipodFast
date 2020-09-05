@@ -48,7 +48,7 @@ typedef WsaUdpServer UdpServer;
 
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr int THREADS_PER_BLOCK = 64;
-constexpr int MASS_THREADS_PER_BLOCK = 64;
+constexpr int MASS_THREADS_PER_BLOCK = 128;
 
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr int  NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
@@ -451,6 +451,7 @@ public:
 	bool RUNNING = false;
 	bool STARTED = false;
 	bool ENDED = false;
+	bool RESET = false;// reset flag
 
 	bool FREED = false;
 	bool GPU_DONE = false;

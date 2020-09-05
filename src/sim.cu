@@ -116,10 +116,8 @@ __global__ void MassUpate(
 			double m = mass.m[i];
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
-			Vec3d force = global_acc;
-			force *= m; // force = d_mass.m[i] * global_acc;
-			force += mass.force[i];
-			force += mass.force_extern[i];// add external force [N]
+
+			Vec3d force = mass.force[i] + mass.force_extern[i];// add spring force and external force [N]
 
 			/*if (mass.constrain)*/ {
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
@@ -132,7 +130,7 @@ __global__ void MassUpate(
 
 #ifdef VERLET // verlet integration
 			// St�rmer�Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			Vec3d acc = force / m;
+			Vec3d acc = force / m + global_acc;
 			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
 			mass.vel[i] = (pos - mass.pos[i]) / dt;
 			mass.prev_pos[i] = mass.pos[i];
@@ -140,7 +138,7 @@ __global__ void MassUpate(
 			mass.force[i].setZero();
 
 #else // euler integration
-			force /= m; // force is now acceleration
+			force = force/m+ global_acc; // force is now acceleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
 			mass.vel[i] = vel; // update velocity
@@ -164,10 +162,8 @@ __global__ void massUpdateAndRotate(
 			double m = mass.m[i];
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
-			Vec3d force = global_acc;
-			force *= m; // force = d_mass.m[i] * global_acc;
-			force += mass.force[i];
-			force += mass.force_extern[i];// add external force [N]
+
+			Vec3d force = mass.force[i] + mass.force_extern[i];// add spring force and external force [N]
 
 			/*if (mass.constrain)*/ {
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
@@ -180,7 +176,7 @@ __global__ void massUpdateAndRotate(
 
 #ifdef VERLET // verlet integration
 			// St�rmer�Verlet:https://en.wikipedia.org/wiki/Verlet_integration
-			Vec3d acc = force / m;
+			Vec3d acc = force / m + global_acc;
 			Vec3d pos = 2 * mass.pos[i] - mass.prev_pos[i] + dt * dt * acc; // new pos
 			mass.vel[i] = (pos - mass.pos[i]) / dt;
 			mass.prev_pos[i] = mass.pos[i];
@@ -188,7 +184,7 @@ __global__ void massUpdateAndRotate(
 			mass.force[i].setZero();
 
 #else // euler integration
-			force /= m; // force is now acceleration
+			force = force / m + global_acc; // force is now acceleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
 			mass.vel[i] = vel; // update velocity
@@ -488,15 +484,7 @@ void Simulation::execute() {
 
 		for (int i = 0; i < (NUM_QUEUED_KERNELS / NUM_UPDATE_PER_ROTATION); i++) {
 
-#ifdef ROTATION
 
-			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
-			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
-			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
-
-			//gpuErrchk(cudaPeekAtLastError());
-#endif // ROTATION
 
 			for (int j = 0; j < NUM_UPDATE_PER_ROTATION - 1; j++) {
 
@@ -508,13 +496,22 @@ void Simulation::execute() {
 			//cudaStreamWaitEvent(stream[0], event, 0);
 			//cudaEventRecord(event_rotation, stream[0]);
 			//cudaStreamWaitEvent(NULL, event_rotation, 0);
+
+#ifdef ROTATION
+
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
+			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
+			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+
+			//gpuErrchk(cudaPeekAtLastError());
+#endif // ROTATION
 		}
 		//cudaEventDestroy(event);//destroy the event, necessary to prevent memory leak
 		//cudaEventDestroy(event_rotation);//destroy the event, necessary to prevent memory leak
 
 		T += NUM_QUEUED_KERNELS * dt;
 
-#ifdef UDP
 		//if (fmod(T, 1. / 100.0) < NUM_QUEUED_KERNELS * dt) {
 		mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
 		cudaDeviceSynchronize();
@@ -546,7 +543,6 @@ void Simulation::execute() {
 			//if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
 			//if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
 			//joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
-
 		}
 
 		Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
@@ -555,7 +551,7 @@ void Simulation::execute() {
 		Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
 		Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
 		oy = (oy - oy.dot(ox) * ox).normalize();
-
+#ifdef UDP
 		msg_send.T = T;
 		for (int i = 0; i < 4; i++)
 		{
@@ -579,16 +575,20 @@ void Simulation::execute() {
 		if (udp_server.flag_new_received) {
 			msg_rec = udp_server.msg_rec;
 			udp_server.flag_new_received = false;
-			printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
-				msg_rec.jointSpeed[0],
-				msg_rec.jointSpeed[1],
-				msg_rec.jointSpeed[2],
-				msg_rec.jointSpeed[3]);
 
+			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
+				printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
+					msg_rec.jointSpeed[0],
+					msg_rec.jointSpeed[1],
+					msg_rec.jointSpeed[2],
+					msg_rec.jointSpeed[3]);
+			}
 			switch (msg_rec.header)
 			{
 			case UDP_HEADER::RESET: // reset
-				resetState();// restore the robot mass/spring/joint state to the backedup state
+				// set the reset flag to true, resetState() will be called 
+				// to restore the robot mass/spring/joint state to the backedup state
+				RESET = true; 
 				break;
 			case UDP_HEADER::MOTOR_SPEED_COMMEND:
 				for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
@@ -692,50 +692,42 @@ void Simulation::execute() {
 
 			double speed_multiplier = 0.1;
 			//double speed_multiplier = 0.0001;
-			bool speed_updated = false;
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				if (joint_speeds_desired[0] < max_joint_speed) { joint_speeds_desired[0] += speed_multiplier; }
 				if (joint_speeds_desired[1] < max_joint_speed) { joint_speeds_desired[1] += speed_multiplier; }
 				if (joint_speeds_desired[2] > -max_joint_speed) { joint_speeds_desired[2] -= speed_multiplier; }
 				if (joint_speeds_desired[3] > -max_joint_speed) { joint_speeds_desired[3] -= speed_multiplier; }
-				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 				if (joint_speeds_desired[0] > -max_joint_speed) { joint_speeds_desired[0] -= speed_multiplier; }
 				if (joint_speeds_desired[1] > -max_joint_speed) { joint_speeds_desired[1] -= speed_multiplier; }
 				if (joint_speeds_desired[2] < max_joint_speed) { joint_speeds_desired[2] += speed_multiplier; }
 				if (joint_speeds_desired[3] < max_joint_speed) { joint_speeds_desired[3] += speed_multiplier; }
-				speed_updated = true;
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 				for (int i = 0; i < joint.size(); i++)
 				{
 					if (joint_speeds_desired[i] > -max_joint_speed) { joint_speeds_desired[i] -= speed_multiplier; }
 				}
-				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 				for (int i = 0; i < joint.size(); i++)
 				{
 					if (joint_speeds_desired[i] < max_joint_speed) { joint_speeds_desired[i] += speed_multiplier; }
 				}
-				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
 				for (int i = 0; i < joint.size(); i++) { joint_speeds_desired[i] = 0.; }
-				speed_updated = true;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_R)) { // reset
-				resetState();// restore the robot mass/spring/joint state to the backedup state
+				RESET = true;
 			}
 
-			//if (speed_updated) {// update joint speed
-			//	for (int k = 0; k < joint.size(); k++) {
-			//		joint.anchors.theta[k] = NUM_UPDATE_PER_ROTATION * joint_speeds_desired[k] * dt;
-			//	}
-			//	d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
-			//}
 
+			if (RESET) {
+				RESET = false;
+				resetState();// restore the robot mass/spring/joint state to the backedup state
+			}
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
