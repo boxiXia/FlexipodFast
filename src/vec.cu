@@ -14,6 +14,7 @@ CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d& k, const Vec3d& v_, con
 	v_rot *= sin(theta);
 	v_rot += v * c;
 	v_rot += dot(k, v) * (1 - c) * k;
+
 	v_rot += offset;
 	return v_rot;
 }

@@ -83,7 +83,8 @@ __global__ void MassUpate(
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
 
-			Vec3d force = mass.force[i] + mass.force_extern[i];// add spring force and external force [N]
+			Vec3d force = mass.force[i];
+			force += mass.force_extern[i];// add spring force and external force [N]
 
 			/*if (mass.constrain)*/ {
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
@@ -95,7 +96,8 @@ __global__ void MassUpate(
 			}
 
 // euler integration
-			force = force/m+ global_acc; // force is now acceleration
+			force /= m;// force is now acceleration
+			force += global_acc;// add global accleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
 			mass.vel[i] = vel; // update velocity
@@ -120,7 +122,8 @@ __global__ void massUpdateAndRotate(
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
 
-			Vec3d force = mass.force[i] + mass.force_extern[i];// add spring force and external force [N]
+			Vec3d force = mass.force[i];
+			force += mass.force_extern[i];// add spring force and external force [N]
 
 			/*if (mass.constrain)*/ {
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
@@ -132,12 +135,13 @@ __global__ void massUpdateAndRotate(
 			}
 
 // euler integration
-			force = force / m + global_acc; // force is now acceleration
+			force /= m;// force is now acceleration
+			force += global_acc;// add global accleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
 			mass.vel[i] = vel; // update velocity
 			mass.pos[i] += vel * dt; // update position
-			mass.force[i].setZero();
+			mass.force[i].setZero(); // reset force
 		}
 	}
 	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint
@@ -426,8 +430,6 @@ void Simulation::execute() {
 
 		for (int i = 0; i < (NUM_QUEUED_KERNELS / NUM_UPDATE_PER_ROTATION); i++) {
 
-
-
 			for (int j = 0; j < NUM_UPDATE_PER_ROTATION - 1; j++) {
 
 				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
@@ -443,8 +445,12 @@ void Simulation::execute() {
 
 			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
 			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
 			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+
+			//SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
+			//SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+			//MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
 
 			//gpuErrchk(cudaPeekAtLastError());
 #endif // ROTATION
@@ -775,6 +781,8 @@ void Simulation::freeGPU() {
 void Simulation::createPlane(const Vec3d& abc, const double d, const double FRICTION_K, const double FRICTION_S) { // creates half-space ax + by + cz < d
 	if (ENDED) { throw std::runtime_error("The simulation has ended. New objects cannot be created."); }
 	ContactPlane* new_plane = new ContactPlane(abc, d);
+	assert(FRICTION_K >= 0);// make sure the friction coefficient are meaningful values
+	assert(FRICTION_S >= 0);
 	new_plane->_FRICTION_K = FRICTION_K;
 	new_plane->_FRICTION_S = FRICTION_S;
 	constraints.push_back(new_plane);

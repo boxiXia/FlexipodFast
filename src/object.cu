@@ -103,7 +103,7 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d
 #endif
         ////Vec3d f_normal = _normal.dot(force) * _normal; // normal force (only if infinite stiff)
         Vec3d f_normal = -disp * _normal * NORMAL; // ground spring model
-        if (_FRICTION_S > 0 || _FRICTION_K > 0) {
+        //if (_FRICTION_S > 0 || _FRICTION_K > 0) {
             Vec3d v_t = vel - _normal.dot(vel) * _normal; // velocity tangential to the plane
             double v_t_norm = v_t.norm();
             if (v_t_norm > 1e-8) { // kinetic friction domain
@@ -120,7 +120,7 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d
                     force -= _FRICTION_K * f_normal.norm() / v_t_norm * v_t;
                 }
             }
-        }
+        //}
         force -= disp * _normal * NORMAL;// displacement force
     }
     }

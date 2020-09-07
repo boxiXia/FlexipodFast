@@ -51,7 +51,7 @@ constexpr int THREADS_PER_BLOCK = 64;
 constexpr int MASS_THREADS_PER_BLOCK = 128;
 
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
-constexpr int  NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr int  NUM_QUEUED_KERNELS = 80; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
 constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
 
