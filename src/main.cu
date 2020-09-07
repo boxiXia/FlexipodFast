@@ -65,7 +65,7 @@ int main()
 	const double m = 7.5e-4;// mass per vertex
 
 	const double spring_constant =m*2e6; //spring constant for silicone leg
-	const double spring_damping = m*1e2; // damping for spring
+	const double spring_damping = m*1.5e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
@@ -75,7 +75,7 @@ int main()
 
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
-	const double spring_constant_restable = spring_constant * scale_high*2; // spring constant for resetable spring
+	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
 	const double spring_damping_restable = spring_damping* scale_high; // spring damping for resetable spring
 
 	//const double spring_constant_restable = spring_constant * 0.1; // spring constant for resetable spring
@@ -88,8 +88,6 @@ int main()
 	const double spring_constant_probe_anchor = spring_constant * scale_probe; // spring constant for coordiates anchor springs
 	const double spring_constant_probe_self = spring_constant * scale_probe* scale_high; // spring constant for coordiates self springs
 	const double spring_damping_probe = spring_damping * scale_probe;
-
-	
 
 #pragma omp parallel for
 	for (int i = 0; i < num_mass; i++)
