@@ -25,8 +25,8 @@ const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 #include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
-__device__ const double NORMAL = 1000; // normal force coefficient for contact constraints
-
+__device__ const double K_NORMAL = 500; // normal force coefficient for contact constraints
+__device__ const double DAMPING_NORMAL = 5; // normal damping coefficient per kg mass
 
 
 //CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Vec3d & center, double radius) {
@@ -42,7 +42,7 @@ __device__ const double NORMAL = 1000; // normal force coefficient for contact c
 CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
     double dist = (pos - _center).norm();
     if (dist < _radius) {
-        force += NORMAL * (pos - _center) / dist;
+        force += K_NORMAL * (pos - _center) / dist;
     }
 }
 
@@ -62,7 +62,7 @@ CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
 //}
 
 //CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
-//    //    m -> force += (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // TODO fix this for the host
+//    //    m -> force += (disp < 0) ? - disp * K_NORMAL * _normal : 0 * _normal; // TODO fix this for the host
 //    
 //    double disp = _normal.dot(pos) - _offset; // displacement into the plane
 //#ifdef __CUDA_ARCH__
@@ -87,13 +87,13 @@ CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
 //                }
 //            }
 //        }
-//        force -= disp * _normal * NORMAL;// displacement force
+//        force -= disp * _normal * K_NORMAL;// displacement force
 //    }
 //}
 
 
 CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
-    //    m -> force += (disp < 0) ? - disp * NORMAL * _normal : 0 * _normal; // TODO fix this for the host
+    //    m -> force += (disp < 0) ? - disp * K_NORMAL * _normal : 0 * _normal; // TODO fix this for the host
 
     double disp = _normal.dot(pos) - _offset; // displacement into the plane
 #ifdef __CUDA_ARCH__
@@ -102,9 +102,10 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d
     if (disp < 0) {// if inside the plane
 #endif
         ////Vec3d f_normal = _normal.dot(force) * _normal; // normal force (only if infinite stiff)
-        Vec3d f_normal = -disp * _normal * NORMAL; // ground spring model
+        Vec3d f_normal = -disp * _normal * K_NORMAL; // ground spring model
         //if (_FRICTION_S > 0 || _FRICTION_K > 0) {
-            Vec3d v_t = vel - _normal.dot(vel) * _normal; // velocity tangential to the plane
+        Vec3d v_n = _normal.dot(vel) * _normal; // velocity normal to the plane
+            Vec3d v_t = vel - v_n; // velocity tangential to the plane
             double v_t_norm = v_t.norm();
             if (v_t_norm > 1e-8) { // kinetic friction domain
                 //      <----friction magnitude------>   <-friction direction->
@@ -121,7 +122,8 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d
                 }
             }
         //}
-        force -= disp * _normal * NORMAL;// displacement force
+        force -= disp * _normal * K_NORMAL;// displacement force
+        force -= v_n * DAMPING_NORMAL;
     }
     }
 

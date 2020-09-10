@@ -42,6 +42,7 @@
 
 int main()
 {
+	// m_total->3113g
 	// for time measurement
 	auto start = std::chrono::steady_clock::now();
 
@@ -59,7 +60,7 @@ int main()
 
 	
 	sim.dt = 5e-5; // timestep
-	//sim.dt = 2.5e-5; // timestep
+	//sim.dt = 4e-5; // timestep
 
 
 	const double m = 7.5e-4;// mass per vertex
@@ -112,6 +113,21 @@ int main()
 							  oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,the end
 	// bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end
 
+	
+	// set higher mass value for robot body
+	for (int i = 0; i < bot.idVertices[1]; i++)
+	{
+		mass.m[i] = m*2.5f;
+	}
+	for (int i = 0; i < bot.Joints.size(); i++)
+	{
+		for each (int j in bot.Joints[i].left)
+		{
+			mass.m[j] = m;
+		}		
+	}
+
+
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
@@ -125,6 +141,7 @@ int main()
 	for (int i = bot.idEdges[num_body +1]; i < bot.idEdges[num_body +2]; i++)
 	{
 		spring.k[i] = spring_constant_rigid; // joints rotation spring
+		//spring.damping[i] = spring_damping_restable;
 	}
 
 	sim.id_restable_spring_start = bot.idEdges[num_body + 2]; // resetable spring (frictional spring)
@@ -184,7 +201,9 @@ int main()
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.6);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 1.0, 0.9);
+	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.1, 0.1);
+
 
 	double runtime = 1200;
 	sim.setBreakpoint(runtime);

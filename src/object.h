@@ -101,6 +101,12 @@ struct CudaBall {
 
 // creates half-space ax + by + cz < d
 struct ContactPlane : public Constraint {
+    Vec3d _normal;
+    double _offset;
+
+    double _FRICTION_K; // kinectic friction coefficient
+    double _FRICTION_S; // static friction coefficient
+
     ContactPlane(const Vec3d & normal, double offset) {
         _normal = normal / normal.norm();
         _offset = offset;
@@ -113,11 +119,6 @@ struct ContactPlane : public Constraint {
 #endif
     }
 
-    Vec3d _normal;
-    double _offset;
-
-    double _FRICTION_K;
-    double _FRICTION_S;
 
 #ifdef GRAPHICS
     ~ContactPlane() {

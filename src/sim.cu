@@ -382,9 +382,12 @@ void Simulation::execute() {
 				if (ENDED) {
 
 					auto end = std::chrono::steady_clock::now();
-					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-					printf("Elapsed time:%d ms for %.1f simulation time (%.2f)\n",
-						duration, T, T / ((double)duration / 1000.));
+					double duration = (double)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.;//[seconds]
+					double sim_time_ratio = T / duration;
+					double spring_update_rate = ((double)spring.num) / dt * sim_time_ratio;
+
+					printf("Elapsed time:%.2f s for %.2f simulation time (%.2f); # %.2e spring update/s\n",
+						duration, T, sim_time_ratio, spring_update_rate);
 
 					//for (Constraint* c : constraints) {
 					//	delete c;
@@ -584,11 +587,13 @@ void Simulation::execute() {
 			if (joint_speeds_error_integral[i] > max_joint_speed) { joint_speeds_error_integral[i] = max_joint_speed; }
 			if (joint_speeds_error_integral[i] < -max_joint_speed) { joint_speeds_error_integral[i] = -max_joint_speed; }
 
-			joint_speeds_cmd[i] = 1.0 * joint_speeds_error[i] + 0.5 * joint_speeds_error_integral[i];
+			joint_speeds_cmd[i] = 0.5 * joint_speeds_error[i] + 0.25 * joint_speeds_error_integral[i];
 
 			if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
 			if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
-			joint.anchors.theta[i] = 0.5 * NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
+			//joint.anchors.theta[i] = 0.5 * NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
+			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
+
 		}
 		// update joint speed
 		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
