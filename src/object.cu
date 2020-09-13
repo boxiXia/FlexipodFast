@@ -267,8 +267,8 @@ void Ball::draw() {
 
 void ContactPlane::generateBuffers() {
 
-    const int radius = 15; // radius [unit] of the plane
-    // total 15*15*4*6=5400 points 
+    const int radius = 20; // radius [unit] of the plane
+    // total 20*20*4*6=5400 points 
     
     // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
     std::vector<GLfloat> vertex_data;
@@ -354,7 +354,7 @@ void ContactPlane::draw() {
     );
 
     // Draw the triangle !
-    glDrawArrays(GL_TRIANGLES, 0, 5400); // number of vertices
+    glDrawArrays(GL_TRIANGLES, 0, 9600); // number of vertices
     
     // Todo: this won't work when the plane is shifted
     //glDrawElements(GL_LINES, 12*6, GL_UNSIGNED_INT, (void*)0); // 3 indices starting at 0 -> 1 triangle

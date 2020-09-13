@@ -293,7 +293,8 @@ struct MY_ALIGN(8) Vec3d {
 	// rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
 	friend CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d& k, const Vec3d& v_, const double& theta, const Vec3d& offset);
 
-
+	/* rotate a vector {v_} with rotation axis {axis_end-axis_start} by {theta} [rad] */
+	friend CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d& axis_start, const Vec3d& axis_end, const Vec3d& v_, const double& theta);
 
 	inline friend CUDA_CALLABLE_MEMBER double angleBetween(Vec3d p0, Vec3d p1) {
 		return acos(p0.dot(p1) / (p0.norm() * p1.norm()));
@@ -301,7 +302,10 @@ struct MY_ALIGN(8) Vec3d {
 
 	friend CUDA_CALLABLE_MEMBER double signedAngleBetween(Vec3d p0, Vec3d p1, Vec3d normal);
 
+	// linear interpolation
+	friend CUDA_CALLABLE_MEMBER Vec3d lerp(Vec3d p0, Vec3d p1, double t);
 
+	// spherical linear interpolation
 	friend CUDA_CALLABLE_MEMBER Vec3d slerp(Vec3d p0, Vec3d p1, double t);
 };
 

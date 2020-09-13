@@ -161,21 +161,44 @@ __global__ void massUpdateAndRotate(
 }
 
 
+//__global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
+//	int i = blockIdx.x * blockDim.x + threadIdx.x;
+//	if (i < joint.points.num) {
+//		if (i < joint.anchors.num) {
+//			Vec2i e = joint.anchors.edge[i];
+//			joint.anchors.dir[i] = (mass_pos[e.y] - mass_pos[e.x]).normalize();
+//		}
+//		__threadfence();
+//		__syncthreads();
+//
+//		int anchor_id = joint.points.anchorId[i];
+//		int mass_id = joint.points.massId[i];
+//
+//		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
+//			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.edge[anchor_id].x]);
+//
+//		//Vec3d anchor_left = mass_pos[joint.anchors.left[anchor_id]];
+//		//Vec3d anchor_right = mass_pos[joint.anchors.right[anchor_id]];
+//		////Vec3d dir = 
+//		///*double3*/
+//		//Vec3d dir = (mass_pos[joint.anchors.right[anchor_id]] - mass_pos[joint.anchors.left[anchor_id]]).normalize();
+//
+//		//mass_pos[mass_id] = AxisAngleRotaion(dir, mass_pos[mass_id],
+//		//	joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
+//	}
+//}
+
 __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
-		if (i < joint.anchors.num) {
-			Vec2i e = joint.anchors.edge[i];
-			joint.anchors.dir[i] = (mass_pos[e.y] - mass_pos[e.x]).normalize();
-		}
-		__threadfence();
-		__syncthreads();
 
 		int anchor_id = joint.points.anchorId[i];
 		int mass_id = joint.points.massId[i];
-
-		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
-			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.edge[anchor_id].x]);
+		Vec2i anchor_edge = joint.anchors.edge[anchor_id]; // mass id of the achor edge point
+		mass_pos[mass_id] = AxisAngleRotaion(
+			mass_pos[anchor_edge.x],
+			mass_pos[anchor_edge.y], mass_pos[mass_id],
+			joint.anchors.theta[anchor_id] * joint.points.dir[i]);
 
 		//Vec3d anchor_left = mass_pos[joint.anchors.left[anchor_id]];
 		//Vec3d anchor_right = mass_pos[joint.anchors.right[anchor_id]];
@@ -187,6 +210,7 @@ __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 		//	joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
 	}
 }
+
 #endif // ROTATION
 
 
@@ -615,7 +639,17 @@ void Simulation::execute() {
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
 			double t_lerp = 0.01;
-			Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos).normalize();
+			
+
+			Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos);// .normalize();
+			
+			Vec3d camera_offset = -camera_dir_new;
+			camera_offset.normalize();
+			camera_dir_new.normalize();
+			Vec3d camera_pos_new = lerp(camera_pos, mass.pos[id_oxyz_start] + camera_offset * 1.0, 0.01);
+			camera_pos.x = camera_pos_new.x;
+			camera_pos.y = camera_pos_new.y;
+
 			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
 			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
 			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);

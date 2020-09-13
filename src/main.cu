@@ -60,24 +60,24 @@ int main()
 
 	
 	sim.dt = 5e-5; // timestep
-	//sim.dt = 4e-5; // timestep
+	//sim.dt = 2.5e-5; // timestep
 
 
 	const double m = 7.5e-4;// mass per vertex
 
-	const double spring_constant =m*2e6; //spring constant for silicone leg
-	const double spring_damping = m*1.5e2; // damping for spring
+	const double spring_constant =m*1.2e6; //spring constant for silicone leg
+	const double spring_damping = m*2e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
-	const double scale_high = 2;// scaling factor high
+	const double scale_high = 3;// scaling factor high
 	//const double scale_low = 0.5; // scaling factor low
 	const double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
 
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
 	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping* scale_high; // spring damping for resetable spring
+	const double spring_damping_restable = spring_damping; // spring damping for resetable spring
 
 	//const double spring_constant_restable = spring_constant * 0.1; // spring constant for resetable spring
 	//const double spring_damping_restable = spring_damping * 0.1; // spring damping for resetable spring
@@ -96,7 +96,7 @@ int main()
 		mass.pos[i]= bot.vertices[i]; // position (Vec3d) [m]
 		mass.color[i]= bot.colors[i]; // color (Vec3d) [0.0-1.0]
 		mass.m[i] = m; // mass [kg]
-		mass.constrain[i] = bot.isSurface[i];// set constrain to true for suface points, and false otherwise
+		mass.constrain[i] = bot.isSurface[i];// set constraint to true for suface points, and false otherwise
 	}
 #pragma omp parallel for
 	for (int i = 0; i < num_spring; i++)
@@ -117,14 +117,26 @@ int main()
 	// set higher mass value for robot body
 	for (int i = 0; i < bot.idVertices[1]; i++)
 	{
-		mass.m[i] = m*2.5f;
+		mass.m[i] = m*2.5f; // accounting for addional mass for electornics
 	}
+	// set lower mass value for leg
+	for (int i = bot.idVertices[1]; i < bot.idVertices[1+4]; i++)
+	{
+		mass.m[i] = m * 0.7f; // 80% infill,no skin
+	}
+
+	// set the mass value for joint
+#pragma omp parallel for
 	for (int i = 0; i < bot.Joints.size(); i++)
 	{
 		for each (int j in bot.Joints[i].left)
 		{
 			mass.m[j] = m;
-		}		
+		}	
+		for each (int j in bot.Joints[i].right)
+		{
+			mass.m[j] = m;
+		}
 	}
 
 
