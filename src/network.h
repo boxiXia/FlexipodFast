@@ -37,7 +37,7 @@ public:
     double acceleration[3] = { 0 };
     double orientation[6] = { 0 };
     double position[3] = { 0 };
-    MSGPACK_DEFINE(header, T, jointAngle, jointSpeed, acceleration,orientation, position);
+    MSGPACK_DEFINE(header, T, jointAngle, jointSpeed, acceleration,orientation, position)
 };
 
 class UdpDataReceive {/*the high level command to be received */
@@ -45,7 +45,7 @@ public:
     UDP_HEADER header = UDP_HEADER::MOTOR_SPEED_COMMEND;
     double T;
     double jointSpeed[4] = { 0 };
-    MSGPACK_DEFINE(header, T, jointSpeed);
+    MSGPACK_DEFINE(header, T, jointSpeed)
 };
 
 
@@ -246,7 +246,7 @@ public:
             }
         }
         catch (std::exception& e) {
-            printf("[%s:%s]: %s\n", __FILE__, __LINE__, e.what());
+            printf("[%s:%d]: %s\n", __FILE__, __LINE__, e.what());
         }
     }
 
@@ -348,7 +348,7 @@ public:
             }
         }
         catch (std::system_error e) {
-            printf("[%s:%s]: %s\n", __FILE__, __LINE__, e.what());
+            printf("[%s:%d]: %s\n", __FILE__, __LINE__, e.what());
         }
 
     }

@@ -49,10 +49,10 @@ int main()
 	const int num_body = 5;//number of bodies
  	Model bot("..\\src\\data.msgpack"); //defined in sim.h
 
-	const int num_mass = bot.vertices.size(); // number of mass
-	const int num_spring = bot.edges.size(); // number of spring
+	const size_t num_mass = bot.vertices.size(); // number of mass
+	const size_t num_spring = bot.edges.size(); // number of spring
 
-	const int num_joint = bot.Joints.size();//number of rotational joint
+	const size_t num_joint = bot.Joints.size();//number of rotational joint
 
 	Simulation sim(num_mass, num_spring); // Simulation object
 	MASS& mass = sim.mass; // reference variable for sim.mass
@@ -60,17 +60,17 @@ int main()
 
 	
 	sim.dt = 5e-5; // timestep
-	//sim.dt = 2.5e-5; // timestep
+	//sim.dt = 4e-5; // timestep
 
 
-	const double m = 7.5e-4;// mass per vertex
+	const double m = 5e-4;// mass per vertex
 
-	const double spring_constant =m*1.2e6; //spring constant for silicone leg
-	const double spring_damping = m*2e2; // damping for spring
+	const double spring_constant =m*2e6; //spring constant for silicone leg
+	const double spring_damping = m*1.6e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
-	const double scale_high = 3;// scaling factor high
+	const double scale_high = 2.5;// scaling factor high
 	//const double scale_low = 0.5; // scaling factor low
 	const double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
 
@@ -108,21 +108,20 @@ int main()
 		spring.resetable[i] = false; // set all spring as non-resetable
 	}
 
-	// bot.idVertices: body,leg0,leg1,leg2,leg3,anchor0,anchor1,anchor2,anchor3,\
-					oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,\
-							  oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,the end
-	// bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end
-
+/*bot.idVertices: body,leg0,leg1,leg2,leg3,anchor0,anchor1,anchor2,anchor3,
+				oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,
+				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,the end
+ bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end */
 	
 	// set higher mass value for robot body
-	for (int i = 0; i < bot.idVertices[1]; i++)
+	for (int i = bot.idVertices[0]; i < bot.idVertices[1]; i++)
 	{
-		mass.m[i] = m*2.5f; // accounting for addional mass for electornics
+		mass.m[i] = m*2.5; // accounting for addional mass for electornics
 	}
 	// set lower mass value for leg
 	for (int i = bot.idVertices[1]; i < bot.idVertices[1+4]; i++)
 	{
-		mass.m[i] = m * 0.7f; // 80% infill,no skin
+		mass.m[i] = m * 0.5; // 80% infill,no skin
 	}
 
 	// set the mass value for joint
@@ -169,8 +168,8 @@ int main()
 	//double id_joint_anchor_start = bot.idVertices[num_body];
 	//double id_joint_anchor_end = bot.idVertices[num_body + num_joint];
 
-	//oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,\
-				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,
+	/*oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,
+				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,*/
 	sim.id_oxyz_start = bot.idVertices[num_body + num_joint];
 	sim.id_oxyz_end = bot.idVertices[num_body + num_joint + 1 + 2* num_joint];
 	
@@ -199,22 +198,35 @@ int main()
 	double total_mass = 0;
 #pragma omp parallel for shared (total_mass,mass.m) reduction(+:total_mass)
 	for (int i = 0; i < num_mass; i++){total_mass += mass.m[i];}
-	printf("total mass:%.2f kg\n", m * num_mass);
+
+	double body_mass = 0;
+	for (int i = bot.idVertices[0]; i < bot.idVertices[1]; i++)
+	{body_mass+= mass.m[i];}// calculate body mass
+	
+	double leg_mass = 0;
+	for (int i = bot.idVertices[1]; i < bot.idVertices[2]; i++)
+	{leg_mass += mass.m[i];}// calculate leg mass
+
+	printf("total mass:%.2f kg, body mass:%.2f kg, per leg mass:%.2f kg.\n", total_mass, body_mass, leg_mass);
+
+
+
+
 
 	// set max speed for each joint
 	double max_rpm = 600;//maximun revolution per minute
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
-	sim.setViewport(Vec3d(0.1, -0.6, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));
+	sim.setViewport(Vec3d(0.6, 0, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));
 
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 1.0, 0.9);
-	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.1, 0.1);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.9, 0.8);
+	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 
 	double runtime = 1200;
@@ -228,7 +240,7 @@ int main()
 
 	auto end = std::chrono::steady_clock::now();
 	printf("main():Elapsed time:%d ms \n",
-		std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+		(int)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 
 	return 0;
 }

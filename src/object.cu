@@ -39,7 +39,7 @@ __device__ const double DAMPING_NORMAL = 5; // normal damping coefficient per kg
 //    _radius = b._radius;
 //}
 
-CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
+__device__ void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
     double dist = (pos - _center).norm();
     if (dist < _radius) {
         force += K_NORMAL * (pos - _center) / dist;
@@ -92,7 +92,7 @@ CUDA_CALLABLE_MEMBER void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
 //}
 
 
-CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
+__device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
     //    m -> force += (disp < 0) ? - disp * K_NORMAL * _normal : 0 * _normal; // TODO fix this for the host
 
     double disp = _normal.dot(pos) - _offset; // displacement into the plane
@@ -132,7 +132,7 @@ CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d
 #ifdef GRAPHICS
 
 void Ball::normalize(GLfloat * v) {
-    GLfloat norm = sqrt(pow(v[0], 2) + pow(v[1], 2) + pow(v[2],2)) / _radius;
+    GLfloat norm = (GLfloat)sqrt(pow(v[0], 2) + pow(v[1], 2) + pow(v[2],2)) / _radius;
 
     for (int i = 0; i < 3; i++) {
         v[i] /= norm;
@@ -265,19 +265,22 @@ void Ball::draw() {
 
 #ifdef GRAPHICS
 
+constexpr int const CONTACT_PLANE_RADIUS = 30;// radius [unit] of the plane
+constexpr int const CONTACT_PLANE_GL_DRAW_SIZE = CONTACT_PLANE_RADIUS* CONTACT_PLANE_RADIUS*4*6;
+// total 30*30*4*6=21600 points 
+
 void ContactPlane::generateBuffers() {
 
-    const int radius = 20; // radius [unit] of the plane
-    // total 20*20*4*6=5400 points 
+    //const int CONTACT_PLANE_RADIUS = 20; 
     
     // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
     std::vector<GLfloat> vertex_data;
     std::vector<GLfloat> color_data;
 
     GLfloat s = 1.f;// scale
-    for (int i = -radius; i < radius; i++)
+    for (int i = -CONTACT_PLANE_RADIUS; i < CONTACT_PLANE_RADIUS; i++)
     {
-        for (int j = -radius; j < radius; j++)
+        for (int j = -CONTACT_PLANE_RADIUS; j < CONTACT_PLANE_RADIUS; j++)
         {
             GLfloat x = i*s;
             GLfloat y = j*s;
@@ -354,7 +357,7 @@ void ContactPlane::draw() {
     );
 
     // Draw the triangle !
-    glDrawArrays(GL_TRIANGLES, 0, 9600); // number of vertices
+    glDrawArrays(GL_TRIANGLES, 0, CONTACT_PLANE_GL_DRAW_SIZE); // number of vertices
     
     // Todo: this won't work when the plane is shifted
     //glDrawElements(GL_LINES, 12*6, GL_UNSIGNED_INT, (void*)0); // 3 indices starting at 0 -> 1 triangle

@@ -15,6 +15,12 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 //#include <cooperative_groups.h>
 
 
+constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
+constexpr int THREADS_PER_BLOCK = 64;
+constexpr int MASS_THREADS_PER_BLOCK = 128;
+
+constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
 
 
 __global__ void SpringUpate(
@@ -224,7 +230,7 @@ Simulation::Simulation() {
 
 }
 
-Simulation::Simulation(int num_mass, int num_spring) :Simulation() {
+Simulation::Simulation(size_t num_mass, size_t num_spring):Simulation() {
 	mass = MASS(num_mass, true); // allocate host
 	d_mass = MASS(num_mass, false); // allocate device
 	spring = SPRING(num_spring, true); // allocate host
@@ -469,7 +475,6 @@ void Simulation::execute() {
 			//cudaStreamWaitEvent(NULL, event_rotation, 0);
 
 #ifdef ROTATION
-
 			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
 			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
@@ -528,13 +533,13 @@ void Simulation::execute() {
 		oy = (oy - oy.dot(ox) * ox).normalize();
 #ifdef UDP
 		msg_send.T = T;
-		for (int i = 0; i < 4; i++)
+		for (auto i = 0; i < 4; i++)
 		{
 			msg_send.jointAngle[i] = joint_angles[i];
 			msg_send.jointSpeed[i] = joint_speeds[i];
 		}
 
-		for (size_t i = 0; i < 3; i++)
+		for (auto i = 0; i < 3; i++)
 		{
 			msg_send.acceleration[i] = com_acc[i];
 			msg_send.position[i] = com_pos[i];
@@ -636,45 +641,34 @@ void Simulation::execute() {
 
 #endif // DEBUG_ENERGY
 
-			// https://en.wikipedia.org/wiki/Slerp
-			//mass.pos[id_oxyz_start].print();
-			double t_lerp = 0.01;
-			
-
-			Vec3d camera_dir_new = (mass.pos[id_oxyz_start] - camera_pos);// .normalize();
-			
-			Vec3d camera_offset = -camera_dir_new;
-			camera_offset.normalize();
-			camera_dir_new.normalize();
-			Vec3d camera_pos_new = lerp(camera_pos, mass.pos[id_oxyz_start] + camera_offset * 1.0, 0.01);
-			camera_pos.x = camera_pos_new.x;
-			camera_pos.y = camera_pos_new.y;
-
-			/*camera_dir = (1 - t_lerp)* camera_dir + t_lerp* camera_dir_new;*/ //linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			camera_dir = slerp(camera_dir, camera_dir_new, t_lerp);
-			camera_dir.normalize();
+			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
 			if (glfwGetKey(window, GLFW_KEY_W)) {
-				camera_pos += 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
+				//camera_pos += 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
+				camera_h_offset -= 0.02;//move closer
 			}
 			else if (glfwGetKey(window, GLFW_KEY_S)) {
-				camera_pos -= 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
+				//camera_pos -= 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
+				camera_h_offset += 0.02;//move away
 			}
 
 			if (glfwGetKey(window, GLFW_KEY_A)) {
-				camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.02, Vec3d());
+				//camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.02, Vec3d());
+				//camera_pos = AxisAngleRotaion(camera_up, camera_pos, 0.02, com_pos);
+				camera_yaw -= 0.02;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_D)) {
-				camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.02, Vec3d());
+				//camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.02, Vec3d());
+				//camera_pos = AxisAngleRotaion(camera_up, camera_pos, 0.02, com_pos);
+				camera_yaw += 0.02;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_Q)) {
-				camera_pos.z -= 0.02;
+				camera_up_offset -= 0.02;
 			}
 			else if (glfwGetKey(window, GLFW_KEY_E)) {
-				camera_pos.z += 0.02;
+				camera_up_offset += 0.02;
 			}
 
 			double speed_multiplier = 0.1;
@@ -710,11 +704,25 @@ void Simulation::execute() {
 				RESET = true;
 			}
 
-
 			if (RESET) {
 				RESET = false;
 				resetState();// restore the robot mass/spring/joint state to the backedup state
 			}
+
+			// https://en.wikipedia.org/wiki/Slerp
+			//mass.pos[id_oxyz_start].print();
+			double t_lerp = 0.01;
+
+			Vec3d camera_rotation_anchor = com_pos + (camera_up_offset-com_pos.dot(camera_up))*camera_up;
+
+			Vec3d camera_pos_desired = AxisAngleRotaion(camera_up, camera_href_dir * camera_h_offset, camera_yaw, Vec3d())+ camera_rotation_anchor;
+
+			camera_pos = lerp(camera_pos, camera_pos_desired, t_lerp);
+
+			Vec3d camera_dir_desired = (com_pos - camera_pos).normalize();
+
+			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
+			camera_dir = slerp(camera_dir, camera_dir_desired, t_lerp).normalize();
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
@@ -881,6 +889,12 @@ void Simulation::setViewport(const Vec3d& camera_position, const Vec3d& target_l
 	this->camera_pos = camera_position;
 	this->camera_dir = (target_location - camera_position).normalize();
 	this->camera_up = up_vector;
+
+	// initialized the camera_horizontal reference direction
+	camera_href_dir = Vec3d(1, 0, 0);
+	if (abs(camera_href_dir.dot(camera_up)) > 0.9) { camera_href_dir = Vec3d(0, 1, 0);}
+	camera_href_dir = camera_href_dir.decompose(camera_up).normalize();
+
 	if (STARTED) { computeMVP(); }
 }
 void Simulation::moveViewport(const Vec3d& displacement) {

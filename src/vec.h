@@ -79,7 +79,7 @@ use align to force alignment for gpu memory
 */
 struct MY_ALIGN(8) Vec3d {
 	double x, y, z;
-	MSGPACK_DEFINE(x, y, z);
+	MSGPACK_DEFINE(x, y, z)
 
 	CUDA_CALLABLE_MEMBER Vec3d() {
 		x = 0;
@@ -175,7 +175,7 @@ struct MY_ALIGN(8) Vec3d {
 		case 2:
 			return z;
 		default:
-			fprintf(stderr, "C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
+			printf("C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
 			exit(-1);
 		} // to do remove this
 	}
@@ -189,7 +189,7 @@ struct MY_ALIGN(8) Vec3d {
 		case 2:
 			return z;
 		default:
-			fprintf(stderr, "C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
+			printf("C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
 			exit(-1);
 		} // to do remove this
 	}
@@ -269,6 +269,16 @@ struct MY_ALIGN(8) Vec3d {
 		z = 0;
 	}
 
+	// return a projection on to unit vector d
+	inline CUDA_CALLABLE_MEMBER Vec3d project(const Vec3d& d) {
+		return this->dot(d) * d;
+	}
+
+	// return a orthogonal decomposition of this with respect to unit vector d
+	inline CUDA_CALLABLE_MEMBER Vec3d decompose(const Vec3d& d) {
+		return *this - this->dot(d) * d;
+	}
+
 	inline CUDA_CALLABLE_MEMBER double dot(const Vec3d& b) { // dot product
 		return x * b.x + y * b.y + z * b.z; // preferably use this version
 	}
@@ -280,6 +290,7 @@ struct MY_ALIGN(8) Vec3d {
 	inline friend CUDA_CALLABLE_MEMBER Vec3d cross(const Vec3d& v1, const Vec3d& v2) {
 		return Vec3d(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
 	}
+
 
 	inline CUDA_DEVICE void Vec3d::atomicVecAdd(const Vec3d& v) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600

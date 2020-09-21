@@ -45,15 +45,8 @@ typedef WsaUdpServer UdpServer;
 #endif
 
 
-
-constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
-constexpr int THREADS_PER_BLOCK = 64;
-constexpr int MASS_THREADS_PER_BLOCK = 128;
-
 constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
-constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 
-constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -71,11 +64,11 @@ inline cudaFreeFcnType FreeMemoryFcn(void* host_or_device_ptr) {
 	cudaFreeFcnType freeMemory;
 	cudaPointerAttributes attributes;
 	gpuErrchk(cudaPointerGetAttributes(&attributes, host_or_device_ptr));
-	if (attributes.memoryType == cudaMemoryType::cudaMemoryTypeHost) {// host memory
+	if (attributes.type == cudaMemoryType::cudaMemoryTypeHost) {// host memory
 		freeMemory = &cudaFreeHost;
 	}
 	else { freeMemory = &cudaFree; }// device memory
-	printf("Memory type for d_data %i\n", attributes.memoryType);
+	printf("Memory type for d_data %i\n", attributes.type);
 	return freeMemory;
 }
 
@@ -108,7 +101,7 @@ public:
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<std::vector<double> > colors;// the mass xyzs
 	std::vector<StdJoint> Joints;// the joints
-	MSGPACK_DEFINE(vertices, edges, isSurface, idVertices, idEdges, colors, Joints); // write the member variables that you want to pack
+	MSGPACK_DEFINE(vertices, edges, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
 	Model() {}
 	Model(const char* file_path) {
 		// get the msgpack robot model
@@ -336,12 +329,12 @@ struct RotPoints { // the points that belongs to the rotational joints
 		init(num, on_host);
 
 		if (on_host) { // copy the std_joints to this
-			int offset = 0;//offset the index by "offset"
-			for (int joint_id = 0; joint_id < std_joints.size(); joint_id++)
+			size_t offset = 0;//offset the index by "offset"
+			for (auto joint_id = 0; joint_id < std_joints.size(); joint_id++)
 			{
 				StdJoint& std_joint = std_joints[joint_id];
 
-				for (int i = 0; i < std_joint.left.size(); i++)
+				for (auto i = 0; i < std_joint.left.size(); i++)
 				{
 					massId[offset + i] = std_joint.left[i];
 					anchorId[offset + i] = joint_id;
@@ -349,7 +342,7 @@ struct RotPoints { // the points that belongs to the rotational joints
 				}
 				offset += std_joint.left.size();//increment offset by num of left
 
-				for (int i = 0; i < std_joint.right.size(); i++)
+				for (auto i = 0; i < std_joint.right.size(); i++)
 				{
 					massId[offset + i] = std_joint.right[i];
 					anchorId[offset + i] = joint_id;
@@ -449,7 +442,7 @@ public:
 	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 
 	Simulation();
-	Simulation(int num_mass, int num_spring);
+	Simulation(size_t num_mass, size_t num_spring);
 	~Simulation();
 
 	void getAll();
@@ -479,11 +472,6 @@ public:
 	double energy_deviation_max = 0;
 #endif // DEBUG_ENERGY
 
-#ifdef GRAPHICS
-	void setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector);
-	void moveViewport(const Vec3d& displacement);
-#endif
-
 
 #ifdef UDP
 	//Todo
@@ -499,7 +487,6 @@ public:
 #endif //UDP
 
 private:
-
 	void waitForEvent();
 	void freeGPU();
 	inline void updateCudaParameters();
@@ -519,9 +506,11 @@ private:
 	CUDA_GLOBAL_CONSTRAINTS d_constraints;
 	bool update_constraints = true;
 
-
-
 #ifdef GRAPHICS
+public:
+	void setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector);
+	void moveViewport(const Vec3d& displacement);
+private:
 	int line_width = 3; // line width for rendering the springs
 	int point_size = 3; // point size for rendering the masses
 
@@ -539,8 +528,12 @@ private:
 	// for projection matrix 
 	Vec3d camera_pos;// camera position
 	Vec3d camera_dir;//camera look at direction
-	//Vec3d looks_at;
 	Vec3d camera_up;// camera up
+
+	Vec3d camera_href_dir;// camera horizontal reference direction, initialized in setViewport()
+	double camera_h_offset = 0.5;// distance b/w target and camera in plane normal to camera_up vector 
+	double camera_up_offset = 0.5; // distance b/w target and camera in camera_up direction
+	double camera_yaw = 0; // rotation angle of the vector from target to camera about camera_up vector
 
 	GLuint vertexbuffer; // handle for vertexbuffer
 	GLuint colorbuffer; // handle for colorbuffer
@@ -556,6 +549,7 @@ private:
 	bool resize_buffers = true; // update all (vertexbuffer,colorbuffer,elementbuffer) if true
 
 	void computeMVP(bool update_view = true); // compute MVP
+
 
 	inline void updateBuffers();
 	inline void updateVertexBuffers();//only update vertex (positions)
