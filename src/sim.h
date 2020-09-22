@@ -510,7 +510,7 @@ private:
 public:
 	void setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector);
 	void moveViewport(const Vec3d& displacement);
-private:
+
 	int line_width = 3; // line width for rendering the springs
 	int point_size = 3; // point size for rendering the masses
 
@@ -534,7 +534,7 @@ private:
 	double camera_h_offset = 0.5;// distance b/w target and camera in plane normal to camera_up vector 
 	double camera_up_offset = 0.5; // distance b/w target and camera in camera_up direction
 	double camera_yaw = 0; // rotation angle of the vector from target to camera about camera_up vector
-
+	
 	void computeMVP(bool update_view = true); // compute MVP
 
 	/*------------- vertex buffer object and their device pointers--------------------*/
@@ -560,9 +560,9 @@ private:
 	inline void generateBuffers();
 	inline void resizeBuffers();
 
-	void createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags);
+	void createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type = GL_ARRAY_BUFFER);
 	void deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res);
-	void resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags);
+	void resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type = GL_ARRAY_BUFFER);
 	/*-------------------------------------------------------------------------------*/
 
 	inline void draw();

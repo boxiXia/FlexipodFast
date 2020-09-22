@@ -381,7 +381,7 @@ void Simulation::_run() { // repeatedly start next
 
 	glUseProgram(programID);// Use our shader
 
-	updateBuffers();//Todo might not need?
+	//updateBuffers();//Todo might not need?
 #endif
 	execute();
 	GPU_DONE = true;
@@ -419,9 +419,13 @@ void Simulation::execute() {
 					//	delete c;
 					//}
 #ifdef GRAPHICS
-					glDeleteBuffers(1, &vbo_vertex);
-					glDeleteBuffers(1, &vbo_color);
-					glDeleteBuffers(1, &vbo_edge);
+
+					deleteVBO(&vbo_vertex, cuda_resource_vertex);
+					deleteVBO(&vbo_color, cuda_resource_color);
+					deleteVBO(&vbo_edge, cuda_resource_edge);
+					//glDeleteBuffers(1, &vbo_vertex);
+					//glDeleteBuffers(1, &vbo_color);
+					//glDeleteBuffers(1, &vbo_edge);
 					glDeleteProgram(programID);
 					glDeleteVertexArrays(1, &VertexArrayID);
 					glfwTerminate(); // Close OpenGL window and terminate GLFW
@@ -729,8 +733,8 @@ void Simulation::execute() {
 				c->draw();
 			}
 
-			//updateBuffers();
-			updateVertexBuffers();
+			updateBuffers();
+			//updateVertexBuffers();
 
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 
@@ -773,6 +777,7 @@ Simulation::~Simulation() {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));// TODO fix race condition
 		}
 		if (gpu_thread.joinable()) {
+
 			gpu_thread.join();
 		}
 		else {
@@ -817,6 +822,9 @@ void Simulation::freeGPU() {
 	d_planes.clear();
 	d_planes.shrink_to_fit();
 	printf("GPU freed\n");
+
+
+
 }
 
 
@@ -924,22 +932,24 @@ void Simulation::computeMVP(bool update_view) {
 
 /* create vertex buffer object // modified form cuda samples: simpleGL.cu
 */
-void Simulation::createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags) {
+void Simulation::createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type) {
 	assert(vbo);
 	// create buffer object
 	glGenBuffers(1, vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, *vbo);
+	glBindBuffer(buffer_type, *vbo);
 	// initialize buffer object
-	glBufferData(GL_ARRAY_BUFFER, size, 0, GL_DYNAMIC_DRAW);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBufferData(buffer_type, size, 0, GL_DYNAMIC_DRAW);
+	glBindBuffer(buffer_type, 0);
 	// register this buffer object with CUDA
 	gpuErrchk(cudaGraphicsGLRegisterBuffer(vbo_res, *vbo, vbo_res_flags));
 
 	//SDK_CHECK_ERROR_GL();
 }
 
-void Simulation::resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags) {
+void Simulation::resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type) {
 	//TODO
+	deleteVBO(vbo, *vbo_res);
+	createVBO(vbo, vbo_res, size, cudaGraphicsMapFlagsNone, buffer_type);//TODO CHANGE TO WRITE ONLY
 }
 
 /* delelte vertex buffer object//modified form cuda samples: simpleGL.cu */
@@ -953,47 +963,76 @@ void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res)
 }
 
 inline void Simulation::generateBuffers() {
+	
+
+	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	createVBO(&vbo_color, &cuda_resource_color, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);
+	createVBO(&vbo_edge, &cuda_resource_edge, spring.num * sizeof(uint2), cudaGraphicsMapFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 
 
-	//createVBO(&colorbuffer, &cuda_vbo_resource, 3 * mass.num * sizeof(GLfloat), cudaGraphicsMapFlagsNone);
+	//glGenBuffers(1, &vbo_vertex);// bind vertex buffer
+	//glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
+	//glBufferData(GL_ARRAY_BUFFER, mass.num * sizeof(float3), NULL, GL_DYNAMIC_DRAW);
+	//
+	//glGenBuffers(1, &vbo_color);//bind color buffer
+	//glBindBuffer(GL_ARRAY_BUFFER, vbo_color);
+	//glBufferData(GL_ARRAY_BUFFER, mass.num * sizeof(float3), NULL, GL_DYNAMIC_DRAW);
+	//
+	//glGenBuffers(1, &vbo_edge);//bind element buffer
+	//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
+	//glBufferData(GL_ELEMENT_ARRAY_BUFFER, spring.num * sizeof(uint2), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
 
 
-	glGenBuffers(1, &vbo_color);//bind color buffer
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_color);
-	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-	cudaGLRegisterBufferObject(vbo_color);
+	//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	//glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	glGenBuffers(1, &vbo_edge);//bind element buffer
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
-	cudaGLRegisterBufferObject(vbo_edge);
+	//cudaGraphicsGLRegisterBuffer(&cuda_resource_vertex, vbo_vertex, GL_ARRAY_BUFFER);
+	//cudaGraphicsGLRegisterBuffer(&cuda_resource_color, vbo_color, GL_ARRAY_BUFFER);
+	//cudaGraphicsGLRegisterBuffer(&cuda_resource_edge, vbo_edge, GL_ELEMENT_ARRAY_BUFFER);
 
-	glGenBuffers(1, &vbo_vertex);// bind vertex buffer
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
-	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-	cudaGLRegisterBufferObject(vbo_vertex);
+
+
+	//glGenBuffers(1, &vbo_color);//bind color buffer
+	//glBindBuffer(GL_ARRAY_BUFFER, vbo_color);
+	//glBufferData(GL_ARRAY_BUFFER, mass.num * sizeof(float3), NULL, GL_DYNAMIC_DRAW);
+	//cudaGLRegisterBufferObject(vbo_color);
+
+	//glGenBuffers(1, &vbo_edge);//bind element buffer
+	//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
+	//glBufferData(GL_ELEMENT_ARRAY_BUFFER, spring.num * sizeof(uint2), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
+	//cudaGLRegisterBufferObject(vbo_edge);
+
+	//glGenBuffers(1, &vbo_vertex);// bind vertex buffer
+	//glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
+	//glBufferData(GL_ARRAY_BUFFER, mass.num * sizeof(float3), NULL, GL_DYNAMIC_DRAW);
+	//cudaGLRegisterBufferObject(vbo_vertex);
 
 	//Todo: maybe unbind buffer? see updateBuffers()
 }
 
 inline void Simulation::resizeBuffers() {
-	//    std::cout << "resizing buffers (" << masses.size() << " masses, " << springs.size() << " springs)." << std::endl;
-	//    std::cout << "resizing buffers (" << d_masses.size() << " device masses, " << d_springs.size() << " device springs)." << std::endl;
-		//cudaGLUnmapBufferObject(colorbuffer);//refer to updateBuffers()
-	cudaGLUnregisterBufferObject(this->vbo_color);
-	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_color);
-	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-	cudaGLRegisterBufferObject(this->vbo_color);
+	////TODO>>>>>>
+	//resizeVBO(&vbo_vertex, &cuda_resource_vertex, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	//resizeVBO(&vbo_edge, &cuda_resource_edge, spring.num * sizeof(uint2), cudaGraphicsMapFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
+	//resizeVBO(&vbo_color, &cuda_resource_color, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);
 
-	cudaGLUnregisterBufferObject(this->vbo_edge);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->vbo_edge);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
-	cudaGLRegisterBufferObject(this->vbo_edge);
+	////    std::cout << "resizing buffers (" << masses.size() << " masses, " << springs.size() << " springs)." << std::endl;
+	////    std::cout << "resizing buffers (" << d_masses.size() << " device masses, " << d_springs.size() << " device springs)." << std::endl;
+	//	//cudaGLUnmapBufferObject(colorbuffer);//refer to updateBuffers()
+	//cudaGLUnregisterBufferObject(this->vbo_color);
+	//glBindBuffer(GL_ARRAY_BUFFER, this->vbo_color);
+	//glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+	//cudaGLRegisterBufferObject(this->vbo_color);
 
-	cudaGLUnregisterBufferObject(this->vbo_vertex);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
-	glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
-	cudaGLRegisterBufferObject(this->vbo_vertex);
+	//cudaGLUnregisterBufferObject(this->vbo_edge);
+	//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->vbo_edge);
+	//glBufferData(GL_ELEMENT_ARRAY_BUFFER, 2 * spring.num * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW); // second argument is number of bytes
+	//cudaGLRegisterBufferObject(this->vbo_edge);
+
+	//cudaGLUnregisterBufferObject(this->vbo_vertex);
+	//glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
+	//glBufferData(GL_ARRAY_BUFFER, 3 * mass.num * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+	//cudaGLRegisterBufferObject(this->vbo_vertex);
 
 	resize_buffers = false;
 }
@@ -1028,34 +1067,72 @@ __global__ void updateColors(float3* __restrict__ gl_ptr, const Vec3d* __restric
 }
 
 void Simulation::updateBuffers() { // todo: check the kernel call
-	{
-		glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
-		cudaGLMapBufferObject((void**)&dptr_vertex, vbo_vertex);
+	// map OpenGL buffer object for writing from CUDA
+	{ // position update
+		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, 0));
+		size_t num_bytes;
+		gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,
+			cuda_resource_vertex));
+		////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 		updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (dptr_vertex, d_mass.pos, mass.num);
-		cudaGLUnmapBufferObject(vbo_vertex);
+		// unmap buffer object
+		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0));
 	}
-	if (update_colors) {
-		glBindBuffer(GL_ARRAY_BUFFER, vbo_color);
-		cudaGLMapBufferObject((void**)&dptr_color, vbo_color);
+	if (update_colors) { // color update
+		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_color, 0));
+		size_t num_bytes;
+		gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_color, &num_bytes,
+			cuda_resource_color));
+		////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 		updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[1] >> > (dptr_color, d_mass.color, mass.num);
-		cudaGLUnmapBufferObject(vbo_color);
+		// unmap buffer object
+		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_color, 0));
 		update_colors = false;
 	}
-	if (update_indices) {
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
-		cudaGLMapBufferObject((void**)&dptr_edge, vbo_edge);
+	if (update_indices) { // edge update
+		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, 0));
+		size_t num_bytes;
+		gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_edge, &num_bytes,
+			cuda_resource_edge));
+		////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 		updateIndices << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[2] >> > (dptr_edge, d_spring.edge, spring.num);
-		cudaGLUnmapBufferObject(vbo_edge);
+		// unmap buffer object
+		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_edge, 0));
 		update_indices = false;
 	}
+
+	//{
+	//	glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
+	//	cudaGLMapBufferObject((void**)&dptr_vertex, vbo_vertex);
+	//	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (dptr_vertex, d_mass.pos, mass.num);
+	//	cudaGLUnmapBufferObject(vbo_vertex);
+	//}
+	//if (update_colors) {
+	//	glBindBuffer(GL_ARRAY_BUFFER, vbo_color);
+	//	cudaGLMapBufferObject((void**)&dptr_color, vbo_color);
+	//	updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[1] >> > (dptr_color, d_mass.color, mass.num);
+	//	cudaGLUnmapBufferObject(vbo_color);
+	//	update_colors = false;
+	//}
+	//if (update_indices) {
+	//	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
+	//	cudaGLMapBufferObject((void**)&dptr_edge, vbo_edge);
+	//	updateIndices << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[2] >> > (dptr_edge, d_spring.edge, spring.num);
+	//	cudaGLUnmapBufferObject(vbo_edge);
+	//	update_indices = false;
+	//}
 }
 
 void Simulation::updateVertexBuffers() {
 
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
-	cudaGLMapBufferObject((void**)&dptr_vertex, vbo_vertex);
+	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, 0));
+	size_t num_bytes;
+	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,
+		cuda_resource_vertex));
+	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (dptr_vertex, d_mass.pos, mass.num);
-	cudaGLUnmapBufferObject(vbo_vertex);
+	// unmap buffer object
+	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0));
 }
 
 inline void Simulation::draw() {
@@ -1084,6 +1161,9 @@ inline void Simulation::draw() {
 	);
 
 	glDrawArrays(GL_POINTS, 0, mass.num); // 3 indices starting at 0 -> 1 triangle
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
+
 	glDrawElements(GL_LINES, 2 * spring.num, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
 
 	glDisableVertexAttribArray(1);
