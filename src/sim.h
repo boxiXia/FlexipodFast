@@ -535,26 +535,37 @@ private:
 	double camera_up_offset = 0.5; // distance b/w target and camera in camera_up direction
 	double camera_yaw = 0; // rotation angle of the vector from target to camera about camera_up vector
 
-	GLuint vertexbuffer; // handle for vertexbuffer
-	GLuint colorbuffer; // handle for colorbuffer
-	GLuint elementbuffer; // handle for elementbuffer
-
-	void* vertexPointer;// used in updateBuffers(), stores positions of the vertices
-	void* indexPointer; // used in updateBuffers(), stores indices (line plot)
-	void* colorPointer; // used in updateBuffers(), stores colors of the vertices
-
-
-	bool update_indices = true; // update vertexbuffer if true
-	bool update_colors = true; // update colorbuffer if true
-	bool resize_buffers = true; // update all (vertexbuffer,colorbuffer,elementbuffer) if true
-
 	void computeMVP(bool update_view = true); // compute MVP
 
+	/*------------- vertex buffer object and their device pointers--------------------*/
+	GLuint vbo_vertex; // handle for vertexbuffer (mass pos)
+	float3* dptr_vertex;// used in updateBuffers(), device pointer,stores positions of the vertices
+	struct cudaGraphicsResource* cuda_resource_vertex;
+
+	GLuint vbo_color; // handle for colorbuffer (color)
+	float3* dptr_color; // used in updateBuffers(), device pointer,stores colors of the vertices
+	struct cudaGraphicsResource* cuda_resource_color;
+
+	GLuint vbo_edge; // handle for elementbuffer (spring)
+	uint2* dptr_edge; // used in updateBuffers(), device pointer,stores indices (line plot)
+	struct cudaGraphicsResource* cuda_resource_edge;
+
+
+	bool update_indices = true; // update vbo_vertex if true
+	bool update_colors = true; // update vbo_color if true
+	bool resize_buffers = true; // update all (vbo_vertex,vbo_color,vbo_edge) if true
 
 	inline void updateBuffers();
 	inline void updateVertexBuffers();//only update vertex (positions)
 	inline void generateBuffers();
 	inline void resizeBuffers();
+
+	struct cudaGraphicsResource* cuda_vbo_resource;
+	void createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags);
+	void deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res);
+	void resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags);
+	/*-------------------------------------------------------------------------------*/
+
 	inline void draw();
 
 	void createGLFWWindow();
@@ -565,6 +576,7 @@ private:
 
 #ifdef GRAPHICS
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+
 
 #endif
 
