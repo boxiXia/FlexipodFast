@@ -550,7 +550,6 @@ public:
 	uint2* dptr_edge = nullptr; // used in updateBuffers(), device pointer,stores indices (line plot)
 	struct cudaGraphicsResource* cuda_resource_edge;
 
-
 	bool update_indices = true; // update vbo_vertex if true
 	bool update_colors = true; // update vbo_color if true
 	bool resize_buffers = true; // update all (vbo_vertex,vbo_color,vbo_edge) if true
