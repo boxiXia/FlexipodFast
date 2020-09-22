@@ -539,15 +539,15 @@ private:
 
 	/*------------- vertex buffer object and their device pointers--------------------*/
 	GLuint vbo_vertex; // handle for vertexbuffer (mass pos)
-	float3* dptr_vertex;// used in updateBuffers(), device pointer,stores positions of the vertices
+	float3* dptr_vertex = nullptr;// used in updateBuffers(), device pointer,stores positions of the vertices
 	struct cudaGraphicsResource* cuda_resource_vertex;
 
 	GLuint vbo_color; // handle for colorbuffer (color)
-	float3* dptr_color; // used in updateBuffers(), device pointer,stores colors of the vertices
+	float3* dptr_color = nullptr; // used in updateBuffers(), device pointer,stores colors of the vertices
 	struct cudaGraphicsResource* cuda_resource_color;
 
 	GLuint vbo_edge; // handle for elementbuffer (spring)
-	uint2* dptr_edge; // used in updateBuffers(), device pointer,stores indices (line plot)
+	uint2* dptr_edge = nullptr; // used in updateBuffers(), device pointer,stores indices (line plot)
 	struct cudaGraphicsResource* cuda_resource_edge;
 
 
@@ -560,7 +560,6 @@ private:
 	inline void generateBuffers();
 	inline void resizeBuffers();
 
-	struct cudaGraphicsResource* cuda_vbo_resource;
 	void createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags);
 	void deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res);
 	void resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags);
