@@ -121,7 +121,7 @@ int main()
 	// set lower mass value for leg
 	for (int i = bot.idVertices[1]; i < bot.idVertices[1+4]; i++)
 	{
-		mass.m[i] = m * 0.5; // 80% infill,no skin
+		mass.m[i] = m * 0.4; // 80% infill,no skin
 	}
 
 	// set the mass value for joint
