@@ -25,7 +25,7 @@ const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 #include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
-__device__ const double K_NORMAL = 500; // normal force coefficient for contact constraints
+__device__ const double K_NORMAL = 800; // normal force coefficient for contact constraints
 __device__ const double DAMPING_NORMAL = 5; // normal damping coefficient per kg mass
 
 

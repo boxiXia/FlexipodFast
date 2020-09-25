@@ -65,12 +65,12 @@ int main()
 
 	const double m = 5e-4;// mass per vertex
 
-	const double spring_constant =m*2e6; //spring constant for silicone leg
+	const double spring_constant =m*2.5e6; //spring constant for silicone leg
 	const double spring_damping = m*1.6e2; // damping for spring
 	//const double spring_damping = 0; // damping for spring
 
 
-	const double scale_high = 2.5;// scaling factor high
+	const double scale_high = 2;// scaling factor high
 	//const double scale_low = 0.5; // scaling factor low
 	const double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
 
@@ -78,9 +78,6 @@ int main()
 
 	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
 	const double spring_damping_restable = spring_damping; // spring damping for resetable spring
-
-	//const double spring_constant_restable = spring_constant * 0.1; // spring constant for resetable spring
-	//const double spring_damping_restable = spring_damping * 0.1; // spring damping for resetable spring
 
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
