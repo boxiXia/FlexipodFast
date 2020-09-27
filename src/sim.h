@@ -436,7 +436,6 @@ public:
 	bool ENDED = false; // flag is set true when ~Simulation() is called
 	bool RESET = false;// reset flag
 
-	bool FREED = false;
 	bool GPU_DONE = false;
 
 	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution

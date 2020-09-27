@@ -275,7 +275,7 @@ void Simulation::setBreakpoint(const double time) {
 
 /*pause the simulation at (simulation) time t [s] */
 void Simulation::pause(const double t) {
-	if (ENDED && !FREED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
+	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
 	setBreakpoint(t);
 	waitForEvent();
 }
@@ -290,7 +290,7 @@ void Simulation::resume() {
 }
 
 void Simulation::waitForEvent() {
-	if (ENDED && !FREED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
+	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
 	while (RUNNING) {
 		std::this_thread::sleep_for(std::chrono::nanoseconds(100));
 	}
@@ -797,14 +797,11 @@ Simulation::~Simulation() {
 #endif // UDP
 
 	}
-	if (!FREED) {
-		freeGPU();
-	}
+	freeGPU();
 }
 
 
 void Simulation::freeGPU() {
-	FREED = true;
 	ENDED = true; // just to be safe
 	//Todo
 	//for (Spring* s : springs) {
