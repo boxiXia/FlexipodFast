@@ -280,6 +280,23 @@ void Simulation::pause(const double t) {
 	waitForEvent();
 }
 
+void Simulation::resume() {
+	if (ENDED) { throw std::runtime_error("Simulation has ended. Cannot resume simulation."); }
+	if (!STARTED) { throw std::runtime_error("Simulation has not started. Cannot resume before calling sim.start()."); }
+	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Add masses before simulation starts."); }
+	updateCudaParameters();
+	cudaDeviceSynchronize();
+	RUNNING = true;
+}
+
+void Simulation::waitForEvent() {
+	if (ENDED && !FREED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
+	while (RUNNING) {
+		std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+	}
+}
+
+
 /*backup the robot mass/spring/joint state */
 void Simulation::backupState() {
 	backup_spring = SPRING(spring, true);
@@ -754,14 +771,7 @@ void Simulation::execute() {
 }
 
 
-void Simulation::resume() {
-	if (ENDED) { throw std::runtime_error("Simulation has ended. Cannot resume simulation."); }
-	if (!STARTED) { throw std::runtime_error("Simulation has not started. Cannot resume before calling sim.start()."); }
-	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Add masses before simulation starts."); }
-	updateCudaParameters();
-	cudaDeviceSynchronize();
-	RUNNING = true;
-}
+
 
 Simulation::~Simulation() {
 	std::cerr << "Simulation destructor called." << std::endl;
@@ -792,12 +802,6 @@ Simulation::~Simulation() {
 	}
 }
 
-void Simulation::waitForEvent() {
-	if (ENDED && !FREED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
-	while (RUNNING) {
-		std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-	}
-}
 
 void Simulation::freeGPU() {
 	FREED = true;
@@ -940,7 +944,6 @@ void Simulation::createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, s
 	glBindBuffer(buffer_type, 0);
 	// register this buffer object with CUDA
 	gpuErrchk(cudaGraphicsGLRegisterBuffer(vbo_res, *vbo, vbo_res_flags));
-
 	//SDK_CHECK_ERROR_GL();
 }
 

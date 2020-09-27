@@ -433,7 +433,7 @@ public:
 	// control
 	bool RUNNING = false;
 	bool STARTED = false;
-	bool ENDED = false;
+	bool ENDED = false; // flag is set true when ~Simulation() is called
 	bool RESET = false;// reset flag
 
 	bool FREED = false;
