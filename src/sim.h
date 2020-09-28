@@ -28,7 +28,10 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #include <list>
 #include <vector>
 #include <set>
+
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 
 #include <sstream>
 #include <fstream>
@@ -430,13 +433,19 @@ public:
 	//int num_joint = 4; //refer to joint.size()
 
 
-	// control
+	// state report
 	bool RUNNING = false;
 	bool STARTED = false;
 	bool ENDED = false; // flag is set true when ~Simulation() is called
-	bool RESET = false;// reset flag
-
 	bool GPU_DONE = false;
+
+	// control
+	bool RESET = false;// reset flag
+	bool SHOULD_RUN = true;
+	bool SHOULD_END = false;
+
+	std::mutex mutex_running;
+	std::condition_variable cv_running;
 
 	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 
@@ -456,6 +465,7 @@ public:
 	void setBreakpoint(const double time); // tell the program to stop at a fixed time (doesn't hang).
 
 	void start();
+
 
 	void pause(const double t);//pause the simulation at (simulation) time t [s]
 

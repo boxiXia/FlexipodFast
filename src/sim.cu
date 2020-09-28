@@ -277,8 +277,16 @@ void Simulation::setBreakpoint(const double time) {
 void Simulation::pause(const double t) {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
 	setBreakpoint(t);
-	waitForEvent();
+
+	//waitForEvent();
+
+	//// Wait until main() sends data
+	std::unique_lock<std::mutex> lck(mutex_running);
+	SHOULD_RUN = false;
+	cv_running.notify_all();
+	cv_running.wait(lck, [this] {return !RUNNING; });
 }
+
 
 void Simulation::resume() {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. Cannot resume simulation."); }
@@ -286,14 +294,18 @@ void Simulation::resume() {
 	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Add masses before simulation starts."); }
 	updateCudaParameters();
 	cudaDeviceSynchronize();
-	RUNNING = true;
+	std::unique_lock<std::mutex> lck(mutex_running);
+	SHOULD_RUN = true;
+	cv_running.notify_all();
 }
 
 void Simulation::waitForEvent() {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
-	while (RUNNING) {
-		std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-	}
+	//while (RUNNING) {
+	//	std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+	//}
+	std::unique_lock<std::mutex> lck(mutex_running);
+	cv_running.wait(lck, [this] {return !RUNNING; });
 }
 
 
@@ -334,6 +346,7 @@ void Simulation::start() {
 	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Please add masses before starting the simulation."); }
 	printf("Starting simulation with %d masses and %d springs\n", mass.num, spring.num);
 	RUNNING = true;
+	SHOULD_RUN = true;
 	STARTED = true;
 
 	T = 0;
@@ -415,57 +428,68 @@ void Simulation::execute() {
 
 
 	while (true) {
-		if (!bpts.empty() && *bpts.begin() <= T) {
+		if (!bpts.empty() && *bpts.begin() <= T) {// paused when a break p
 			cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 		//            std::cout << "Breakpoint set for time " << *bpts.begin() << " reached at simulation time " << T << "!" << std::endl;
 			bpts.erase(bpts.begin());
-			RUNNING = false;
-			while (!RUNNING) {
-				std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-				if (ENDED) {
+			if (bpts.empty()) { SHOULD_END = true; }
+			if (SHOULD_END) {
+				auto end = std::chrono::steady_clock::now();
+				double duration = (double)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.;//[seconds]
+				double sim_time_ratio = T / duration;
+				double spring_update_rate = ((double)spring.num) / dt * sim_time_ratio;
+				printf("Elapsed time:%.2f s for %.2f simulation time (%.2f); # %.2e spring update/s\n",
+					duration, T, sim_time_ratio, spring_update_rate);
 
-					auto end = std::chrono::steady_clock::now();
-					double duration = (double)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.;//[seconds]
-					double sim_time_ratio = T / duration;
-					double spring_update_rate = ((double)spring.num) / dt * sim_time_ratio;
-
-					printf("Elapsed time:%.2f s for %.2f simulation time (%.2f); # %.2e spring update/s\n",
-						duration, T, sim_time_ratio, spring_update_rate);
-
-					//for (Constraint* c : constraints) {
-					//	delete c;
-					//}
+				//for (Constraint* c : constraints) {
+				//	delete c;
+				//}
 #ifdef GRAPHICS
+				deleteVBO(&vbo_vertex, cuda_resource_vertex);
+				deleteVBO(&vbo_color, cuda_resource_color);
+				deleteVBO(&vbo_edge, cuda_resource_edge);
 
-					deleteVBO(&vbo_vertex, cuda_resource_vertex);
-					deleteVBO(&vbo_color, cuda_resource_color);
-					deleteVBO(&vbo_edge, cuda_resource_edge);
+				glDeleteProgram(programID);
+				glDeleteVertexArrays(1, &VertexArrayID);
+				glfwTerminate(); // Close OpenGL window and terminate GLFW
+				printf("\nwindow closed\n");
+#endif // GRAPHICS
 
-					glDeleteProgram(programID);
-					glDeleteVertexArrays(1, &VertexArrayID);
-					glfwTerminate(); // Close OpenGL window and terminate GLFW
-#endif
-					return;
-				}
+				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
+				RUNNING = false;
+				cv_running.notify_all(); //notify others RUNNING = false
+
+				return;
 			}
+			{	// condition variable 
+				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
+				RUNNING = false;
+				cv_running.notify_all(); //notify others RUNNING = false
+				cv_running.wait(lck, [this] {return SHOULD_RUN; }); // wait unitl SHOULD_RUN is signaled
+				RUNNING = true;
+				//lck.unlock();// Manual unlocking before notifying, to avoid waking up the waiting thread only to block again
+				cv_running.notify_all(); // notifiy others RUNNING = true;
+			}
+#ifdef GRAPHICS
 			if (resize_buffers) {
 				resizeBuffers(); // needs to be run from GPU thread
 				resize_buffers = false;
 				update_colors = true;
 				update_indices = true;
 			}
-
+#endif // GRAPHICS
 			if (update_constraints) {
 				d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
 				d_constraints.d_planes = thrust::raw_pointer_cast(&d_planes[0]);
 				d_constraints.num_balls = d_balls.size();
 				d_constraints.num_planes = d_planes.size();
-
+#ifdef GRAPHICS
 				for (Constraint* c : constraints) { // generate buffers for constraint objects
 					if (!c->_initialized)
 						c->generateBuffers();
 				}
 				update_constraints = false;
+#endif // GRAPHICS
 			}
 			continue;
 		}
@@ -761,8 +785,8 @@ void Simulation::execute() {
 
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
 				bpts.insert(T);// break at current time T
-				printf("\nwindow closed\n");
 				//exit(0); // TODO maybe deal with memory leak here. //key press exit,
+				SHOULD_END = true;
 			}
 		}
 #endif //GRAPHICS
@@ -774,10 +798,11 @@ void Simulation::execute() {
 
 
 Simulation::~Simulation() {
-	std::cerr << "Simulation destructor called." << std::endl;
+	std::cout << "Simulation destructor called." << std::endl;
 
 	if (STARTED) {
-		waitForEvent();
+		std::unique_lock<std::mutex> lck(mutex_running);
+		cv_running.wait(lck, [this] {return !RUNNING; });
 
 		ENDED = true; // TODO maybe race condition
 
