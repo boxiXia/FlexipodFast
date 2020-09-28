@@ -472,7 +472,8 @@ public:
 
 	void resume();
 
-	void _run();
+	void update_physics();
+	void update_graphics();
 	void execute(); // same as above but w/out reset
 
 #ifdef DEBUG_ENERGY
@@ -501,8 +502,14 @@ private:
 	inline void updateCudaParameters();
 	inline int computeBlocksPerGrid(const int threadsPerBlock, const int num);//helper function to compute blocksPerGrid
 
-	std::thread gpu_thread;
+	std::thread thread_physics_update;
+#ifdef GRAPHICS
+	std::thread thread_graphics_update;
+#endif //GRAPHICS
 	std::set<double> bpts; // list of breakpoints
+
+
+
 
 	int massBlocksPerGrid; // blocksPergrid for mass update
 	int springBlocksPerGrid; // blocksPergrid for spring update
@@ -513,7 +520,7 @@ private:
 	thrust::device_vector<CudaBall> d_balls; // used for constraints
 
 	CUDA_GLOBAL_CONSTRAINTS d_constraints;
-	bool update_constraints = true;
+	bool SHOULD_UPDATE_CONSTRAINT = true; // a flag indicating whether constraint should be updated
 
 #ifdef GRAPHICS
 public:

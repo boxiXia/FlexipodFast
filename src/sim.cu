@@ -361,7 +361,7 @@ void Simulation::start() {
 	d_constraints.num_balls = d_balls.size();
 	d_constraints.num_planes = d_planes.size();
 
-	update_constraints = false;
+	SHOULD_UPDATE_CONSTRAINT = false;
 
 	cudaMallocHost((void**)&joint_speeds_error_integral, joint.size() * sizeof(double));//initialize joint speed error integral array 
 	cudaMallocHost((void**)&joint_speeds_error, joint.size() * sizeof(double));//initialize joint speed error array 
@@ -381,10 +381,11 @@ void Simulation::start() {
 #endif //UDP
 
 
-	gpu_thread = std::thread(&Simulation::_run, this); //TODO: thread
+	thread_physics_update = std::thread(&Simulation::update_physics, this); //TODO: thread
+	thread_graphics_update = std::thread(&Simulation::update_graphics, this); //TODO: thread
 }
 
-void Simulation::_run() { // repeatedly start next
+void Simulation::update_physics() { // repeatedly start next
 
 	//cudaDeviceProp deviceProp;
 	//cudaGetDeviceProperties(&deviceProp, 0);
@@ -395,30 +396,22 @@ void Simulation::_run() { // repeatedly start next
 
 #ifdef GRAPHICS
 	createGLFWWindow(); // create a window with  width and height
+
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
-
 	// Create and compile our GLSL program from the shaders
-	this->programID = LoadShaders(); // ("shaders/StandardShading.vertexshader", "shaders/StandardShading.fragmentshader"); //
+	programID = LoadShaders(); // ("shaders/StandardShading.vertexshader", "shaders/StandardShading.fragmentshader"); //
+	glUseProgram(programID);// Use our shader
 	// Get a handle for our "MVP" uniform
 	computeMVP(); // compute perspective projection matrix
-	this->MatrixID = glGetUniformLocation(programID, "MVP"); // doesn't seem to be necessary
+	MatrixID = glGetUniformLocation(programID, "MVP"); // doesn't seem to be necessary
 	generateBuffers(); // generate buffers for all masses and springs
 
 	for (Constraint* c : constraints) { // generate buffers for constraint objects
 		c->generateBuffers();
 	}
-
-	glUseProgram(programID);// Use our shader
-
 	//updateBuffers();//Todo might not need?
 #endif
-	execute();
-	GPU_DONE = true;
-}
-
-
-void Simulation::execute() {
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
 
@@ -458,7 +451,7 @@ void Simulation::execute() {
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
 				RUNNING = false;
 				cv_running.notify_all(); //notify others RUNNING = false
-
+				GPU_DONE = true;
 				return;
 			}
 			{	// condition variable 
@@ -478,7 +471,7 @@ void Simulation::execute() {
 				update_indices = true;
 			}
 #endif // GRAPHICS
-			if (update_constraints) {
+			if (SHOULD_UPDATE_CONSTRAINT) {
 				d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
 				d_constraints.d_planes = thrust::raw_pointer_cast(&d_planes[0]);
 				d_constraints.num_balls = d_balls.size();
@@ -488,7 +481,7 @@ void Simulation::execute() {
 					if (!c->_initialized)
 						c->generateBuffers();
 				}
-				update_constraints = false;
+				SHOULD_UPDATE_CONSTRAINT = false;
 #endif // GRAPHICS
 			}
 			continue;
@@ -607,7 +600,7 @@ void Simulation::execute() {
 			case UDP_HEADER::RESET: // reset
 				// set the reset flag to true, resetState() will be called 
 				// to restore the robot mass/spring/joint state to the backedup state
-				RESET = true; 
+				RESET = true;
 				break;
 			case UDP_HEADER::MOTOR_SPEED_COMMEND:
 				for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
@@ -752,9 +745,9 @@ void Simulation::execute() {
 			//mass.pos[id_oxyz_start].print();
 			double t_lerp = 0.01;
 
-			Vec3d camera_rotation_anchor = com_pos + (camera_up_offset-com_pos.dot(camera_up))*camera_up;
+			Vec3d camera_rotation_anchor = com_pos + (camera_up_offset - com_pos.dot(camera_up)) * camera_up;
 
-			Vec3d camera_pos_desired = AxisAngleRotaion(camera_up, camera_href_dir * camera_h_offset, camera_yaw, Vec3d())+ camera_rotation_anchor;
+			Vec3d camera_pos_desired = AxisAngleRotaion(camera_up, camera_href_dir * camera_h_offset, camera_yaw, Vec3d()) + camera_rotation_anchor;
 
 			camera_pos = lerp(camera_pos, camera_pos_desired, t_lerp);
 
@@ -791,6 +784,15 @@ void Simulation::execute() {
 		}
 #endif //GRAPHICS
 	}
+}
+
+
+void Simulation::update_graphics() {
+
+}
+
+void Simulation::execute() {
+
 
 }
 
@@ -809,9 +811,12 @@ Simulation::~Simulation() {
 		while (!GPU_DONE) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));// TODO fix race condition
 		}
-		if (gpu_thread.joinable()) {
+		if (thread_physics_update.joinable()) {
 
-			gpu_thread.join();
+			thread_physics_update.join();
+		}
+		if (thread_graphics_update.joinable()) {
+			thread_graphics_update.join();
 		}
 		else {
 			printf("could not join GPU thread.\n");
@@ -871,7 +876,7 @@ void Simulation::createPlane(const Vec3d& abc, const double d, const double FRIC
 	d_planes.push_back(cuda_contact_plane);
 
 	//d_planes.push_back(CudaContactPlane(*new_plane));
-	update_constraints = true;
+	SHOULD_UPDATE_CONSTRAINT = true;
 }
 
 void Simulation::createBall(const Vec3d& center, const double r) { // creates ball with radius r at position center
@@ -885,12 +890,12 @@ void Simulation::createBall(const Vec3d& center, const double r) { // creates ba
 	d_balls.push_back(cuda_ball);
 
 	//d_balls.push_back(CudaBall(*new_ball));
-	update_constraints = true;
+	SHOULD_UPDATE_CONSTRAINT = true;
 }
 
 void Simulation::clearConstraints() { // clears global constraints only
 	constraints.clear();
-	update_constraints = true;
+	SHOULD_UPDATE_CONSTRAINT = true;
 }
 
 #ifdef DEBUG_ENERGY
