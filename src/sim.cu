@@ -634,6 +634,18 @@ void Simulation::update_physics() { // repeatedly start next
 			//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
 			//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
 			//printf("\r\r");
+		
+#ifdef DEBUG_ENERGY
+			double e = energy();
+			//if (abs(e - energy_start) > energy_deviation_max) {
+			//	energy_deviation_max = abs(e - energy_start);
+			//	printf("%.3f\t%.3f\n", T, energy_deviation_max / energy_start);
+			//}
+			//else { printf("%.3f\r", T); }
+			printf("%.3f\t%.3f\n", T, e);
+
+#endif // DEBUG_ENERGY
+		
 		}
 		//printf("\n");
 	//}
@@ -662,16 +674,7 @@ void Simulation::update_physics() { // repeatedly start next
 #ifdef GRAPHICS
 		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
 
-#ifdef DEBUG_ENERGY
-			double e = energy();
-			//if (abs(e - energy_start) > energy_deviation_max) {
-			//	energy_deviation_max = abs(e - energy_start);
-			//	printf("%.3f\t%.3f\n", T, energy_deviation_max / energy_start);
-			//}
-			//else { printf("%.3f\r", T); }
-			printf("%.3f\t%.3f\n", T, e);
 
-#endif // DEBUG_ENERGY
 
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
@@ -736,10 +739,7 @@ void Simulation::update_physics() { // repeatedly start next
 				RESET = true;
 			}
 
-			if (RESET) {
-				RESET = false;
-				resetState();// restore the robot mass/spring/joint state to the backedup state
-			}
+
 
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
@@ -767,7 +767,6 @@ void Simulation::update_physics() { // repeatedly start next
 
 			updateBuffers();
 			//updateVertexBuffers();
-
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 
 			draw();
@@ -783,6 +782,13 @@ void Simulation::update_physics() { // repeatedly start next
 			}
 		}
 #endif //GRAPHICS
+
+		if (RESET) {
+			cudaDeviceSynchronize();
+			RESET = false;
+			resetState();// restore the robot mass/spring/joint state to the backedup state
+			cudaDeviceSynchronize();
+		}
 	}
 }
 
