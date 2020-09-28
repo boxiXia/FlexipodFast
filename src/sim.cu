@@ -394,24 +394,7 @@ void Simulation::update_physics() { // repeatedly start next
 	//	exit(-1);
 	//}
 
-#ifdef GRAPHICS
-	createGLFWWindow(); // create a window with  width and height
 
-	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
-	glBindVertexArray(VertexArrayID);
-	// Create and compile our GLSL program from the shaders
-	programID = LoadShaders(); // ("shaders/StandardShading.vertexshader", "shaders/StandardShading.fragmentshader"); //
-	glUseProgram(programID);// Use our shader
-	// Get a handle for our "MVP" uniform
-	computeMVP(); // compute perspective projection matrix
-	MatrixID = glGetUniformLocation(programID, "MVP"); // doesn't seem to be necessary
-	generateBuffers(); // generate buffers for all masses and springs
-
-	for (Constraint* c : constraints) { // generate buffers for constraint objects
-		c->generateBuffers();
-	}
-	//updateBuffers();//Todo might not need?
-#endif
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
 
@@ -437,16 +420,6 @@ void Simulation::update_physics() { // repeatedly start next
 				//for (Constraint* c : constraints) {
 				//	delete c;
 				//}
-#ifdef GRAPHICS
-				deleteVBO(&vbo_vertex, cuda_resource_vertex);
-				deleteVBO(&vbo_color, cuda_resource_color);
-				deleteVBO(&vbo_edge, cuda_resource_edge);
-
-				glDeleteProgram(programID);
-				glDeleteVertexArrays(1, &VertexArrayID);
-				glfwTerminate(); // Close OpenGL window and terminate GLFW
-				printf("\nwindow closed\n");
-#endif // GRAPHICS
 
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
 				RUNNING = false;
@@ -463,27 +436,22 @@ void Simulation::update_physics() { // repeatedly start next
 				//lck.unlock();// Manual unlocking before notifying, to avoid waking up the waiting thread only to block again
 				cv_running.notify_all(); // notifiy others RUNNING = true;
 			}
-#ifdef GRAPHICS
-			if (resize_buffers) {
-				resizeBuffers(); // needs to be run from GPU thread
-				resize_buffers = false;
-				update_colors = true;
-				update_indices = true;
-			}
-#endif // GRAPHICS
-			if (SHOULD_UPDATE_CONSTRAINT) {
-				d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
-				d_constraints.d_planes = thrust::raw_pointer_cast(&d_planes[0]);
-				d_constraints.num_balls = d_balls.size();
-				d_constraints.num_planes = d_planes.size();
-#ifdef GRAPHICS
-				for (Constraint* c : constraints) { // generate buffers for constraint objects
-					if (!c->_initialized)
-						c->generateBuffers();
-				}
-				SHOULD_UPDATE_CONSTRAINT = false;
-#endif // GRAPHICS
-			}
+
+//			// TODO NOTIFY THE OTHER THREAD
+//			if (SHOULD_UPDATE_CONSTRAINT) {
+//				d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
+//				d_constraints.d_planes = thrust::raw_pointer_cast(&d_planes[0]);
+//				d_constraints.num_balls = d_balls.size();
+//				d_constraints.num_planes = d_planes.size();
+//#ifdef GRAPHICS
+//				for (Constraint* c : constraints) { // generate buffers for constraint objects
+//					if (!c->_initialized)
+//						c->generateBuffers();
+//				}
+//				SHOULD_UPDATE_CONSTRAINT = false;
+//#endif // GRAPHICS
+//			}
+
 			continue;
 		}
 
@@ -671,10 +639,59 @@ void Simulation::update_physics() { // repeatedly start next
 		// update joint speed
 		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
 
+		if (RESET) {
+			cudaDeviceSynchronize();
+			RESET = false;
+			resetState();// restore the robot mass/spring/joint state to the backedup state
+			cudaDeviceSynchronize();
+		}
+	}
+}
+
+#ifdef GRAPHICS
+void Simulation::update_graphics() {
+
+	createGLFWWindow(); // create a window with  width and height
+
+	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
+	glBindVertexArray(VertexArrayID);
+	// Create and compile our GLSL program from the shaders
+	programID = LoadShaders(); // ("shaders/StandardShading.vertexshader", "shaders/StandardShading.fragmentshader"); //
+	glUseProgram(programID);// Use our shader
+	// Get a handle for our "MVP" uniform
+	computeMVP(); // compute perspective projection matrix
+	MatrixID = glGetUniformLocation(programID, "MVP"); // doesn't seem to be necessary
+	generateBuffers(); // generate buffers for all masses and springs
+
+	for (Constraint* c : constraints) { // generate buffers for constraint objects
+		c->generateBuffers();
+	}
+	//updateBuffers();//Todo might not need?
+	cudaDeviceSynchronize();//sync before while loop
+
+	while (true) {
+		if (SHOULD_END) {
+
+			deleteVBO(&vbo_vertex, cuda_resource_vertex);
+			deleteVBO(&vbo_color, cuda_resource_color);
+			deleteVBO(&vbo_edge, cuda_resource_edge);
+
+			glDeleteProgram(programID);
+			glDeleteVertexArrays(1, &VertexArrayID);
+			glfwTerminate(); // Close OpenGL window and terminate GLFW
+			printf("\nwindow closed\n");
+			// Todo notify the physics thread
+		}
+
+		if (resize_buffers) {
+			resizeBuffers(); // needs to be run from GPU thread
+			resize_buffers = false;
+			update_colors = true;
+			update_indices = true;
+		}
+	
 #ifdef GRAPHICS
 		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
-
-
 
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
@@ -782,20 +799,11 @@ void Simulation::update_physics() { // repeatedly start next
 			}
 		}
 #endif //GRAPHICS
-
-		if (RESET) {
-			cudaDeviceSynchronize();
-			RESET = false;
-			resetState();// restore the robot mass/spring/joint state to the backedup state
-			cudaDeviceSynchronize();
-		}
 	}
-}
 
-
-void Simulation::update_graphics() {
 
 }
+#endif
 
 void Simulation::execute() {
 
