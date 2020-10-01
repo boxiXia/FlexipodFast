@@ -57,11 +57,14 @@ int main()
 	Simulation sim(num_mass, num_spring); // Simulation object
 	MASS& mass = sim.mass; // reference variable for sim.mass
 	SPRING& spring = sim.spring; // reference variable for sim.spring
-
+	
 	
 	//sim.dt = 4e-5; // timestep
 	sim.dt = 5e-5; // timestep
 
+	const double radius_poisson = 10*1e-3;
+	const double radius_knn = radius_poisson * sqrt(3.0);
+	const double mimimun_radius = radius_poisson * 0.5;
 
 	//const double m = 5e-4;// mass per vertex
 	const double m = 2.5/(double)num_mass;// mass per vertex
@@ -86,7 +89,7 @@ int main()
 	// spring coefficient for the probing springs, e.g. coordinates
 	const double spring_constant_probe_anchor = spring_constant * scale_probe; // spring constant for coordiates anchor springs
 	const double spring_constant_probe_self = spring_constant * scale_probe* scale_high; // spring constant for coordiates self springs
-	const double spring_damping_probe = spring_damping * scale_probe;
+	const double spring_damping_probe = spring_damping * scale_probe * scale_high;
 
 #pragma omp parallel for
 	for (int i = 0; i < num_mass; i++)
@@ -100,9 +103,14 @@ int main()
 	for (int i = 0; i < num_spring; i++)
 	{
 		spring.edge[i] = bot.edges[i]; // the (left,right) mass index of the spring
-		spring.k[i] = spring_constant; // spring constant
 		spring.damping[i] = spring_damping; // spring constant
 		spring.rest[i] = (mass.pos[spring.edge[i].x] - mass.pos[spring.edge[i].y]).norm(); // spring rest length
+
+		// longer spring will have a smalller influence
+		spring.k[i] = spring_constant * radius_knn / std::max(spring.rest[i], mimimun_radius); // spring constant
+		//spring.k[i] = spring_constant; // spring constant
+
+
 		spring.resetable[i] = false; // set all spring as non-resetable
 	}
 
@@ -119,7 +127,7 @@ int main()
 	// set lower mass value for leg
 	for (int i = bot.idVertices[1]; i < bot.idVertices[1+4]; i++)
 	{
-		mass.m[i] = m * 0.6; // 80% infill,no skin
+		mass.m[i] = m * 0.4; // 80% infill,no skin
 	}
 
 	// set the mass value for joint
@@ -140,16 +148,19 @@ int main()
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
-		spring.k[i] = spring_constant_rigid;
+		//spring.k[i] = spring_constant_rigid;
+		spring.k[i] *= scale_high;
 	}
 	// set higher spring constant for the rotational joints
 	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body +1]; i++)
 	{
 		spring.k[i] = spring_constant_rigid; // joints anchors
+		//spring.k[i] *= scale_high;
 	}
 	for (int i = bot.idEdges[num_body +1]; i < bot.idEdges[num_body +2]; i++)
 	{
 		spring.k[i] = spring_constant_rigid; // joints rotation spring
+		//spring.k[i] *= scale_high;
 		//spring.damping[i] = spring_damping_restable;
 	}
 
@@ -212,7 +223,7 @@ int main()
 
 
 	// set max speed for each joint
-	double max_rpm = 1000;//maximun revolution per minute
+	double max_rpm = 1500;//maximun revolution per minute
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
@@ -231,10 +242,11 @@ int main()
 	sim.setBreakpoint(runtime);
 
 	sim.start();
-
-	while (sim.RUNNING) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	}
+	//sim.pause(1);
+	//while (sim.RUNNING) {
+	//	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	//}
+	//sim.resume();
 
 	auto end = std::chrono::steady_clock::now();
 	printf("main():Elapsed time:%d ms \n",

@@ -23,6 +23,28 @@ constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given
 constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
 
 
+GLenum glCheckError_(const char* file, int line)
+{
+	GLenum errorCode;
+	while ((errorCode = glGetError()) != GL_NO_ERROR)
+	{
+		std::string error;
+		switch (errorCode)
+		{
+		case GL_INVALID_ENUM:                  error = "INVALID_ENUM"; break;
+		case GL_INVALID_VALUE:                 error = "INVALID_VALUE"; break;
+		case GL_INVALID_OPERATION:             error = "INVALID_OPERATION"; break;
+		case GL_STACK_OVERFLOW:                error = "STACK_OVERFLOW"; break;
+		case GL_STACK_UNDERFLOW:               error = "STACK_UNDERFLOW"; break;
+		case GL_OUT_OF_MEMORY:                 error = "OUT_OF_MEMORY"; break;
+		case GL_INVALID_FRAMEBUFFER_OPERATION: error = "INVALID_FRAMEBUFFER_OPERATION"; break;
+		}
+		std::cout << error << " | " << file << " (" << line << ")" << std::endl;
+	}
+	return errorCode;
+}
+#define glCheckError() glCheckError_(__FILE__, __LINE__) 
+
 __global__ void SpringUpate(
 	const MASS mass,
 	const SPRING spring
@@ -423,7 +445,9 @@ void Simulation::update_physics() { // repeatedly start next
 
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
 				RUNNING = false;
+				GRAPHICS_SHOULD_END = true;
 				cv_running.notify_all(); //notify others RUNNING = false
+				cv_running.wait(lck, [this] {return GRAPHICS_ENDED; });
 				GPU_DONE = true;
 				return;
 			}
@@ -669,19 +693,15 @@ void Simulation::update_graphics() {
 	//updateBuffers();//Todo might not need?
 	cudaDeviceSynchronize();//sync before while loop
 
-	while (true) {
-		if (SHOULD_END) {
+	//double T_previous_update = T;
 
-			deleteVBO(&vbo_vertex, cuda_resource_vertex);
-			deleteVBO(&vbo_color, cuda_resource_color);
-			deleteVBO(&vbo_edge, cuda_resource_edge);
+	// check for errors
+	GLenum error = glGetError();
+	if (error != GL_NO_ERROR)
+		std::cerr << "OpenGL Error " << error << std::endl;
 
-			glDeleteProgram(programID);
-			glDeleteVertexArrays(1, &VertexArrayID);
-			glfwTerminate(); // Close OpenGL window and terminate GLFW
-			printf("\nwindow closed\n");
-			// Todo notify the physics thread
-		}
+	while (!GRAPHICS_SHOULD_END) {
+		
 
 		if (resize_buffers) {
 			resizeBuffers(); // needs to be run from GPU thread
@@ -689,9 +709,14 @@ void Simulation::update_graphics() {
 			update_colors = true;
 			update_indices = true;
 		}
-	
+		
 #ifdef GRAPHICS
-		if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
+		//if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
+		std::this_thread::sleep_for(std::chrono::microseconds(int(1e6/60)));// TODO fix race condition
+
+		//if (T- T_previous_update>1.0/60.1) 
+		{
+			//T_previous_update = T;
 
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
@@ -756,11 +781,9 @@ void Simulation::update_graphics() {
 				RESET = true;
 			}
 
-
-
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
-			double t_lerp = 0.01;
+			double t_lerp = 0.02;
 
 			Vec3d camera_rotation_anchor = com_pos + (camera_up_offset - com_pos.dot(camera_up)) * camera_up;
 
@@ -781,16 +804,25 @@ void Simulation::update_graphics() {
 			for (Constraint* c : constraints) {
 				c->draw();
 			}
+			
+
 
 			updateBuffers();
 			//updateVertexBuffers();
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 
+			
 			draw();
+			
 
 			// Swap buffers, render screen
 			glfwPollEvents();
 			glfwSwapBuffers(window);
+
+			//// check for errors
+			//GLenum error = glGetError();
+			//if (error != GL_NO_ERROR)
+			//	std::cerr << "OpenGL Error " << error << std::endl;
 
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
 				bpts.insert(T);// break at current time T
@@ -800,6 +832,19 @@ void Simulation::update_graphics() {
 		}
 #endif //GRAPHICS
 	}
+
+	// end the graphics
+	deleteBuffers(); // delete the buffer objects
+	glDeleteProgram(programID);
+	glDeleteVertexArrays(1, &VertexArrayID);
+	glfwTerminate(); // Close OpenGL window and terminate GLFW
+	printf("\nwindow closed\n");
+
+	// notify the physics thread
+	std::unique_lock<std::mutex> lck(mutex_running);
+	GRAPHICS_ENDED = true;
+	cv_running.notify_all();
+	return;
 
 
 }
@@ -985,28 +1030,30 @@ void Simulation::createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, s
 	glBindBuffer(buffer_type, 0);
 	// register this buffer object with CUDA
 	gpuErrchk(cudaGraphicsGLRegisterBuffer(vbo_res, *vbo, vbo_res_flags));
-	//SDK_CHECK_ERROR_GL();
+	glCheckError(); // check opengl error code
 }
 
-void Simulation::resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type) {
+void Simulation::resizeVBO(GLuint* vbo, size_t size, GLenum buffer_type) {
 	//TODO
-	deleteVBO(vbo, *vbo_res);
-	createVBO(vbo, vbo_res, size, cudaGraphicsMapFlagsNone, buffer_type);//TODO CHANGE TO WRITE ONLY
+	glBindBuffer(buffer_type, *vbo);
+	glBufferData(buffer_type, size, 0, GL_DYNAMIC_DRAW);
+	glBindBuffer(buffer_type, 0);
+	glCheckError();// check opengl error code
+
 }
 
 /* delelte vertex buffer object//modified form cuda samples: simpleGL.cu */
-void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res)
+void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GLenum buffer_type)
 {
 	// unregister this buffer object with CUDA
 	gpuErrchk(cudaGraphicsUnregisterResource(vbo_res));
-	glBindBuffer(1, *vbo);
+	glBindBuffer(buffer_type, *vbo);
 	glDeleteBuffers(1, vbo);
 	*vbo = 0;
+	glCheckError();// check opengl error code
 }
 
 inline void Simulation::generateBuffers() {
-	
-
 	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
 	createVBO(&vbo_color, &cuda_resource_color, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);
 	createVBO(&vbo_edge, &cuda_resource_edge, spring.num * sizeof(uint2), cudaGraphicsMapFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
@@ -1014,12 +1061,18 @@ inline void Simulation::generateBuffers() {
 
 inline void Simulation::resizeBuffers() {
 	////TODO>>>>>>
-	resizeVBO(&vbo_vertex, &cuda_resource_vertex, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	resizeVBO(&vbo_edge, &cuda_resource_edge, spring.num * sizeof(uint2), cudaGraphicsMapFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
-	resizeVBO(&vbo_color, &cuda_resource_color, mass.num * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);
-
+	resizeVBO(&vbo_vertex, mass.num * sizeof(float3), GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	resizeVBO(&vbo_color,  mass.num * sizeof(float3), GL_ARRAY_BUFFER);
+	resizeVBO(&vbo_edge,  spring.num * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
 	resize_buffers = false;
 }
+inline void Simulation::deleteBuffers() {
+	deleteVBO(&vbo_vertex, cuda_resource_vertex, GL_ARRAY_BUFFER);
+	deleteVBO(&vbo_color, cuda_resource_color, GL_ARRAY_BUFFER);
+	deleteVBO(&vbo_edge, cuda_resource_edge, GL_ELEMENT_ARRAY_BUFFER);
+}
+
+
 
 __global__ void updateVertices(float3* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
 	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
@@ -1101,8 +1154,7 @@ void Simulation::updateVertexBuffers() {
 inline void Simulation::draw() {
 	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
-	glPointSize(this->point_size);
-	glLineWidth(this->line_width);
+	//glCheckError(); // check opengl error code
 	glVertexAttribPointer(
 		0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
 		3,                  // size
@@ -1111,7 +1163,7 @@ inline void Simulation::draw() {
 		0,                  // stride
 		(void*)0            // array buffer offset
 	);
-
+	//glCheckError(); // check opengl error code
 	glEnableVertexAttribArray(1);
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_color);
 	glVertexAttribPointer(

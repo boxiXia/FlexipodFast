@@ -61,6 +61,10 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 	}
 }
 
+
+
+
+
 /*  helper function to free device/host memory given host_or_device_ptr */
 using cudaFreeFcnType = cudaError_t(*)(void*); // helper type for the free memory function
 inline cudaFreeFcnType FreeMemoryFcn(void* host_or_device_ptr) {
@@ -443,6 +447,8 @@ public:
 	bool RESET = false;// reset flag
 	bool SHOULD_RUN = true;
 	bool SHOULD_END = false;
+	bool GRAPHICS_SHOULD_END = false; // a flag to notifiy the graphics thread to end
+	bool GRAPHICS_ENDED = false; // a flag set by the graphics thread to notify its termination
 
 	std::mutex mutex_running;
 	std::condition_variable cv_running;
@@ -527,9 +533,6 @@ public:
 	void setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector);
 	void moveViewport(const Vec3d& displacement);
 
-	int line_width = 3; // line width for rendering the springs
-	int point_size = 3; // point size for rendering the masses
-
 	GLFWwindow* window;
 	int window_width, window_height; // the width and height of the window
 
@@ -574,10 +577,11 @@ public:
 	inline void updateVertexBuffers();//only update vertex (positions)
 	inline void generateBuffers();
 	inline void resizeBuffers();
+	inline void deleteBuffers();
 
 	void createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type = GL_ARRAY_BUFFER);
-	void deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res);
-	void resizeVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type = GL_ARRAY_BUFFER);
+	void deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GLenum buffer_type);
+	void resizeVBO(GLuint* vbo, size_t size, GLenum buffer_type = GL_ARRAY_BUFFER);
 	/*-------------------------------------------------------------------------------*/
 
 	inline void draw();
