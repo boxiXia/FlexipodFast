@@ -1155,8 +1155,6 @@ inline void Simulation::draw() {
 	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
 	//glCheckError(); // check opengl error code
-	//glPointSize(this->point_size);
-	//glCheckError(); // check opengl error code
 	glVertexAttribPointer(
 		0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
 		3,                  // size
