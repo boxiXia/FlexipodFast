@@ -1,3 +1,5 @@
 build/
 
 .vs/
+
+src/.ipynb_checkpoints/
