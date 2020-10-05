@@ -2,6 +2,10 @@
 ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,� ICRA 2020, May 2020.
 */
 
+#ifndef CUDA_API_PER_THREAD_DEFAULT_STREAM
+#define CUDA_API_PER_THREAD_DEFAULT_STREAM
+#endif // !CUDA_API_PER_THREAD_DEFAULT_STREAM
+
 #define GLM_FORCE_PURE
 #include "sim.h"
 
@@ -123,7 +127,7 @@ __global__ void MassUpate(
 				}
 			}
 
-// euler integration
+			// euler integration
 			force /= m;// force is now acceleration
 			force += global_acc;// add global accleration
 			vel += force * dt; // vel += acc*dt
@@ -162,7 +166,7 @@ __global__ void massUpdateAndRotate(
 				}
 			}
 
-// euler integration
+			// euler integration
 			force /= m;// force is now acceleration
 			force += global_acc;// add global accleration
 			vel += force * dt; // vel += acc*dt
@@ -247,12 +251,13 @@ Simulation::Simulation() {
 	//	d_spring.k,d_spring.rest,d_spring.damping,d_spring.left,d_spring.right,
 	//	d_mass.num,d_spring.num,global_acc, d_constraints,dt);
 
-	for (int i = 0; i < NUM_CUDA_STREAM; ++i)
-		cudaStreamCreate(&stream[i]);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
+	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
+		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
+	}
 
 }
 
-Simulation::Simulation(size_t num_mass, size_t num_spring):Simulation() {
+Simulation::Simulation(size_t num_mass, size_t num_spring) :Simulation() {
 	mass = MASS(num_mass, true); // allocate host
 	d_mass = MASS(num_mass, false); // allocate device
 	spring = SPRING(num_spring, true); // allocate host
@@ -339,7 +344,7 @@ void Simulation::backupState() {
 }
 /*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
 void Simulation::resetState() {//TODO...fix bug
-	
+
 	d_mass.copyFrom(backup_mass, stream[NUM_CUDA_STREAM - 1]);
 	d_spring.copyFrom(backup_spring, stream[NUM_CUDA_STREAM - 1]);
 	d_joint.copyFrom(backup_joint, stream[NUM_CUDA_STREAM - 1]);
@@ -350,8 +355,8 @@ void Simulation::resetState() {//TODO...fix bug
 	//memset(joint_speeds_desired, 0, nbytes);
 	//memset(joint_speeds_error, 0, nbytes);
 	//memset(joint_speeds_error_integral, 0, nbytes);
-	for (int i = 0; i < joint.size(); i++) { 
-		joint_speeds_cmd[i] = 0.; 
+	for (int i = 0; i < joint.size(); i++) {
+		joint_speeds_cmd[i] = 0.;
 		joint_speeds[i] = 0.;
 		joint_angles[i] = 0.;
 		joint_speeds_desired[i] = 0.;
@@ -373,7 +378,9 @@ void Simulation::start() {
 
 	T = 0;
 
-	if (this->dt == 0.0) { // if dt hasn't been set by the user.
+
+	
+	if (dt == 0.0) { // if dt hasn't been set by the user.
 		dt = 0.01; // min delta
 	}
 	updateCudaParameters();
@@ -416,7 +423,6 @@ void Simulation::update_physics() { // repeatedly start next
 	//	exit(-1);
 	//}
 
-
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
 
@@ -444,11 +450,18 @@ void Simulation::update_physics() { // repeatedly start next
 				//}
 
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
-				RUNNING = false;
+				
+#ifdef GRAPHICS
 				GRAPHICS_SHOULD_END = true;
 				cv_running.notify_all(); //notify others RUNNING = false
 				cv_running.wait(lck, [this] {return GRAPHICS_ENDED; });
+#endif
+//#ifdef UDP
+//				udp_server.close();
+//#endif
 				GPU_DONE = true;
+				RUNNING = false;
+				printf("GPU done\n");
 				return;
 			}
 			{	// condition variable 
@@ -461,20 +474,20 @@ void Simulation::update_physics() { // repeatedly start next
 				cv_running.notify_all(); // notifiy others RUNNING = true;
 			}
 
-//			// TODO NOTIFY THE OTHER THREAD
-//			if (SHOULD_UPDATE_CONSTRAINT) {
-//				d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
-//				d_constraints.d_planes = thrust::raw_pointer_cast(&d_planes[0]);
-//				d_constraints.num_balls = d_balls.size();
-//				d_constraints.num_planes = d_planes.size();
-//#ifdef GRAPHICS
-//				for (Constraint* c : constraints) { // generate buffers for constraint objects
-//					if (!c->_initialized)
-//						c->generateBuffers();
-//				}
-//				SHOULD_UPDATE_CONSTRAINT = false;
-//#endif // GRAPHICS
-//			}
+			//			// TODO NOTIFY THE OTHER THREAD
+			//			if (SHOULD_UPDATE_CONSTRAINT) {
+			//				d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
+			//				d_constraints.d_planes = thrust::raw_pointer_cast(&d_planes[0]);
+			//				d_constraints.num_balls = d_balls.size();
+			//				d_constraints.num_planes = d_planes.size();
+			//#ifdef GRAPHICS
+			//				for (Constraint* c : constraints) { // generate buffers for constraint objects
+			//					if (!c->_initialized)
+			//						c->generateBuffers();
+			//				}
+			//				SHOULD_UPDATE_CONSTRAINT = false;
+			//#endif // GRAPHICS
+			//			}
 
 			continue;
 		}
@@ -489,8 +502,8 @@ void Simulation::update_physics() { // repeatedly start next
 
 			for (int j = 0; j < NUM_UPDATE_PER_ROTATION - 1; j++) {
 
-				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK ,0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 				//gpuErrchk(cudaPeekAtLastError());
 			}
 			//cudaEventRecord(event, 0);
@@ -499,9 +512,9 @@ void Simulation::update_physics() { // repeatedly start next
 			//cudaStreamWaitEvent(NULL, event_rotation, 0);
 
 #ifdef ROTATION
-			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass.pos, d_joint);
-			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 
 			//SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
 			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
@@ -517,7 +530,8 @@ void Simulation::update_physics() { // repeatedly start next
 		T += NUM_QUEUED_KERNELS * dt;
 
 		//if (fmod(T, 1. / 100.0) < NUM_QUEUED_KERNELS * dt) {
-		mass.CopyPosVelAccFrom(d_mass, stream[NUM_CUDA_STREAM - 1]);
+		mass.CopyPosVelAccFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
+		//cudaStreamSynchronize(stream[NUM_CUDA_STREAM - 1]);
 		cudaDeviceSynchronize();
 		//#pragma omp parallel for
 		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
@@ -555,6 +569,7 @@ void Simulation::update_physics() { // repeatedly start next
 		Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
 		Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
 		oy = (oy - oy.dot(ox) * ox).normalize();
+
 #ifdef UDP
 		msg_send.T = T;
 		for (auto i = 0; i < 4; i++)
@@ -571,8 +586,6 @@ void Simulation::update_physics() { // repeatedly start next
 			msg_send.orientation[3 + i] = oy[i];
 		}
 
-
-
 		udp_server.msg_send = msg_send;
 		udp_server.flag_should_send = true;
 		// receiving message
@@ -587,6 +600,7 @@ void Simulation::update_physics() { // repeatedly start next
 					msg_rec.jointSpeed[2],
 					msg_rec.jointSpeed[3]);
 			}
+
 			switch (msg_rec.header)
 			{
 			case UDP_HEADER::RESET: // reset
@@ -626,8 +640,17 @@ void Simulation::update_physics() { // repeatedly start next
 			//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
 			//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
 			//printf("\r\r");
-		
+
+
+
+		}
+		//printf("\n");
+	//}
+#endif // UDP
+
+
 #ifdef DEBUG_ENERGY
+		if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
 			double e = energy();
 			//if (abs(e - energy_start) > energy_deviation_max) {
 			//	energy_deviation_max = abs(e - energy_start);
@@ -635,25 +658,21 @@ void Simulation::update_physics() { // repeatedly start next
 			//}
 			//else { printf("%.3f\r", T); }
 			printf("%.3f\t%.3f\n", T, e);
+		}
 
 #endif // DEBUG_ENERGY
-		
-		}
-		//printf("\n");
-	//}
-#endif // UDP
 
 		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
 		{// update joint_speeds_cmd
 
-			joint_speeds_error[i] = joint_speeds_desired[i] - joint_speeds[i];
+			//////////joint_speeds_cmd[i] = joint_speeds_desired[i];
 
+			joint_speeds_error[i] = joint_speeds_desired[i] - joint_speeds[i];
 			joint_speeds_error_integral[i] += joint_speeds_error[i]; // simple proportional control
 			if (joint_speeds_error_integral[i] > max_joint_speed) { joint_speeds_error_integral[i] = max_joint_speed; }
 			if (joint_speeds_error_integral[i] < -max_joint_speed) { joint_speeds_error_integral[i] = -max_joint_speed; }
-
 			joint_speeds_cmd[i] = 0.5 * joint_speeds_error[i] + 0.25 * joint_speeds_error_integral[i];
-
+			
 			if (joint_speeds_cmd[i] > max_joint_speed) { joint_speeds_cmd[i] = max_joint_speed; }
 			if (joint_speeds_cmd[i] < -max_joint_speed) { joint_speeds_cmd[i] = -max_joint_speed; }
 			//joint.anchors.theta[i] = 0.5 * NUM_UPDATE_PER_ROTATION * joint_speeds_cmd[i] * dt;// update joint speed
@@ -661,7 +680,7 @@ void Simulation::update_physics() { // repeatedly start next
 
 		}
 		// update joint speed
-		d_joint.anchors.copyThetaFrom(joint.anchors, stream[0]);
+		d_joint.anchors.copyThetaFrom(joint.anchors, stream[CUDA_MEMORY_STREAM]);
 
 		if (RESET) {
 			cudaDeviceSynchronize();
@@ -701,7 +720,7 @@ void Simulation::update_graphics() {
 		std::cerr << "OpenGL Error " << error << std::endl;
 
 	while (!GRAPHICS_SHOULD_END) {
-		
+
 
 		if (resize_buffers) {
 			resizeBuffers(); // needs to be run from GPU thread
@@ -709,10 +728,8 @@ void Simulation::update_graphics() {
 			update_colors = true;
 			update_indices = true;
 		}
-		
-#ifdef GRAPHICS
 		//if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
-		std::this_thread::sleep_for(std::chrono::microseconds(int(1e6/60)));// TODO fix race condition
+		std::this_thread::sleep_for(std::chrono::microseconds(int(1e6 / 60)));// TODO fix race condition
 
 		//if (T- T_previous_update>1.0/60.1) 
 		{
@@ -722,34 +739,16 @@ void Simulation::update_graphics() {
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
-			if (glfwGetKey(window, GLFW_KEY_W)) {
-				//camera_pos += 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
-				camera_h_offset -= 0.02;//move closer
-			}
-			else if (glfwGetKey(window, GLFW_KEY_S)) {
-				//camera_pos -= 0.02 * (camera_dir - camera_dir.dot(camera_up) * camera_up);
-				camera_h_offset += 0.02;//move away
-			}
-
-			if (glfwGetKey(window, GLFW_KEY_A)) {
-				//camera_dir = AxisAngleRotaion(camera_up, camera_dir, 0.02, Vec3d());
-				//camera_pos = AxisAngleRotaion(camera_up, camera_pos, 0.02, com_pos);
-				camera_yaw -= 0.02;
-			}
-			else if (glfwGetKey(window, GLFW_KEY_D)) {
-				//camera_dir = AxisAngleRotaion(camera_up, camera_dir, -0.02, Vec3d());
-				//camera_pos = AxisAngleRotaion(camera_up, camera_pos, 0.02, com_pos);
-				camera_yaw += 0.02;
-			}
-			else if (glfwGetKey(window, GLFW_KEY_Q)) {
-				camera_up_offset -= 0.02;
-			}
-			else if (glfwGetKey(window, GLFW_KEY_E)) {
-				camera_up_offset += 0.02;
-			}
-
+			double t_lerp = 0.02;
 			double speed_multiplier = 0.1;
-			//double speed_multiplier = 0.0001;
+
+			if (glfwGetKey(window, GLFW_KEY_W)) { camera_h_offset -= 0.05; }//camera moves closer
+			else if (glfwGetKey(window, GLFW_KEY_S)) {camera_h_offset += 0.05;}//camera moves away
+			if (glfwGetKey(window, GLFW_KEY_A)) {camera_yaw -= 0.05;} //camera moves left
+			else if (glfwGetKey(window, GLFW_KEY_D)) {camera_yaw += 0.05;}//camera moves right
+			if (glfwGetKey(window, GLFW_KEY_Q)) {camera_up_offset -= 0.05;} // camera moves down
+			else if (glfwGetKey(window, GLFW_KEY_E)) {camera_up_offset += 0.05;}// camera moves up
+
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				if (joint_speeds_desired[0] < max_joint_speed) { joint_speeds_desired[0] += speed_multiplier; }
 				if (joint_speeds_desired[1] < max_joint_speed) { joint_speeds_desired[1] += speed_multiplier; }
@@ -783,7 +782,7 @@ void Simulation::update_graphics() {
 
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
-			double t_lerp = 0.02;
+			
 
 			Vec3d camera_rotation_anchor = com_pos + (camera_up_offset - com_pos.dot(camera_up)) * camera_up;
 
@@ -800,20 +799,16 @@ void Simulation::update_graphics() {
 
 			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP[0][0]);// update transformation "MVP" uniform
 
-
-			for (Constraint* c : constraints) {
-				c->draw();
-			}
-			
-
-
 			updateBuffers();
 			//updateVertexBuffers();
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 
-			
+
 			draw();
-			
+
+			for (Constraint* c : constraints) {
+				c->draw();
+			}
 
 			// Swap buffers, render screen
 			glfwPollEvents();
@@ -830,7 +825,7 @@ void Simulation::update_graphics() {
 				SHOULD_END = true;
 			}
 		}
-#endif //GRAPHICS
+
 	}
 
 	// end the graphics
@@ -840,10 +835,14 @@ void Simulation::update_graphics() {
 	glfwTerminate(); // Close OpenGL window and terminate GLFW
 	printf("\nwindow closed\n");
 
-	// notify the physics thread
-	std::unique_lock<std::mutex> lck(mutex_running);
-	GRAPHICS_ENDED = true;
-	cv_running.notify_all();
+	{	// notify the physics thread
+		std::unique_lock<std::mutex> lck(mutex_running); // could just use lock_guard
+		GRAPHICS_ENDED = true;
+		lck.unlock();
+		cv_running.notify_all();
+	}
+
+	
 	return;
 
 
@@ -862,8 +861,14 @@ Simulation::~Simulation() {
 	std::cout << "Simulation destructor called." << std::endl;
 
 	if (STARTED) {
-		std::unique_lock<std::mutex> lck(mutex_running);
-		cv_running.wait(lck, [this] {return !RUNNING; });
+		{		
+			//std::unique_lock<std::mutex> lck(mutex_running);
+			//cv_running.wait(lck, [this] {return !RUNNING; }); 
+			while (RUNNING) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));// TODO fix race condition
+			}
+
+		}
 
 		ENDED = true; // TODO maybe race condition
 
@@ -873,16 +878,18 @@ Simulation::~Simulation() {
 		if (thread_physics_update.joinable()) {
 
 			thread_physics_update.join();
+			printf("thread_physics_update joined\n");
 		}
 		if (thread_graphics_update.joinable()) {
 			thread_graphics_update.join();
+			printf("thread_graphics_update joined\n");
 		}
 		else {
 			printf("could not join GPU thread.\n");
 			exit(1);
 		}
 #ifdef UDP
-		udp_server.flag_should_close = true;
+		udp_server.close();
 #endif // UDP
 
 	}
@@ -984,7 +991,7 @@ void Simulation::setViewport(const Vec3d& camera_position, const Vec3d& target_l
 
 	// initialized the camera_horizontal reference direction
 	camera_href_dir = Vec3d(1, 0, 0);
-	if (abs(camera_href_dir.dot(camera_up)) > 0.9) { camera_href_dir = Vec3d(0, 1, 0);}
+	if (abs(camera_href_dir.dot(camera_up)) > 0.9) { camera_href_dir = Vec3d(0, 1, 0); }
 	camera_href_dir = camera_href_dir.decompose(camera_up).normalize();
 
 	if (STARTED) { computeMVP(); }
@@ -1062,8 +1069,8 @@ inline void Simulation::generateBuffers() {
 inline void Simulation::resizeBuffers() {
 	////TODO>>>>>>
 	resizeVBO(&vbo_vertex, mass.num * sizeof(float3), GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	resizeVBO(&vbo_color,  mass.num * sizeof(float3), GL_ARRAY_BUFFER);
-	resizeVBO(&vbo_edge,  spring.num * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
+	resizeVBO(&vbo_color, mass.num * sizeof(float3), GL_ARRAY_BUFFER);
+	resizeVBO(&vbo_edge, spring.num * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
 	resize_buffers = false;
 }
 inline void Simulation::deleteBuffers() {
@@ -1106,35 +1113,35 @@ __global__ void updateColors(float3* __restrict__ gl_ptr, const Vec3d* __restric
 void Simulation::updateBuffers() { // todo: check the kernel call
 	// map OpenGL buffer object for writing from CUDA
 	{ // position update
-		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, 0));
+		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_POS_STREAM]));
 		size_t num_bytes;
 		gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,
 			cuda_resource_vertex));
 		////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-		updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (dptr_vertex, d_mass.pos, mass.num);
+		updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_POS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
 		// unmap buffer object
-		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0));
+		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_POS_STREAM]));
 	}
 	if (update_colors) { // color update
-		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_color, 0));
+		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_COLOR_STREAM]));
 		size_t num_bytes;
 		gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_color, &num_bytes,
 			cuda_resource_color));
 		////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-		updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[1] >> > (dptr_color, d_mass.color, mass.num);
+		updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_COLOR_STREAM] >> > (dptr_color, d_mass.color, mass.num);
 		// unmap buffer object
-		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_color, 0));
+		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_COLOR_STREAM]));
 		update_colors = false;
 	}
 	if (update_indices) { // edge update
-		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, 0));
+		gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_EDGE_STREAM]));
 		size_t num_bytes;
 		gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_edge, &num_bytes,
 			cuda_resource_edge));
 		////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-		updateIndices << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[2] >> > (dptr_edge, d_spring.edge, spring.num);
+		updateIndices << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_EDGE_STREAM] >> > (dptr_edge, d_spring.edge, spring.num);
 		// unmap buffer object
-		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_edge, 0));
+		gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_EDGE_STREAM]));
 		update_indices = false;
 	}
 }
@@ -1146,7 +1153,7 @@ void Simulation::updateVertexBuffers() {
 	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,
 		cuda_resource_vertex));
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[0] >> > (dptr_vertex, d_mass.pos, mass.num);
+	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_POS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
 	// unmap buffer object
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0));
 }

@@ -1,3 +1,7 @@
+#ifndef CUDA_API_PER_THREAD_DEFAULT_STREAM
+#define CUDA_API_PER_THREAD_DEFAULT_STREAM
+#endif // !CUDA_API_PER_THREAD_DEFAULT_STREAM
+
 #ifdef __CUDACC__
 #define CUDA_CALLABLE_MEMBER __host__ __device__
 #else
@@ -22,6 +26,7 @@
 #include "object.h"
 #include "sim.h"
 
+#include<algorithm>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -46,7 +51,7 @@ int main()
 	// for time measurement
 	auto start = std::chrono::steady_clock::now();
 
-	const int num_body = 5;//number of bodies
+	constexpr int num_body = 5;//number of bodies
  	Model bot("..\\src\\data.msgpack"); //defined in sim.h
 
 	const size_t num_mass = bot.vertices.size(); // number of mass
@@ -62,21 +67,23 @@ int main()
 	//sim.dt = 4e-5; // timestep
 	sim.dt = 5e-5; // timestep
 
-	const double radius_poisson = 10*1e-3;
+	constexpr  double radius_poisson = 10*1e-3;
+
 	const double radius_knn = radius_poisson * sqrt(3.0);
-	const double mimimun_radius = radius_poisson * 0.5;
+	constexpr double mimimun_radius = radius_poisson * 0.5;
 
 	//const double m = 5e-4;// mass per vertex
 	const double m = 2.5/(double)num_mass;// mass per vertex
 
-	const double spring_constant =m*2.5e6; //spring constant for silicone leg
-	const double spring_damping = m*1.6e2; // damping for spring
-	//const double spring_damping = 0; // damping for spring
+	const double spring_constant =m*2.25e6; //spring constant for silicone leg
+	const double spring_damping = m*1.5e2; // damping for spring
+	//const double spring_constant = m * 1.5e6; //spring constant for silicone leg
+	//const double spring_damping = m * 1.5e2; // damping for spring
 
 
-	const double scale_high = 2;// scaling factor high
+	constexpr double scale_high = 2;// scaling factor high
 	//const double scale_low = 0.5; // scaling factor low
-	const double scale_probe = 0.1; // scaling factor for the probing points, e.g. coordinates
+	constexpr double scale_probe = 0.05; // scaling factor for the probing points, e.g. coordinates
 
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
@@ -131,7 +138,8 @@ int main()
 	}
 
 	// set the mass value for joint
-#pragma omp parallel for
+//#pragma omp parallel for
+	
 	for (int i = 0; i < bot.Joints.size(); i++)
 	{
 		for each (int j in bot.Joints[i].left)
@@ -143,7 +151,7 @@ int main()
 			mass.m[j] = m;
 		}
 	}
-
+	double joint_mass = bot.Joints[0].right.size()*m;
 
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
@@ -212,15 +220,13 @@ int main()
 	for (int i = bot.idVertices[0]; i < bot.idVertices[1]; i++)
 	{body_mass+= mass.m[i];}// calculate body mass
 	
+
 	double leg_mass = 0;
 	for (int i = bot.idVertices[1]; i < bot.idVertices[2]; i++)
 	{leg_mass += mass.m[i];}// calculate leg mass
 
-	printf("total mass:%.2f kg, body mass:%.2f kg, per leg mass:%.2f kg.\n", total_mass, body_mass, leg_mass);
-
-
-
-
+	printf("total mass:%.2f kg, body mass:%.2f kg, per leg mass:%.2f kg (soft part:%.2f kg)\n", 
+		total_mass, body_mass, leg_mass, leg_mass - joint_mass);
 
 	// set max speed for each joint
 	double max_rpm = 1500;//maximun revolution per minute
@@ -234,11 +240,11 @@ int main()
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.9, 0.8);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 1.0, 0.9);
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 
-	double runtime = 1200;
+	double runtime = 1600;
 	sim.setBreakpoint(runtime);
 
 	sim.start();

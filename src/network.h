@@ -11,7 +11,7 @@
 #include <sstream>
 #include <thread>
 #include <time.h> // for timeout setup
-
+#include <atomic> // for atomic data sharing
 
 // copied from: https://adaickalavan.github.io/programming/udp-socket-programming-in-cpp-and-python/
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
@@ -153,13 +153,15 @@ public:
             throw std::system_error(WSAGetLastError(), std::system_category(), "Bind failed");
     }
 
-    void SetTimeout(int microsecond = 1e5) {
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = microsecond;
-        if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv)) < 0) {
-            perror("Error");
-        }
+    //void SetTimeout(int microsecond = 1e5) {
+    void SetTimeout(int timeout_millisecond = 300) {
+        //struct timeval tv;
+        //tv.tv_sec = 0;
+        //tv.tv_usec = microsecond;
+        //if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv)) < 0) {
+        //    perror("Error");
+        //}
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_millisecond, sizeof(int)); //setting the receive timeout
     }
 
 private:
@@ -167,9 +169,14 @@ private:
 };
 
 class WsaUdpServer {
+private:
+    UdpDataReceive _msg_rec; // struct to be received, private
+    UdpDataSend _msg_send; // struct to be sent, private
+    std::mutex mutex_running;
+    std::condition_variable cv_running;
 public:
-    UdpDataReceive msg_rec; // struct to be received
-    UdpDataSend msg_send; // struct to be sent
+    UdpDataReceive msg_rec; // struct to be received, public
+    UdpDataSend msg_send; // struct to be sent, public
 
     int port_local; // local port
     int port_remote; // remote port
@@ -179,12 +186,15 @@ public:
     bool flag_should_close = false; // flag indicating whether to stop sending/receiving
     bool flag_new_received = false; // flag indicating a new message has received
 
+    bool flag_sender_thread_closed = false; // flag indicating the thread_udp_send is finished
+    bool flag_receiver_thread_closed = false;// flag indicating the thread_udp_receive is finished
 
-    std::thread udp_send_thread; // thread for sending udp
-    std::thread udp_receive_thread; // thread for receiving udp
-
+    std::thread thread_udp_send; // thread for sending udp
+    std::thread thread_udp_receive; // thread for receiving udp
     
     WsaUdpSocket socket;
+
+    WSASession Session;
 
     WsaUdpServer(int port_local = 32001,
         int port_remote = 32000,
@@ -199,10 +209,9 @@ public:
     /* loop for receiving the udp packet */
     void do_receive()
     {
-        WSASession Session;
         while (!flag_should_close) {
-            int n_bytes_received;
             try {
+                int n_bytes_received;
                 sockaddr_in add = socket.RecvFrom(recv_buffer_, sizeof(recv_buffer_), n_bytes_received);
                 if (n_bytes_received > 0) {
                     //for (int i = 0; i < bytes_recvd; i++) {//prints the data in hex format
@@ -213,58 +222,77 @@ public:
                     // Unpack data
                     msgpack::object_handle oh = msgpack::unpack(recv_buffer_, n_bytes_received);
                     msgpack::object obj = oh.get();
-                    obj.convert(msg_rec);
+                    obj.convert(_msg_rec);  // use private value to prevent modification during convert
+                    msg_rec = _msg_rec;
 
                     //TODO notify the simulation thread
                     //TODO use condition variable
                     flag_new_received = true;
-
-                    std::this_thread::sleep_for(std::chrono::microseconds(10));
                 }
             }
             catch (std::system_error) {
                 //todo: ignore it
+                //printf("timed out\n");
             }  
+            std::this_thread::sleep_for(std::chrono::microseconds(1));
         }
+
+        std::lock_guard<std::mutex> lck(mutex_running); // could just use lock_guard
+        flag_receiver_thread_closed = true;
+        cv_running.notify_one();
     }
 
     /* loop for sending the udp packet */
     void do_send()
     {
-        WSASession Session;
         try {
             while (!flag_should_close) {
-                while (!flag_should_send) { std::this_thread::sleep_for(std::chrono::microseconds(100)); }
-                // Pack data into msgpack
-                std::stringstream send_stream;
-                msgpack::pack(send_stream, msg_send);
-                std::string const& data = send_stream.str();
-                socket.SendTo(ip_remote, port_remote, data.c_str(), data.size());
-
-                //TODO use condition variable
-                flag_should_send = false;//reset flag_should_send
+                if (flag_should_send) {
+                    // Pack data into msgpack
+                    _msg_send = msg_send; // copy to private value to prevent modification during pack
+                    std::stringstream send_stream;
+                    msgpack::pack(send_stream, _msg_send);
+                    std::string const& data = send_stream.str();
+                    socket.SendTo(ip_remote, port_remote, data.c_str(), data.size());
+                    //TODO use condition variable
+                    flag_should_send = false;//reset flag_should_send
+                }
+                std::this_thread::sleep_for(std::chrono::microseconds(1));
             }
         }
         catch (std::exception& e) {
             printf("[%s:%d]: %s\n", __FILE__, __LINE__, e.what());
         }
+
+        std::lock_guard<std::mutex> lck(mutex_running); // could just use lock_guard
+        flag_sender_thread_closed = true;
+        cv_running.notify_one();
     }
 
     /*run this to start receiving and sending udp*/
     void run() {
-        udp_receive_thread = std::thread{ &WsaUdpServer::do_receive, this };
-        udp_send_thread = std::thread(&WsaUdpServer::do_send, this);
+        thread_udp_receive = std::thread{ &WsaUdpServer::do_receive, this };
+        thread_udp_send = std::thread(&WsaUdpServer::do_send, this);
+    }
+    void close() {
+        flag_should_close = true;//just to be sure
+
+        std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
+        cv_running.wait(lck, [this] {return flag_sender_thread_closed& flag_receiver_thread_closed; });
+
+        if (thread_udp_send.joinable()) {
+            thread_udp_send.join();
+            //printf("thread_udp_send joined\n");
+        }
+        if (thread_udp_receive.joinable()) {
+            thread_udp_receive.join();
+            //printf("thread_udp_receive joined\n");
+        }
+        printf("UDP server closed\n");
     }
 
-    ~WsaUdpServer() { //TODO automatically close it...
-        flag_should_close = true;//just to be sure
-        if (udp_send_thread.joinable()) {
-            udp_send_thread.join();
-        }
-        if (udp_receive_thread.joinable()) {
-            udp_receive_thread.join();
-        }
-    }
+    //~WsaUdpServer() { //TODO automatically close it...
+    //}
 
 
 private:
@@ -287,8 +315,8 @@ public:
     bool flag_new_received = false; // flag indicating a new message has received
 
     asio::io_context io_context; // asio io context for the socket
-    std::thread udp_send_thread; // thread for sending udp
-    std::thread udp_receive_thread; // thread for receiving udp
+    std::thread thread_udp_send; // thread for sending udp
+    std::thread thread_udp_receive; // thread for receiving udp
 
     /*constructor*/
     AsioUdpServer(
@@ -354,14 +382,14 @@ public:
     }
     /*run this to start receiving and sending udp*/
     void run() {
-        udp_receive_thread = std::thread{ &AsioUdpServer::do_receive, this };
-        udp_send_thread = std::thread(&AsioUdpServer::do_send, this);
+        thread_udp_receive = std::thread{ &AsioUdpServer::do_receive, this };
+        thread_udp_send = std::thread(&AsioUdpServer::do_send, this);
     }
 
     ~AsioUdpServer() { //TODO automatically close it...
         flag_should_close = true;//just to be sure
-        udp_send_thread.join();
-        udp_receive_thread.join();
+        thread_udp_send.join();
+        thread_udp_receive.join();
         io_context.stop();
         socket.close();
     }

@@ -7,7 +7,9 @@ Generally, an object defines the applyForce method that determines whether to ap
 to a mass, for example a normal force pushing the mass out of a constaint object or
 a frictional force.
 */
-
+#ifndef CUDA_API_PER_THREAD_DEFAULT_STREAM
+#define CUDA_API_PER_THREAD_DEFAULT_STREAM
+#endif // !CUDA_API_PER_THREAD_DEFAULT_STREAM
 
 #define GLM_FORCE_PURE
 #include "object.h"

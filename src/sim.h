@@ -5,6 +5,10 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #ifndef TITAN_SIM_H
 #define TITAN_SIM_H
 
+#ifndef CUDA_API_PER_THREAD_DEFAULT_STREAM
+#define CUDA_API_PER_THREAD_DEFAULT_STREAM
+#endif // !CUDA_API_PER_THREAD_DEFAULT_STREAM
+
 #include "object.h"
 #include "vec.h"
 #include "shader.h"
@@ -48,7 +52,12 @@ typedef WsaUdpServer UdpServer;
 #endif
 
 
-constexpr int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
+constexpr const int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
+constexpr const int CUDA_DYNAMICS_STREAM = 0;  // stream to run the dynamics update
+constexpr const int CUDA_MEMORY_STREAM = 1;  // stream to run the memory operations
+constexpr const int CUDA_GRAPHICS_POS_STREAM = 2; // steam to run graphics: position update
+constexpr const int CUDA_GRAPHICS_EDGE_STREAM = 3; // steam to run graphics: edge update
+constexpr const int CUDA_GRAPHICS_COLOR_STREAM = 4; // steam to run graphics: color update
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }

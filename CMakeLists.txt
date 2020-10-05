@@ -1,7 +1,7 @@
 message(STATUS "${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}") # print cmake version
 cmake_minimum_required(VERSION 3.14)
 project(Titan LANGUAGES C CXX CUDA) # use CXX, CUDA by default (since CUDA is a language, don't need cuda_add_executable)
-set(CMAKE_CXX_STANDARD 17) # set C++ standard to C++17
+set(CMAKE_CXX_STANDARD 20) # set C++ standard to C++20
 
 # https://github.com/microsoft/vcpkg/blob/master/docs/users/integration.md#using-an-environment-variable-instead-of-a-command-line-option
 # SET CMAKE_TOOLCHAIN_FILE
@@ -78,6 +78,7 @@ if(USE_UDP)
     message(STATUS "UDP ON")
     add_definitions(-DUDP) # enable this definition to send info via DUP
     target_link_libraries(flexipod PRIVATE asio asio::asio)
+    target_sources(flexipod PRIVATE src/network.h src/network.cpp)
 endif()
 
 set_target_properties(flexipod PROPERTIES 
