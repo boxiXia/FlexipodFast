@@ -56,20 +56,64 @@ string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
 ## setup (python)
 
 #### 0. create a anaconda environment
+```
+conda create --name flexipod python=3.7
+```
+To activate the conda environment:
+```
+conda activate flexipod
+```
+check if pip works properly:
+```
+pip list
+```
+if you see error "module 'brotli' has no attribute 'error'":
+```
+conda install -c anaconda urllib3
+```
 
 #### 1. install dependency
+```
+#install (required)
+conda config --add channels conda-forge
+conda install jupyter numpy matplotlib seaborn scikit-learn Cython joblib numba 
+conda install shapely rtree networkx trimesh point_cloud_utils 
+pip install open3d msgpack
 
-install visualization tools for jupyter notebook:
 ```
-pip install ipywidgets
-jupyter nbextension enable --py widgetsnbextension
-pip install bqplot
+Install pyembree on windows (recommended,optional)
 ```
+#clone pyembree into \Lib\site-packages\ of my environment
+git clone https://github.com/scopatz/pyembree.git
+cd pyembree
+conda install cython numpy
+conda install -c conda-forge embree
+set INCLUDE=%CONDA_PREFIX%\Library\include
+set LIB=%CONDA_PREFIX%\Library\lib
+python setup.py install --prefix=%CONDA_PREFIX%
+```
+
+Install (optional)
+```
+conda install jupyter_contrib_nbextensions autopep8 line_profiler
+# if you haven't done it already:
+jupyter contrib nbextension install --user
+# enable extensions in jupyter notbook
+```
+
+Install shapely on Windows (only for fallback):
+[download whl](https://www.lfd.uci.edu/~gohlke/pythonlibs/#shapely)
+
 
 ## Troubleshoot
 ### (Windows) Simulation window is showing, but I see no robot
 In Nvidia control panel, go to "Manage 3D Settings" -> "program setting". Add the "flexipod.exe" and make sure the setting: "OpenGL rendering GPU" is set to Nvidia GPU
 
+### Cuda failure: no CUDA-capable device is detected
+Modify the [.vs/launch.vs.json](.vs/launch.vs.json): ```CUDA_VISIBLE_DEVICES``` to a smaller number, e.g. 0
+```json
+"env": { "CUDA_VISIBLE_DEVICES": "0" }
+```
 
 ## Reference:
 [1](#ref-1) J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, "Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA," ICRA 2020, May 2020.

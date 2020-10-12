@@ -251,6 +251,7 @@ Simulation::Simulation() {
 	//	d_spring.k,d_spring.rest,d_spring.damping,d_spring.left,d_spring.right,
 	//	d_mass.num,d_spring.num,global_acc, d_constraints,dt);
 
+	//cudaSetDevice(1);
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
 		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 	}
@@ -378,7 +379,6 @@ void Simulation::start() {
 
 	T = 0;
 
-
 	
 	if (dt == 0.0) { // if dt hasn't been set by the user.
 		dt = 0.01; // min delta
@@ -404,14 +404,22 @@ void Simulation::start() {
 	backupState();// backup the robot mass/spring/joint state
 
 #ifdef UDP
-//Todo
 	udp_server.run();
-
 #endif //UDP
 
-
 	thread_physics_update = std::thread(&Simulation::update_physics, this); //TODO: thread
+#ifdef GRAPHICS
 	thread_graphics_update = std::thread(&Simulation::update_graphics, this); //TODO: thread
+#endif// Graphics
+
+	{
+		int device;
+		cudaGetDevice(&device);
+		printf("cuda device: %d\n", device);
+	}
+
+
+
 }
 
 void Simulation::update_physics() { // repeatedly start next
@@ -718,6 +726,15 @@ void Simulation::update_graphics() {
 	GLenum error = glGetError();
 	if (error != GL_NO_ERROR)
 		std::cerr << "OpenGL Error " << error << std::endl;
+
+	{
+		unsigned int pCudaDeviceCount;
+		int pCudaDevices;
+		unsigned int  cudaDeviceCount = 16;
+		cudaGLDeviceList deviceList;
+		cudaGLGetDevices(&pCudaDeviceCount, &pCudaDevices, cudaDeviceCount, cudaGLDeviceListAll);
+		printf("openGL device: %d\n", pCudaDevices);
+	}
 
 	while (!GRAPHICS_SHOULD_END) {
 
@@ -1200,6 +1217,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 void Simulation::createGLFWWindow() {
 	// Initialise GLFW
 	if (!glfwInit()) { throw(std::runtime_error("Failed to initialize GLFW\n")); }
+
 	////// MSAA: multisampling
 	glfwWindowHint(GLFW_SAMPLES, 0); // #samples to use for multisampling. Zero disables multisampling.
 	glEnable(GL_MULTISAMPLE);
@@ -1218,7 +1236,7 @@ void Simulation::createGLFWWindow() {
 	window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
 
 	if (window == NULL) {
-		fprintf(stderr, "Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible.\n");
+		fprintf(stderr, "Failed to open GLFW window. If you have an Intel GPU, they are not 4.6 compatible.\n");
 		getchar();
 		glfwTerminate();
 		exit(1);
