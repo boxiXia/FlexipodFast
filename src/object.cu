@@ -27,9 +27,10 @@ const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 #include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
-__device__ const double K_NORMAL = 800; // normal force coefficient for contact constraints
-__device__ const double DAMPING_NORMAL = 5; // normal damping coefficient per kg mass
-
+//__device__ const double K_NORMAL = 100; // normal force coefficient for contact constraints
+//__device__ const double DAMPING_NORMAL = 3; // normal damping coefficient per kg mass
+__device__ const double K_NORMAL = 100; // normal force coefficient for contact constraints
+__device__ const double DAMPING_NORMAL = 1; // normal damping coefficient per kg mass
 
 //CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Vec3d & center, double radius) {
 //    _center = center;
@@ -279,7 +280,7 @@ void ContactPlane::generateBuffers() {
     std::vector<GLfloat> vertex_data;
     std::vector<GLfloat> color_data;
 
-    GLfloat s = 1.f;// scale
+    GLfloat s = 0.5f;// scale
     for (int i = -CONTACT_PLANE_RADIUS; i < CONTACT_PLANE_RADIUS; i++)
     {
         for (int j = -CONTACT_PLANE_RADIUS; j < CONTACT_PLANE_RADIUS; j++)

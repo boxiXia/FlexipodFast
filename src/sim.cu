@@ -1,4 +1,4 @@
-﻿/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
+/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
 ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,� ICRA 2020, May 2020.
 */
 
@@ -458,7 +458,6 @@ void Simulation::update_physics() { // repeatedly start next
 				//}
 
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
-				
 #ifdef GRAPHICS
 				GRAPHICS_SHOULD_END = true;
 				cv_running.notify_all(); //notify others RUNNING = false
@@ -702,7 +701,14 @@ void Simulation::update_physics() { // repeatedly start next
 #ifdef GRAPHICS
 void Simulation::update_graphics() {
 
+
+
 	createGLFWWindow(); // create a window with  width and height
+
+	int glDeviceId;// todo:this output wrong number, maybe it is a cuda bug...
+	unsigned int glDeviceCount;
+	cudaGLGetDevices(&glDeviceCount, &glDeviceId, 1u, cudaGLDeviceListAll);
+	printf("openGL device: %ud\n", glDeviceId);
 
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
@@ -720,44 +726,34 @@ void Simulation::update_graphics() {
 	//updateBuffers();//Todo might not need?
 	cudaDeviceSynchronize();//sync before while loop
 
-	//double T_previous_update = T;
+	//double T_previous_update = T;	
 
 	// check for errors
 	GLenum error = glGetError();
 	if (error != GL_NO_ERROR)
 		std::cerr << "OpenGL Error " << error << std::endl;
 
-	{
-		unsigned int pCudaDeviceCount;
-		int pCudaDevices;
-		unsigned int  cudaDeviceCount = 16;
-		cudaGLDeviceList deviceList;
-		cudaGLGetDevices(&pCudaDeviceCount, &pCudaDevices, cudaDeviceCount, cudaGLDeviceListAll);
-		printf("openGL device: %d\n", pCudaDevices);
-	}
-
 	while (!GRAPHICS_SHOULD_END) {
 
-
-		if (resize_buffers) {
-			resizeBuffers(); // needs to be run from GPU thread
-			resize_buffers = false;
-			update_colors = true;
-			update_indices = true;
-		}
-		//if (fmod(T, 1. / 60.1) < NUM_QUEUED_KERNELS * dt) {
 		std::this_thread::sleep_for(std::chrono::microseconds(int(1e6 / 60)));// TODO fix race condition
 
 		//if (T- T_previous_update>1.0/60.1) 
 		{
+			if (resize_buffers) {
+				resizeBuffers(); // needs to be run from GPU thread
+				resize_buffers = false;
+				update_colors = true;
+				update_indices = true;
+			}
+
 			//T_previous_update = T;
 
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
-			double t_lerp = 0.02;
-			double speed_multiplier = 0.1;
+			double t_lerp = 0.01;
+			double speed_multiplier = 0.05;
 
 			if (glfwGetKey(window, GLFW_KEY_W)) { camera_h_offset -= 0.05; }//camera moves closer
 			else if (glfwGetKey(window, GLFW_KEY_S)) {camera_h_offset += 0.05;}//camera moves away
@@ -1019,14 +1015,19 @@ void Simulation::moveViewport(const Vec3d& displacement) {
 }
 void Simulation::computeMVP(bool update_view) {
 	// http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#cumulating-transformations--the-modelviewprojection-matrix
+	
+	
+	int iconified = glfwGetWindowAttrib(window, GLFW_ICONIFIED);// whether window is iconified
 	int width, height;
 	glfwGetFramebufferSize(window, &width, &height); // check if window is resized
-	bool is_resized = width != window_width || height != window_height;
-	if (is_resized) { // window is resized
-		glfwGetFramebufferSize(window, &window_width, &window_height);
-		// Projection matrix : 60� Field of View, 4:3 ratio, display range : 0.01 unit <-> 100 units
-		this->Projection = glm::perspective(glm::radians(60.0f), (float)window_width / (float)window_height, 0.01f, 100.0f);
+	bool is_resized = !iconified && (width != framebuffer_width || (height != framebuffer_height));
+	if (is_resized) {// window is resized but not iconified
+		framebuffer_width = width;
+		framebuffer_height = height;
+		// Projection matrix : 70 deg Field of View, width:height ratio, display range : 0.01 unit <-> 100 units
+		this->Projection = glm::perspective(glm::radians(70.0f), (float)framebuffer_width / (float)framebuffer_height, 0.01f, 100.0f);
 	}
+
 	if (update_view) {
 		// Camera matrix
 		this->View = glm::lookAt(
@@ -1214,6 +1215,26 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
 	glViewport(0, 0, width, height);
 }
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{ // ref: https://www.glfw.org/docs/latest/input_guide.html#input_key
+	if (key == GLFW_KEY_F && action == GLFW_PRESS)
+	{
+		const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+		// if window is maximized
+		if (glfwGetWindowAttrib(window, GLFW_MAXIMIZED)) {//restore default window size
+			glfwRestoreWindow(window);
+			glfwSetWindowAttrib(window, GLFW_DECORATED, GL_TRUE);
+			glfwSetWindowMonitor(window, NULL, 50, 50, 0.5*mode->width,0.5*mode->height, GLFW_DONT_CARE);
+		}
+		else { // maximize the window,fullscreen
+			glfwMaximizeWindow(window);
+			glfwSetWindowAttrib(window, GLFW_MAXIMIZED, GL_TRUE);
+			glfwSetWindowAttrib(window, GLFW_DECORATED, GL_FALSE);
+			glfwSetWindowMonitor(window, NULL, 0, 0, mode->width, mode->height, GLFW_DONT_CARE);
+		}
+	}
+}
 void Simulation::createGLFWWindow() {
 	// Initialise GLFW
 	if (!glfwInit()) { throw(std::runtime_error("Failed to initialize GLFW\n")); }
@@ -1228,11 +1249,17 @@ void Simulation::createGLFWWindow() {
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 	glfwSwapInterval(0);// disable vsync
 	//glfwSwapInterval(1);// enable vsync
+	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);//simultaneously cover multiple windows with full screen windows
 
-	//// Open a window and create its OpenGL context
-	//auto monitor = glfwGetPrimaryMonitor();
-	//const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-	//GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "CUDA Physics Simulation", NULL, NULL);
+	auto monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+	glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+	glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+	glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+	//window = glfwCreateWindow(mode->width, mode->height, "CUDA Physics Simulation", glfwGetPrimaryMonitor(), NULL);
+	glfwWindowHint(GLFW_DECORATED, GL_TRUE);//enable/disable close widget, etc, for fake full screen effect
+	//window = glfwCreateWindow(mode->width, mode->height+1, "CUDA Physics Simulation", NULL, NULL);//+1 to fake full screen
 	window = glfwCreateWindow(1920, 1080, "CUDA Physics Simulation", NULL, NULL);
 
 	if (window == NULL) {
@@ -1243,6 +1270,7 @@ void Simulation::createGLFWWindow() {
 	}
 	glfwMakeContextCurrent(window);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+	glfwSetKeyCallback(window, key_callback);
 
 	glEnable(GL_CULL_FACE); // FACE CULLING :https://learnopengl.com/Advanced-OpenGL/Face-culling
 	glCullFace(GL_FRONT);

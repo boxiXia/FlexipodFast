@@ -74,23 +74,25 @@ int main()
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	constexpr double mimimun_radius = radius_poisson * 0.5;
 
-	const double m = 5.5e-4;// mass per vertex
+	const double m = 6e-4;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
-	const double spring_constant =m*2.25e6; //spring constant for silicone leg
-	const double spring_damping = m*1.5e2; // damping for spring
+	const double spring_constant =m*2.4e6; //spring constant for silicone leg
+	//const double spring_damping = m*1.8e2; // damping for spring
+	const double spring_damping = m * 1.5e2; // damping for spring
+
 	//const double spring_constant = m * 1.5e6; //spring constant for silicone leg
 	//const double spring_damping = m * 1.5e2; // damping for spring
 
 
 	constexpr double scale_high = 2;// scaling factor high
 	//const double scale_low = 0.5; // scaling factor low
-	constexpr double scale_probe = 0.05; // scaling factor for the probing points, e.g. coordinates
+	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
 
 	const double spring_constant_rigid = spring_constant* scale_high;//spring constant for rigid spring
 
 	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping; // spring damping for resetable spring
+	const double spring_damping_restable = spring_damping*2.4; // spring damping for resetable spring
 
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
@@ -131,12 +133,12 @@ int main()
 	// set higher mass value for robot body
 	for (int i = bot.idVertices[0]; i < bot.idVertices[1]; i++)
 	{
-		mass.m[i] = m*2; // accounting for addional mass for electornics
+		mass.m[i] = m*1.8; // accounting for addional mass for electornics
 	}
 	// set lower mass value for leg
 	for (int i = bot.idVertices[1]; i < bot.idVertices[1+4]; i++)
 	{
-		mass.m[i] = m * 0.4; // 80% infill,no skin
+		mass.m[i] = m * 0.3; // 80% infill,no skin
 	}
 
 	// set the mass value for joint
@@ -146,14 +148,14 @@ int main()
 	{
 		for each (int j in bot.Joints[i].left)
 		{
-			mass.m[j] = m;
+			mass.m[j] = m*1.4;
 		}	
 		for each (int j in bot.Joints[i].right)
 		{
-			mass.m[j] = m;
+			mass.m[j] = m*1.4;
 		}
 	}
-	double joint_mass = bot.Joints[0].right.size()*m;
+	
 
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
@@ -227,6 +229,12 @@ int main()
 	for (int i = bot.idVertices[1]; i < bot.idVertices[2]; i++)
 	{leg_mass += mass.m[i];}// calculate leg mass
 
+	double joint_mass = 0;
+	for each (int j in bot.Joints[0].right)
+	{joint_mass+=mass.m[j];}// calculate joint mass
+
+
+
 	printf("total mass:%.2f kg, body mass:%.2f kg, per leg mass:%.2f kg (soft part:%.2f kg)\n", 
 		total_mass, body_mass, leg_mass, leg_mass - joint_mass);
 
@@ -235,14 +243,15 @@ int main()
 	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
-	sim.setViewport(Vec3d(0.6, 0, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));
+	//sim.setViewport(Vec3d(0.6, 0, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));
+	sim.setViewport(Vec3d(1.75, -2.5, 1.0), Vec3d(1.75, 0, 0.1), Vec3d(0, 0, 1));
 
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 1.0, 0.9);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.6, 0.6);
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 

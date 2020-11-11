@@ -543,7 +543,7 @@ public:
 	void moveViewport(const Vec3d& displacement);
 
 	GLFWwindow* window;
-	int window_width, window_height; // the width and height of the window
+	int framebuffer_width, framebuffer_height; // the width and height of the framebuffer
 
 	GLuint VertexArrayID; // handle for the vertex array object
 	GLuint programID;  // handle for the shader program
@@ -592,9 +592,7 @@ public:
 	void deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GLenum buffer_type);
 	void resizeVBO(GLuint* vbo, size_t size, GLenum buffer_type = GL_ARRAY_BUFFER);
 	/*-------------------------------------------------------------------------------*/
-
 	inline void draw();
-
 	void createGLFWWindow();
 
 #endif
@@ -603,7 +601,7 @@ public:
 
 #ifdef GRAPHICS
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
 #endif
 
