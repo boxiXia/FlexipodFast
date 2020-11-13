@@ -708,12 +708,12 @@ void Simulation::update_graphics() {
 	int glDeviceId;// todo:this output wrong number, maybe it is a cuda bug...
 	unsigned int glDeviceCount;
 	cudaGLGetDevices(&glDeviceCount, &glDeviceId, 1u, cudaGLDeviceListAll);
-	printf("openGL device: %ud\n", glDeviceId);
+	printf("openGL device: %u\n", glDeviceId);
 
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 	// Create and compile our GLSL program from the shaders
-	programID = LoadShaders(); // ("shaders/StandardShading.vertexshader", "shaders/StandardShading.fragmentshader"); //
+	programID = LoadShaders("shaderVertex.glsl", "shaderFragment.glsl"); //
 	glUseProgram(programID);// Use our shader
 	// Get a handle for our "MVP" uniform
 	computeMVP(); // compute perspective projection matrix
@@ -806,7 +806,7 @@ void Simulation::update_graphics() {
 			Vec3d camera_dir_desired = (com_pos - camera_pos).normalize();
 
 			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			camera_dir = slerp(camera_dir, camera_dir_desired, t_lerp).normalize();
+			camera_dir = slerp(camera_dir, camera_dir_desired, 2.0*t_lerp).normalize();
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 

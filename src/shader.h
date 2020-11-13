@@ -8,6 +8,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <GL/glew.h>// Include GLEW
 #include <GLFW/glfw3.h>// Include GLFW
 
-GLuint LoadShaders();
+GLuint LoadShaders(const char* vertex_file_path, const char* fragment_file_path);
 
 #endif /* shader_hpp */

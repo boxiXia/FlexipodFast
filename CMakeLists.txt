@@ -93,6 +93,17 @@ target_link_libraries(flexipod PRIVATE
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
 
+# copy shaders to binary directory
+add_custom_command(
+        TARGET flexipod POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl
+                ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl)
+add_custom_command(
+        TARGET flexipod POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl
+                ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl)
 
 add_executable(testNetwork
     "src/testNetwork.cu"
@@ -103,3 +114,6 @@ add_executable(testNetwork
 target_link_libraries(testNetwork PRIVATE asio asio::asio)
 target_link_libraries(testNetwork PRIVATE cuda)
 target_include_directories(testNetwork PUBLIC ${CUDA_INCLUDE_DIRS} src)
+
+
+
