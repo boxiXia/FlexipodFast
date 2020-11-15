@@ -239,8 +239,8 @@ int main()
 		total_mass, body_mass, leg_mass, leg_mass - joint_mass);
 
 	// set max speed for each joint
-	double max_rpm = 1500;//maximun revolution per minute
-	sim.max_joint_speed = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
+	double max_rpm = 600;//maximun revolution per minute
+	sim.setMaxJointSpeed(max_rpm / 60. * 2 * M_PI);//max joint speed in rad/s
 
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
 	//sim.setViewport(Vec3d(0.6, 0, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));

@@ -36,8 +36,9 @@ public:
     double jointSpeed[4] = { 0 };
     double acceleration[3] = { 0 };
     double orientation[6] = { 0 };
+    double actuation[4] = { 0 };
     double position[3] = { 0 };
-    MSGPACK_DEFINE(header, T, jointAngle, jointSpeed, acceleration,orientation, position)
+    MSGPACK_DEFINE(header, T, jointAngle, jointSpeed, acceleration,orientation, actuation, position)
 };
 
 class UdpDataReceive {/*the high level command to be received */

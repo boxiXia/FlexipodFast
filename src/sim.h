@@ -137,9 +137,9 @@ struct ModelState {
 	Vec3d com_acc; // (measured) acceleration of the body com (nomial)
 	Vec3d ox; // (measured) normalized ox direction of the body com (nominal)
 	Vec3d oy; // (measured) normalized oy direction of the body com (nominal)
-	double joint_angles[4]; // (measured) joint angle array in rad, initialized in start()
-	double joint_speeds[4]; // (measured) joint speed array in rad/s, initialized in start()
-	double joint_speeds_cmd[4]; // (commended) joint speed array in rad/s, initialized in start()
+	double joint_pos[4]; // (measured) joint angle array in rad, initialized in start()
+	double joint_vel[4]; // (measured) joint speed array in rad/s, initialized in start()
+	double joint_vel_cmd[4]; // (commended) joint speed array in rad/s, initialized in start()
 	// TODO: change the constant "4"
 };
 
@@ -431,15 +431,19 @@ public:
 	void backupState();//backup the robot mass/spring/joint state
 	void resetState();// restore the robot mass/spring/joint state to the backedup state
 
-	double* joint_angles; // (measured) joint angle array in rad, initialized in start()
-	double* joint_speeds; // (measured) joint speed array in rad/s, initialized in start()
-	double* joint_speeds_desired; // (desired) joint speed array in rad/s, initialized in start()
-	double* joint_speeds_cmd; // (commended) joint speed array in rad/s, initialized in start()
-	double* joint_speeds_error; // difference between joint_speeds_cm and joint_speeds
-	double* joint_speeds_error_integral; // integral of the error between joint_speeds_cm and joint_speeds
+	double* joint_pos; // (measured) joint angle array in rad, initialized in start()
+	double* joint_vel; // (measured) joint speed array in rad/s, initialized in start()
+	double* joint_vel_desired; // (desired) joint speed array in rad/s, initialized in start()
+	double* joint_vel_cmd; // (commended) joint speed array in rad/s, initialized in start()
+	double* joint_vel_error; // difference between joint_vel_cm and joint_vel
+	double* joint_pos_error; // integral of the error between joint_vel_cm and joint_vel
 
-	double max_joint_speed = 1e-4; // 
-
+	double max_joint_vel = 1e-4; // [rad/s] maximum joint speed
+	double max_joint_vel_error = 2e-4; // [rad/s] maximum joint speed error
+	double max_joint_pos_error = 4e-4; // [rad/s] maximum joint speed error integral
+	double k_vel = 0.5; // coefficient for PI control
+	double k_pos = 0.25; // coefficient for PD control
+	void setMaxJointSpeed(double max_joint_vel);
 
 	//size_t num_mass=0;// refer to mass.num
 	//size_t num_spring=0;//refer to spring.num

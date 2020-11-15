@@ -268,7 +268,7 @@ void Ball::draw() {
 
 #ifdef GRAPHICS
 
-constexpr int const CONTACT_PLANE_RADIUS = 50;// radius [unit] of the plane
+constexpr int const CONTACT_PLANE_RADIUS = 100;// radius [unit] of the plane
 constexpr int const CONTACT_PLANE_GL_DRAW_SIZE = CONTACT_PLANE_RADIUS* CONTACT_PLANE_RADIUS*4*6;
 // total 50*50*4*6=60000 points 
 
