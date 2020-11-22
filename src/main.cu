@@ -54,7 +54,7 @@ int main()
 	auto start = std::chrono::steady_clock::now();
 
 	constexpr int num_body = 5;//number of bodies
- 	Model bot("..\\src\\data.msgpack"); //defined in sim.h
+	Model bot("..\\src\\data.msgpack"); //defined in sim.h
 
 	const size_t num_mass = bot.vertices.size(); // number of mass
 	const size_t num_spring = bot.edges.size(); // number of spring
@@ -102,7 +102,8 @@ int main()
 	const double spring_constant_probe_self = spring_constant * scale_probe* scale_high; // spring constant for coordiates self springs
 	const double spring_damping_probe = spring_damping * scale_probe * scale_high;
 
-#pragma omp parallel for
+	
+#pragma omp parallel for simd
 	for (int i = 0; i < num_mass; i++)
 	{
 		mass.pos[i]= bot.vertices[i]; // position (Vec3d) [m]
@@ -110,20 +111,18 @@ int main()
 		mass.m[i] = m; // mass [kg]
 		mass.constrain[i] = bot.isSurface[i];// set constraint to true for suface points, and false otherwise
 	}
-#pragma omp parallel for
+#pragma omp parallel for simd
 	for (int i = 0; i < num_spring; i++)
 	{
 		spring.edge[i] = bot.edges[i]; // the (left,right) mass index of the spring
 		spring.damping[i] = spring_damping; // spring constant
 		spring.rest[i] = (mass.pos[spring.edge[i].x] - mass.pos[spring.edge[i].y]).norm(); // spring rest length
-
 		// longer spring will have a smalller influence
 		spring.k[i] = spring_constant * radius_knn / std::max(spring.rest[i], mimimun_radius); // spring constant
 		//spring.k[i] = spring_constant; // spring constant
-
-
 		spring.resetable[i] = false; // set all spring as non-resetable
 	}
+
 
 /*bot.idVertices: body,leg0,leg1,leg2,leg3,anchor0,anchor1,anchor2,anchor3,
 				oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,
@@ -215,6 +214,9 @@ int main()
 	sim.d_joint.init(bot.Joints, false);
 	sim.d_joint.copyFrom(sim.joint);
 
+	
+
+
 
 	double total_mass = 0;
 #pragma omp parallel for shared (total_mass,mass.m) reduction(+:total_mass)
@@ -238,13 +240,22 @@ int main()
 	printf("total mass:%.2f kg, body mass:%.2f kg, per leg mass:%.2f kg (soft part:%.2f kg)\n", 
 		total_mass, body_mass, leg_mass, leg_mass - joint_mass);
 
+
+
+	sim.jc.init(num_joint, true);//init joint controller
+	sim.jc.reset(sim.mass, sim.joint);
+
 	// set max speed for each joint
 	double max_rpm = 600;//maximun revolution per minute
-	sim.setMaxJointSpeed(max_rpm / 60. * 2 * M_PI);//max joint speed in rad/s
+	sim.jc.setMaxJointSpeed(max_rpm / 60. * 2 * M_PI);//max joint speed in rad/s
 
+#ifdef GRAPHICS
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
 	//sim.setViewport(Vec3d(0.6, 0, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));
 	sim.setViewport(Vec3d(1.75, -2.5, 1.0), Vec3d(1.75, 0, 0.1), Vec3d(0, 0, 1));
+#endif // GRAPHICS
+
+
 
 
 	// our plane has a unit normal in the z-direction, with 0 offset.

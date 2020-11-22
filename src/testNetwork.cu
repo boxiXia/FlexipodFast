@@ -33,13 +33,13 @@ public:
 
 			for (int i = 0; i < 4; i++)
 			{
-				msg_send.jointAngle[i] = sin(T + i);
+				msg_send.joint_pos[i] = sin(T + i);
 				msg_send.orientation[i] = cos(T + i);
 			}
 			for (size_t i = 0; i < 3; i++)
 			{
-				msg_send.acceleration[i] = tan(T + i);
-				msg_send.position[i] = sin(T + i + 1);
+				msg_send.com_acc[i] = tan(T + i);
+				msg_send.com_pos[i] = sin(T + i + 1);
 			}
 			s.flag_should_send = true;
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -47,10 +47,10 @@ public:
 
 			if (s.flag_new_received) {//new massg
 				printf("%7.3f \t %3.3f %3.3f %3.3f %3.3f\n", msg_rec.T,
-					msg_rec.jointSpeed[0],
-					msg_rec.jointSpeed[1],
-					msg_rec.jointSpeed[2],
-					msg_rec.jointSpeed[3]);
+					msg_rec.joint_vel_desired[0],
+					msg_rec.joint_vel_desired[1],
+					msg_rec.joint_vel_desired[2],
+					msg_rec.joint_vel_desired[3]);
 				s.flag_new_received = false;
 			}
 

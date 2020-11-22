@@ -49,7 +49,7 @@ struct MY_ALIGN(8) Vec2i {
 		x = 0;
 		y = 0;
 	} // default
-	CUDA_CALLABLE_MEMBER Vec2i(const Vec2i& v) {
+	CUDA_CALLABLE_MEMBER Vec2i(const Vec2i & v) {
 		x = v.x;
 		y = v.y;
 	} // copy constructor
@@ -57,16 +57,16 @@ struct MY_ALIGN(8) Vec2i {
 		this->x = x;
 		this->y = y;
 	} // initialization from x, y values
-	CUDA_CALLABLE_MEMBER Vec2i& operator=(const Vec2i& v) {
+	CUDA_CALLABLE_MEMBER Vec2i& operator=(const Vec2i & v) {
 		x = v.x;
 		y = v.y;
 		return *this;
 	}
-	Vec2i(const std::vector<int>& v) {
+	Vec2i(const std::vector<int> & v) {
 		x = v[0];
 		y = v[1];
 	}
-	Vec2i& operator=(const std::vector<int>& v) {
+	Vec2i& operator=(const std::vector<int> & v) {
 		x = v[0];
 		y = v[1];
 		return *this;
@@ -81,13 +81,13 @@ struct MY_ALIGN(8) Vec3d {
 	double x, y, z;
 	MSGPACK_DEFINE(x, y, z)
 
-	CUDA_CALLABLE_MEMBER Vec3d() {
+		CUDA_CALLABLE_MEMBER Vec3d() {
 		x = 0;
 		y = 0;
 		z = 0;
 	} // default
 
-	CUDA_CALLABLE_MEMBER Vec3d(const Vec3d& v) {
+	CUDA_CALLABLE_MEMBER Vec3d(const Vec3d & v) {
 		x = v.x;
 		y = v.y;
 		z = v.z;
@@ -100,41 +100,41 @@ struct MY_ALIGN(8) Vec3d {
 		this->z = z;
 	} // initialization from x, y, and z values
 
-	CUDA_CALLABLE_MEMBER Vec3d& operator=(const Vec3d& v) {
+	CUDA_CALLABLE_MEMBER Vec3d& operator=(const Vec3d & v) {
 		x = v.x;
 		y = v.y;
 		z = v.z;
 		return *this;
 	}
 
-	Vec3d(const std::vector<double>& v) {
+	Vec3d(const std::vector<double> & v) {
 		x = v[0];
 		y = v[1];
 		z = v[2];
 	}
 
-	Vec3d& operator=(const std::vector<double>& v) {
+	Vec3d& operator=(const std::vector<double> & v) {
 		x = v[0];
 		y = v[1];
 		z = v[2];
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec3d& operator+=(const Vec3d& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator+=(const Vec3d & v) {
 		x += v.x;
 		y += v.y;
 		z += v.z;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec3d& operator-=(const Vec3d& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator-=(const Vec3d & v) {
 		x -= v.x;
 		y -= v.y;
 		z -= v.z;
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec3d& operator*=(const Vec3d& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator*=(const Vec3d & v) {
 		x *= v.x;
 		y *= v.y;
 		z *= v.z;
@@ -148,7 +148,7 @@ struct MY_ALIGN(8) Vec3d {
 		return *this;
 	}
 
-	inline CUDA_CALLABLE_MEMBER Vec3d& operator/=(const Vec3d& v) {
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator/=(const Vec3d & v) {
 		x /= v.x;
 		y /= v.y;
 		z /= v.z;
@@ -167,7 +167,7 @@ struct MY_ALIGN(8) Vec3d {
 	}
 
 	CUDA_CALLABLE_MEMBER double& operator [] (int n) {
-		switch (n){
+		switch (n) {
 		case 0:
 			return x;
 		case 1:
@@ -181,7 +181,7 @@ struct MY_ALIGN(8) Vec3d {
 	}
 
 	CUDA_CALLABLE_MEMBER const double& operator [] (int n) const {
-		switch (n){
+		switch (n) {
 		case 0:
 			return x;
 		case 1:
@@ -198,32 +198,32 @@ struct MY_ALIGN(8) Vec3d {
 
 	//}
 
-	inline CUDA_CALLABLE_MEMBER friend Vec3d operator+(const Vec3d& v1, const Vec3d& v2) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator+(const Vec3d & v1, const Vec3d & v2) {
 		return Vec3d(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec3d operator-(const Vec3d& v1, const Vec3d& v2) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator-(const Vec3d & v1, const Vec3d & v2) {
 		return Vec3d(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const double x, const Vec3d& v) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const double x, const Vec3d & v) {
 		return Vec3d(v.x * x, v.y * x, v.z * x);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec3d& v, const double x) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec3d & v, const double x) {
 		return x * v;
 	} // double times Vec3d
-	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec3d& v1, const Vec3d& v2) {
-		return (v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2]);
+	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec3d & v1, const Vec3d & v2) {
+		return (v1.x == v2.x && v1.y == v2.y && v1.z == v2.z);
 	}
-	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec3d& v1, const Vec3d& v2) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec3d & v1, const Vec3d & v2) {
 		return Vec3d(v1.x * v2.x, v1.y * v2.y, v1.z * v2.z);
 	} // Multiplies two Vecs (elementwise)
-	inline CUDA_CALLABLE_MEMBER friend Vec3d operator/(const Vec3d& v, const double x) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator/(const Vec3d & v, const double x) {
 		return Vec3d(v.x / x, v.y / x, v.z / x);
 	} //  vector over double
-	inline CUDA_CALLABLE_MEMBER friend Vec3d operator/(const Vec3d& v1, const Vec3d& v2) {
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator/(const Vec3d & v1, const Vec3d & v2) {
 		return Vec3d(v1.x / v2.x, v1.y / v2.y, v1.z / v2.z);
 	} // divides two Vecs (elementwise)
 
-	friend std::ostream& operator << (std::ostream& strm, const Vec3d& v) {
+	friend std::ostream& operator << (std::ostream & strm, const Vec3d & v) {
 		return strm << "(" << v[0] << ", " << v[1] << ", " << v[2] << ")";
 	} // print
 
@@ -239,7 +239,7 @@ struct MY_ALIGN(8) Vec3d {
 #ifdef __CUDA_ARCH__ 
 		return norm3d(x, y, z);
 #else
-		return sqrt(x*x + y*y + z*z);
+		return sqrt(x * x + y * y + z * z);
 #endif
 	} // gives vector norm
 
@@ -259,9 +259,8 @@ struct MY_ALIGN(8) Vec3d {
 #else
 		return x + y + z;
 #endif
-		
-	} // sums all components of the vector
 
+	} // sums all components of the vector
 
 	inline CUDA_CALLABLE_MEMBER void setZero() {
 		x = 0;
@@ -270,29 +269,29 @@ struct MY_ALIGN(8) Vec3d {
 	}
 
 	// return a projection on to unit vector d
-	inline CUDA_CALLABLE_MEMBER Vec3d project(const Vec3d& d) {
+	inline CUDA_CALLABLE_MEMBER Vec3d project(const Vec3d & d) {
 		return this->dot(d) * d;
 	}
 
 	// return a orthogonal decomposition of this with respect to unit vector d
-	inline CUDA_CALLABLE_MEMBER Vec3d decompose(const Vec3d& d) {
+	inline CUDA_CALLABLE_MEMBER Vec3d decompose(const Vec3d & d) {
 		return *this - this->dot(d) * d;
 	}
 
-	inline CUDA_CALLABLE_MEMBER double dot(const Vec3d& b) { // dot product
+	inline CUDA_CALLABLE_MEMBER double dot(const Vec3d & b) { // dot product
 		return x * b.x + y * b.y + z * b.z; // preferably use this version
 	}
 
-	inline friend CUDA_CALLABLE_MEMBER double dot(const Vec3d& a, const Vec3d& b){
+	inline friend CUDA_CALLABLE_MEMBER double dot(const Vec3d & a, const Vec3d & b) {
 		return a.x * b.x + a.y * b.y + a.z * b.z;
 	}// dot product
 
-	inline friend CUDA_CALLABLE_MEMBER Vec3d cross(const Vec3d& v1, const Vec3d& v2) {
+	inline friend CUDA_CALLABLE_MEMBER Vec3d cross(const Vec3d & v1, const Vec3d & v2) {
 		return Vec3d(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
 	}
 
 
-	inline CUDA_DEVICE void Vec3d::atomicVecAdd(const Vec3d& v) {
+	inline CUDA_DEVICE void Vec3d::atomicVecAdd(const Vec3d & v) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
 		atomicAdd(&x, v.x);
 		atomicAdd(&y, v.y);
@@ -302,10 +301,10 @@ struct MY_ALIGN(8) Vec3d {
 
 	// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
 	// rotate a vector {v_} with rotation axis {k} anchored at point {offset} by {theta} [rad]
-	friend CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d& k, const Vec3d& v_, const double& theta, const Vec3d& offset);
+	friend CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d & k, const Vec3d & v_, const double& theta, const Vec3d & offset);
 
 	/* rotate a vector {v_} with rotation axis {axis_end-axis_start} by {theta} [rad] */
-	friend CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d& axis_start, const Vec3d& axis_end, const Vec3d& v_, const double& theta);
+	friend CUDA_CALLABLE_MEMBER Vec3d AxisAngleRotaion(const Vec3d & axis_start, const Vec3d & axis_end, const Vec3d & v_, const double& theta);
 
 	inline friend CUDA_CALLABLE_MEMBER double angleBetween(Vec3d p0, Vec3d p1) {
 		return acos(p0.dot(p1) / (p0.norm() * p1.norm()));
@@ -322,6 +321,315 @@ struct MY_ALIGN(8) Vec3d {
 
 
 
+struct MY_ALIGN(8) Mat3d {
+	double m00, m01, m02, m10, m11, m12, m20, m21, m22;
+	MSGPACK_DEFINE(m00, m01, m02, m10, m11, m12, m20, m21, m22);
 
+	// defualt constructor
+	CUDA_CALLABLE_MEMBER Mat3d() {}
+
+	CUDA_CALLABLE_MEMBER Mat3d(const Mat3d & o) {
+		m00 = o.m00; m01 = o.m01; m02 = o.m02;
+		m10 = o.m10; m11 = o.m11; m12 = o.m12;
+		m20 = o.m20; m21 = o.m21; m22 = o.m22;
+	} // copy constructor
+
+	CUDA_CALLABLE_MEMBER Mat3d(
+		const double& m00, const double& m01, const double& m02,
+		const double& m10, const double& m11, const double& m12,
+		const double& m20, const double& m21, const double& m22) {
+		this->m00 = m00; this->m01 = m01; this->m02 = m02;
+		this->m10 = m10; this->m11 = m11; this->m12 = m12;
+		this->m20 = m20; this->m21 = m21; this->m22 = m22;
+	} // initialization from values
+
+	CUDA_CALLABLE_MEMBER Mat3d(const Vec3d & v0, const Vec3d & v1, const Vec3d & v2, bool row = true) {
+		if (row) {// construct from row vector 
+			m00 = v0.x; m01 = v0.y; m02 = v0.z;
+			m10 = v1.x; m11 = v1.y; m12 = v1.z;
+			m20 = v2.x; m21 = v2.y; m22 = v2.z;
+		}
+		else { // construct from column vector
+			m00 = v0.x; m01 = v1.x; m02 = v2.x;
+			m10 = v0.y; m11 = v1.y; m12 = v2.y;
+			m20 = v0.z; m21 = v1.z; m22 = v2.z;
+		}
+
+	} // copy constructor fro Vector, rowwise
+
+	CUDA_CALLABLE_MEMBER Mat3d& operator=(const Mat3d & o) {
+		m00 = o.m00; m01 = o.m01; m02 = o.m02;
+		m10 = o.m10; m11 = o.m11; m12 = o.m12;
+		m20 = o.m20; m21 = o.m21; m22 = o.m22;
+		return *this;
+	}
+
+	//inplaceelement-wise +
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator+=(const Mat3d & o) {
+		m00 += o.m00; m01 += o.m01; m02 += o.m02;
+		m10 += o.m10; m11 += o.m11; m12 += o.m12;
+		m20 += o.m20; m21 += o.m21; m22 += o.m22;
+		return *this;
+	}
+	//inplaceelement-wise +
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator+=(const double& d) {
+		m00 += d; m01 += d; m02 += d;
+		m10 += d; m11 += d; m12 += d;
+		m20 += d; m21 += d; m22 += d;
+		return *this;
+	}
+
+	//inplaceelement-wise -
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator-=(const Mat3d & o) {
+		m00 -= o.m00; m01 -= o.m01; m02 -= o.m02;
+		m10 -= o.m10; m11 -= o.m11; m12 -= o.m12;
+		m20 -= o.m20; m21 -= o.m21; m22 -= o.m22;
+		return *this;
+	}
+	//inplaceelement-wise -
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator-=(const double& d) {
+		m00 -= d; m01 -= d; m02 -= d;
+		m10 -= d; m11 -= d; m12 -= d;
+		m20 -= d; m21 -= d; m22 -= d;
+		return *this;
+	}
+
+	//inplaceelement-wise *
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator*=(const Mat3d & o) {
+		m00 *= o.m00; m01 *= o.m01; m02 *= o.m02;
+		m10 *= o.m10; m11 *= o.m11; m12 *= o.m12;
+		m20 *= o.m20; m21 *= o.m21; m22 *= o.m22;
+		return *this;
+	}
+	//inplaceelement-wise *
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator*=(const double& d) {
+		m00 *= d; m01 *= d; m02 *= d;
+		m10 *= d; m11 *= d; m12 *= d;
+		m20 *= d; m21 *= d; m22 *= d;
+		return *this;
+	}
+
+	//inplaceelement-wise /
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator/=(const Mat3d & o) {
+		m00 /= o.m00; m01 /= o.m01; m02 /= o.m02;
+		m10 /= o.m10; m11 /= o.m11; m12 /= o.m12;
+		m20 /= o.m20; m21 /= o.m21; m22 /= o.m22;
+		return *this;
+	}
+	//inplaceelement-wise /
+	inline CUDA_CALLABLE_MEMBER Mat3d& operator/=(const double& d) {
+		m00 /= d; m01 /= d; m02 /= d;
+		m10 /= d; m11 /= d; m12 /= d;
+		m20 /= d; m21 /= d; m22 /= d;
+		return *this;
+	}
+
+	//element-wise negetive
+	inline CUDA_CALLABLE_MEMBER Mat3d operator-() const {
+		return Mat3d(-m00, -m01, -m02, -m10, -m11, -m12, -m20, -m21, -m22);
+	}
+
+	//element-wise +
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator+(const Mat3d & a, const Mat3d & b) {
+		return Mat3d(a) += b;
+	}
+	//element-wise +
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator+(const Mat3d & a, const double& b) {
+		return Mat3d(a) += b;
+	}
+	//element-wise +
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator+(const double& a, const Mat3d & b) {
+		return Mat3d(b) += a;
+	}
+
+	//element-wise -
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator-(const Mat3d & a, const Mat3d & b) {
+		return Mat3d(a) -= b;
+	}
+	//element-wise -
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator-(const Mat3d & a, const double& b) {
+		return Mat3d(a) -= b;
+	}
+	//element-wise -
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator-(const double& a, const Mat3d & b) {
+		return -b + a;
+	}
+
+	//element-wise *
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator*(const Mat3d & a, const Mat3d & b) {
+		return Mat3d(a) *= b;
+	}
+	//element-wise *
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator*(const Mat3d & a, const double& b) {
+		return Mat3d(a) *= b;
+	}
+	//element-wise *
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator*(const double& a, const Mat3d & b) {
+		return Mat3d(b) *= a;
+	}
+
+	//element-wise /
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator/(const Mat3d & a, const Mat3d & b) {
+		return Mat3d(a) /= b;
+	}
+	//element-wise /
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator/(const Mat3d & a, const double& b) {
+		return Mat3d(a) /= b;
+	}
+	//element-wise /
+	inline CUDA_CALLABLE_MEMBER friend Mat3d operator/(const double& a, const Mat3d & b) {
+		return Mat3d(a / b.m00, a / b.m01, a / b.m02, a / b.m10, a / b.m11, a / b.m12, a / b.m20, a / b.m21, a / b.m22);
+	}
+	
+	// equlity 
+	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Mat3d & a, const Mat3d & b) {
+		return	(a.m00 == b.m00) && (a.m01 == b.m01) && (a.m02 == b.m02) &&
+			(a.m10 == b.m10) && (a.m11 == b.m11) && (a.m12 == b.m12) &&
+			(a.m20 == b.m20) && (a.m21 == b.m21) && (a.m22 == b.m22);
+	}
+
+	friend std::ostream& operator << (std::ostream & strm, const Mat3d & a) {
+		return strm << "(" << a.m00 << ", " << a.m01 << ", " << a.m02 << ")" << "\n"
+			<< "(" << a.m10 << ", " << a.m11 << ", " << a.m12 << ")" << "\n"
+			<< "(" << a.m20 << ", " << a.m21 << ", " << a.m22 << ")" << "\n";
+	} // print
+
+	CUDA_CALLABLE_MEMBER  void print() const {
+		printf("(%2f, %2f, %2f)\n", m00, m01, m02);
+		printf("(%2f, %2f, %2f)\n", m10, m11, m12);
+		printf("(%2f, %2f, %2f)\n", m20, m21, m22);
+	}
+
+	// matrix transpose
+	inline CUDA_CALLABLE_MEMBER  Mat3d transpose() const {
+		return Mat3d(
+			m00, m10, m20,
+			m01, m11, m21,
+			m02, m12, m22);
+	}
+
+	inline CUDA_CALLABLE_MEMBER Mat3d dot(const Mat3d & b) const { // matrix do product (multiplication)
+		return Mat3d(
+			m00 * b.m00 + m01 * b.m10 + m02 * b.m20, m00 * b.m01 + m01 * b.m11 + m02 * b.m21, m00 * b.m02 + m01 * b.m12 + m02 * b.m22,
+			m10 * b.m00 + m11 * b.m10 + m12 * b.m20, m10 * b.m01 + m11 * b.m11 + m12 * b.m21, m10 * b.m02 + m11 * b.m12 + m12 * b.m22,
+			m20 * b.m00 + m21 * b.m10 + m22 * b.m20, m20 * b.m01 + m21 * b.m11 + m22 * b.m21, m20 * b.m02 + m21 * b.m12 + m22 * b.m22
+		);
+		// preferably use this version
+	}
+
+	inline CUDA_CALLABLE_MEMBER Vec3d dot(const Vec3d & v) const { // matrix do product with a vector
+		return Vec3d(m00 * v.x + m01 * v.y + m02 * v.z, m10 * v.x + m11 * v.y + m12 * v.z, m20 * v.x + m21 * v.y + m22 * v.z);
+		// preferably use this version
+	}
+
+	inline friend CUDA_CALLABLE_MEMBER Mat3d dot(const Mat3d & a, const Mat3d & b) { // matrix do product (multiplication)
+		return Mat3d(
+			a.m00 * b.m00 + a.m01 * b.m10 + a.m02 * b.m20, a.m00 * b.m01 + a.m01 * b.m11 + a.m02 * b.m21, a.m00 * b.m02 + a.m01 * b.m12 + a.m02 * b.m22,
+			a.m10 * b.m00 + a.m11 * b.m10 + a.m12 * b.m20, a.m10 * b.m01 + a.m11 * b.m11 + a.m12 * b.m21, a.m10 * b.m02 + a.m11 * b.m12 + a.m12 * b.m22,
+			a.m20 * b.m00 + a.m21 * b.m10 + a.m22 * b.m20, a.m20 * b.m01 + a.m21 * b.m11 + a.m22 * b.m21, a.m20 * b.m02 + a.m21 * b.m12 + a.m22 * b.m22
+		);
+	}
+
+	inline friend CUDA_CALLABLE_MEMBER Vec3d dot(const Mat3d & a, const Vec3d & v) { // matrix do product with a vector
+		return Vec3d(a.m00 * v.x + a.m01 * v.y + a.m02 * v.z, a.m10 * v.x + a.m11 * v.y + a.m12 * v.z, a.m20 * v.x + a.m21 * v.y + a.m22 * v.z);
+	}
+
+	inline CUDA_CALLABLE_MEMBER double det() const { // matrix determinant
+		return m00 * (m11 * m22 - m12 * m21) - m01 * (m10 * m22 - m12 * m20) + m02 * (m10 * m21 - m11 * m20);
+	}
+
+	CUDA_CALLABLE_MEMBER Mat3d inv() const { // matrix inverse, must check det()!=0 before using this function
+		double d = det();
+		return (1. / d) * Mat3d(
+			(m11 * m22 - m12 * m21), -(m01 * m22 - m02 * m21), (m01 * m12 - m02 * m11),
+			-(m10 * m22 - m12 * m20), (m00 * m22 - m02 * m20), -(m00 * m12 - m02 * m10),
+			(m10 * m21 - m11 * m20), -(m00 * m21 - m01 * m20), (m00 * m11 - m01 * m10));
+	}
+
+
+	inline CUDA_CALLABLE_MEMBER const double trace() const { // matrix determinant
+		return m00 + m11 + m22;
+		// preferably use this version
+	}
+
+	inline CUDA_CALLABLE_MEMBER Vec3d const getRow(const int& k) const { // get row by index
+		switch (k)
+		{
+		case 0:
+			return Vec3d(m00, m01, m02);
+		case 1:
+			return Vec3d(m10, m11, m12);
+		case 2:
+			return Vec3d(m20, m21, m22);
+		default:
+			printf("C FILE %s LINE %d: row index out of range!\n", __FILE__, __LINE__);
+			exit(-1);
+		}
+		// preferably use this version
+	}
+
+	inline CUDA_CALLABLE_MEMBER Vec3d getColumn(const int& k) const { // get column by index
+		switch (k)
+		{
+		case 0:
+			return Vec3d(m00, m10, m20);
+		case 1:
+			return Vec3d(m01, m11, m21);
+		case 2:
+			return Vec3d(m02, m12, m22);
+		default:
+			printf("C FILE %s LINE %d: column index out of range!\n", __FILE__, __LINE__);
+			exit(-1);
+		}
+		// preferably use this version
+	}
+
+	static CUDA_CALLABLE_MEMBER Mat3d identity() {
+		return Mat3d(1., 0., 0., 0., 1., 0., 0., 0., 1.);
+	}
+
+	//convert a rotation vector to rotation matrix
+	static CUDA_CALLABLE_MEMBER Mat3d fromRotVec(Vec3d v) {
+		// ref: https://en.wikipedia.org/wiki/Rotation_matrix#Rotation_matrix_from_axis_and_angle
+		double t = v.norm(); // angle theta [rad]
+		double x = v.x / t;
+		double y = v.y / t;
+		double z = v.z / t;
+		double c = cos(t);
+		double s = sin(t);
+		double a = 1 - c;
+		return Mat3d(
+			c + x * x * a, x * y * a - z * s, x * z * a + y * s,
+			y * x * a + z * s, c + y * y * a, y * z * a - x * s,
+			z * x * a - y * s, z * y * a + x * s, c + z * z * a
+		);
+	}
+
+	/// <summary>
+	/// Estimate world space angular velocity from two rotation matrix
+	/// assuming uniform rotaiton and small dt
+	/// </summary>
+	/// <param name="r0">:initial rotation matrix</param>
+	/// <param name="r1">:final rotation matrix</param>
+	/// <param name="dt">:delta time [s] between inital and final rotation</param>
+	/// <param name="body_space">:boolean, whether to return angular velocity in body space</param>
+	/// <returns>
+	/// angular velocity [rad/s] in body space or in world space 
+	/// </returns>
+	static CUDA_CALLABLE_MEMBER Vec3d angularVelocityFromRotation(Mat3d & r0, Mat3d & r1, const double& dt, bool body_space = false) {
+		/// ref: https://math.stackexchange.com/questions/668866/how-do-you-find-angular-velocity-given-a-pair-of-3x3-rotation-matrices
+		Mat3d a = r1.dot(r0.transpose());
+		double t = acos((a.trace() - 1.) / 2.);
+		Mat3d w = 0.5 / dt * t / sin(t) * (a - a.transpose());// skew symetric angular velocity matrix
+		Vec3d av(w.m21, w.m02, w.m10); // angular velocity
+		return body_space ? r1.transpose().dot(av) : av; // transform av to body space if body_space==true
+	}
+
+	friend void assertClose(Mat3d & a, Mat3d & b, double eps = 1e-15) {
+		assert(abs((a - b).det()) < eps);
+	}
+
+
+};
 
 #endif

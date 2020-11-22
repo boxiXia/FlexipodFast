@@ -59,6 +59,10 @@ constexpr const int CUDA_GRAPHICS_POS_STREAM = 2; // steam to run graphics: posi
 constexpr const int CUDA_GRAPHICS_EDGE_STREAM = 3; // steam to run graphics: edge update
 constexpr const int CUDA_GRAPHICS_COLOR_STREAM = 4; // steam to run graphics: color update
 
+constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
+
+
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -118,7 +122,7 @@ public:
 	std::vector<std::vector<double> > colors;// the mass xyzs
 	std::vector<StdJoint> Joints;// the joints
 	MSGPACK_DEFINE(vertices, edges, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
-	Model() {}
+		Model() {}
 	Model(const char* file_path) {
 		// get the msgpack robot model
 		// Deserialize the serialized data
@@ -132,16 +136,7 @@ public:
 	}
 };
 
-struct ModelState {
-	Vec3d com_pos; // (measured) position of the body com (nominal)
-	Vec3d com_acc; // (measured) acceleration of the body com (nomial)
-	Vec3d ox; // (measured) normalized ox direction of the body com (nominal)
-	Vec3d oy; // (measured) normalized oy direction of the body com (nominal)
-	double joint_pos[4]; // (measured) joint angle array in rad, initialized in start()
-	double joint_vel[4]; // (measured) joint speed array in rad/s, initialized in start()
-	double joint_vel_cmd[4]; // (commended) joint speed array in rad/s, initialized in start()
-	// TODO: change the constant "4"
-};
+
 
 struct MASS {
 	double* m = nullptr;
@@ -187,8 +182,6 @@ struct MASS {
 			cudaMemset(vel, 0, num * sizeof(Vec3d));
 			cudaMemset(acc, 0, num * sizeof(Vec3d));
 		}
-
-
 	}
 
 	void copyFrom(const MASS& other, cudaStream_t stream = (cudaStream_t)0) {
@@ -378,8 +371,8 @@ struct RotPoints { // the points that belongs to the rotational joints
 };
 
 struct JOINT {
-	RotPoints points;
-	RotAnchors anchors;
+	RotPoints points; // mass points connected on the joints
+	RotAnchors anchors; // anchor points of the rotation axis of the joints
 
 	JOINT() {};
 	JOINT(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); };
@@ -402,6 +395,193 @@ struct JOINT {
 	inline int size() { return anchors.num; }
 };
 
+
+struct JointControl {
+
+	double* joint_pos; // (measured) joint angle array in rad
+	double* joint_vel; // (measured) joint speed array in rad/s
+	double* joint_vel_desired; // (desired) joint speed array in rad/s
+	double* joint_vel_error; // difference between joint_vel_cm and joint_vel
+	double* joint_pos_error; // integral of the error between joint_vel_cm and joint_vel
+	double* joint_vel_cmd; // (commended) joint speed array in rad/s
+
+	double* max_joint_vel; // [rad/s] maximum joint speed
+	double* max_joint_vel_error; // [rad/s] maximum joint speed error
+	double* max_joint_pos_error; // [rad/s] maximum joint position error
+	double k_vel = 0.5; // coefficient for speed control
+	double k_pos = 0.2; // coefficient for position control
+
+	int num = 0;
+	inline int size() { return num; }
+	JointControl() {}
+	JointControl(int num, bool on_host) {
+		init(num, on_host);
+	}
+	/* initialize and copy the state from other SPRING object. must keep the second argument*/
+	JointControl(JointControl other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		init(other.num, on_host);
+		copyFrom(other, stream);
+	}
+
+	void init(int num, bool on_host = true) { // initialize
+		cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function
+		allocateMemory((void**)&joint_pos, num * sizeof(double));//initialize joint angle (measured) array 
+		allocateMemory((void**)&joint_vel, num * sizeof(double));//initialize joint speed (measured) array 
+		allocateMemory((void**)&joint_vel_desired, num * sizeof(double));//initialize joint speed (desired) array 
+		allocateMemory((void**)&joint_vel_error, num * sizeof(double));//initialize joint speed error array 
+		allocateMemory((void**)&joint_pos_error, num * sizeof(double));//initialize joint speed error integral array 
+		allocateMemory((void**)&joint_vel_cmd, num * sizeof(double));//initialize joint speed (commended) array 
+
+		allocateMemory((void**)&max_joint_vel, num * sizeof(double));//initialize maximum joint speed array 
+		allocateMemory((void**)&max_joint_vel_error, num * sizeof(double));//initialize maximum joint speed error array 
+		allocateMemory((void**)&max_joint_pos_error, num * sizeof(double));//initialize maximum joint position error array 
+
+		
+		//joint_vel_desired[0] = 0.5 * M_PI;
+		//joint_vel_desired[1] = 0.5 * M_PI;
+		//joint_vel_desired[2] = -0.5 * M_PI;
+		//joint_vel_desired[3] = -0.5 * M_PI;
+
+
+		gpuErrchk(cudaPeekAtLastError());
+		this->num = num;
+	}
+
+	void copyFrom(const JointControl& other, cudaStream_t stream = (cudaStream_t)0) {
+		cudaMemcpyAsync(joint_pos, other.joint_pos, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(joint_vel, other.joint_vel, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(joint_vel_desired, other.joint_vel_desired, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(joint_vel_error, other.joint_vel_error, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(joint_pos_error, other.joint_pos_error, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(joint_vel_cmd, other.joint_vel_cmd, num * sizeof(double), cudaMemcpyDefault, stream);
+
+		cudaMemcpyAsync(max_joint_vel, other.max_joint_vel, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(max_joint_vel_error, other.max_joint_vel_error, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(max_joint_pos_error, other.max_joint_pos_error, num * sizeof(double), cudaMemcpyDefault, stream);
+
+		gpuErrchk(cudaPeekAtLastError());
+		// todo make max_joint_vel etc a vector
+	}
+
+	void setMaxJointSpeed(double max_joint_vel) {
+		for (size_t i = 0; i < num; i++)
+		{
+			this->max_joint_vel[i] = max_joint_vel;
+			max_joint_vel_error[i] = max_joint_vel / k_vel;
+			max_joint_pos_error[i] = max_joint_vel / k_pos;
+		}
+
+	}
+	void reset(MASS& mass, JOINT& joint) {
+		for (int i = 0; i < num; i++) {//TODO change this...
+			joint_vel_cmd[i] = 0.;
+			joint_vel[i] = 0.;
+			/*joint_pos[i] = 0.;*/
+			joint_vel_desired[i] = 0.;
+			joint_vel_error[i] = 0.;
+			joint_pos_error[i] = 0.;
+
+			Vec2i anchor_edge = joint.anchors.edge[i];
+			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
+			Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+			Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			joint_pos[i] = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+
+		}
+
+
+
+	}
+	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
+	void update(MASS& mass, JOINT& joint, double ndt) {
+		////#pragma omp parallel for simd
+		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
+		{
+			Vec2i anchor_edge = joint.anchors.edge[i];
+			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
+			Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+			Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+
+			// assuming delta_angle is within (-pi,pi)
+			double delta_angle = angle - joint_pos[i];
+			if (delta_angle > M_PI) {
+				joint_vel[i] = (delta_angle - 2 * M_PI) / ndt;
+			}
+			else if (delta_angle > -M_PI) {
+				joint_vel[i] = delta_angle / ndt;
+			}
+			else {// delta_angle <= M_PI
+				joint_vel[i] = (delta_angle + 2 * M_PI) / ndt;
+			}
+			joint_pos[i] = angle;
+
+			// update joint_vel_cmd with position PD control
+			//joint_vel_cmd[i] = joint_vel_desired[i];//feed-forward control
+			joint_vel_error[i] = joint_vel_desired[i] - joint_vel[i];
+			joint_pos_error[i] += joint_vel_error[i]; // simple proportional control
+
+			if (joint_pos_error[i] > max_joint_pos_error[i]) { joint_pos_error[i] = max_joint_pos_error[i]; }
+			else if (joint_pos_error[i] < -max_joint_pos_error[i]) { joint_pos_error[i] = -max_joint_pos_error[i]; }
+			
+			joint_vel_cmd[i] = k_vel * joint_vel_error[i] + k_pos * joint_pos_error[i];
+			//joint_vel_cmd[i] = k_vel * joint_vel_error[i];
+
+			if (joint_vel_cmd[i] > max_joint_vel[i]) { joint_vel_cmd[i] = max_joint_vel[i]; }
+			else if (joint_vel_cmd[i] < -max_joint_vel[i]) { joint_vel_cmd[i] = -max_joint_vel[i]; }
+		}
+
+	}
+
+
+};
+
+/// <summary>
+/// a rigidbody representation of attached coordinate (body) frame
+/// </summary>
+struct RigidBody {
+	Vec3d pos; // position of the coordinate frame origin
+	Vec3d vel; // velcotiy of the coordinate frame origin
+	Vec3d acc; // acceleration of the coordinate frame origin
+	//Vec3d ux; // x unit vector of the body frame
+	//Vec3d uy; // y unit vector of the body frame
+	//Vec3d uz; // z unit vector of the body frame
+	Mat3d rot;// rotation matrix = [ux,uy,uz] of the frame
+	Vec3d ang_vel;//angular velocity in body space
+
+	/// <summary>
+	/// initialize the rigidbody, assuming the coordinate frame is at index id_start
+	/// </summary>
+	/// <param name="mass"> MASS struct storing the coordinate frame of the rigidbody</param>
+	/// <param name="id_start"> start index of the coordinate frame</param>
+	/// <param name="w"> initial angular velocity in body frame</param>
+	void init(const MASS& mass, const int& id_start,Vec3d w = Vec3d(0,0,0)) {
+		pos = mass.pos[id_start];
+		vel = mass.vel[id_start];
+		acc = mass.acc[id_start];
+		Vec3d ux = (mass.pos[id_start + 1] - pos).normalize();
+		Vec3d uy = mass.pos[id_start + 2] - pos;
+		uy = (uy - uy.dot(ux) * ux).normalize();
+		Vec3d uz = cross(ux, uy);
+		rot = Mat3d(ux, uy, uz, false);
+		this->ang_vel = w;
+	}
+	void update(const MASS& mass, const int& id_start,const double& dt) {
+		pos = mass.pos[id_start];
+		vel = mass.vel[id_start];
+		acc = mass.acc[id_start];
+		Vec3d ux = (mass.pos[id_start + 1] - pos).normalize();
+		Vec3d uy = mass.pos[id_start + 2] - pos;
+		uy = (uy - uy.dot(ux) * ux).normalize();
+		Vec3d uz = cross(ux, uy);
+		Mat3d rot_new = Mat3d(ux, uy, uz, false);
+		ang_vel = Mat3d::angularVelocityFromRotation(rot, rot_new, dt, true);
+		rot = rot_new;
+	}
+};
+
+
+
 class Simulation {
 public:
 	double dt = 0.0001;
@@ -414,10 +594,14 @@ public:
 	int id_oxyz_start = 0;// coordinate oxyz start index (inclusive)
 	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
 
+
+
 	// host
 	MASS mass; // a flat fiew of all masses
 	SPRING spring; // a flat fiew of all springs
 	JOINT joint;// a flat view of all joints
+	JointControl jc; // joint controller
+	RigidBody body; // mainbody
 	// device
 	MASS d_mass;
 	SPRING d_spring;
@@ -430,24 +614,6 @@ public:
 
 	void backupState();//backup the robot mass/spring/joint state
 	void resetState();// restore the robot mass/spring/joint state to the backedup state
-
-	double* joint_pos; // (measured) joint angle array in rad, initialized in start()
-	double* joint_vel; // (measured) joint speed array in rad/s, initialized in start()
-	double* joint_vel_desired; // (desired) joint speed array in rad/s, initialized in start()
-	double* joint_vel_cmd; // (commended) joint speed array in rad/s, initialized in start()
-	double* joint_vel_error; // difference between joint_vel_cm and joint_vel
-	double* joint_pos_error; // integral of the error between joint_vel_cm and joint_vel
-
-	double max_joint_vel = 1e-4; // [rad/s] maximum joint speed
-	double max_joint_vel_error = 2e-4; // [rad/s] maximum joint speed error
-	double max_joint_pos_error = 4e-4; // [rad/s] maximum joint speed error integral
-	double k_vel = 0.5; // coefficient for PI control
-	double k_pos = 0.25; // coefficient for PD control
-	void setMaxJointSpeed(double max_joint_vel);
-
-	//size_t num_mass=0;// refer to mass.num
-	//size_t num_spring=0;//refer to spring.num
-	//int num_joint = 4; //refer to joint.size()
 
 
 	// state report
@@ -566,7 +732,7 @@ public:
 	double camera_h_offset = 0.5;// distance b/w target and camera in plane normal to camera_up vector 
 	double camera_up_offset = 0.5; // distance b/w target and camera in camera_up direction
 	double camera_yaw = 0; // rotation angle of the vector from target to camera about camera_up vector
-	
+
 	void computeMVP(bool update_view = true); // compute MVP
 
 	/*------------- vertex buffer object and their device pointers--------------------*/
