@@ -447,8 +447,6 @@ void Simulation::start() {
 		printf("cuda device: %d\n", device);
 	}
 
-
-
 }
 
 void Simulation::update_physics() { // repeatedly start next
@@ -462,6 +460,8 @@ void Simulation::update_physics() { // repeatedly start next
 
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
+	int k_udp = 0;
+	int k_dynamics = 0;
 
 #ifdef DEBUG_ENERGY
 	energy_start = energy(); // compute the total energy of the system at T=0
@@ -495,9 +495,9 @@ void Simulation::update_physics() { // repeatedly start next
 				cv_running.notify_all(); //notify others RUNNING = false
 				cv_running.wait(lck, [this] {return GRAPHICS_ENDED; });
 #endif
-//#ifdef UDP
-//				udp_server.close();
-//#endif
+				//#ifdef UDP
+				//				udp_server.close();
+				//#endif
 				GPU_DONE = true;
 				RUNNING = false;
 				printf("GPU done\n");
@@ -536,33 +536,37 @@ void Simulation::update_physics() { // repeatedly start next
 		//cudaEventCreateWithFlags(&event, cudaEventDisableTiming); // create event,disable timing for faster speed:https://developer.download.nvidia.com/CUDA/training/StreamsAndConcurrencyWebinar.pdf
 		//cudaEvent_t event_rotation;
 		//cudaEventCreateWithFlags(&event_rotation, cudaEventDisableTiming);
-
-		for (int i = 0; i < (NUM_QUEUED_KERNELS / NUM_UPDATE_PER_ROTATION); i++) {
-
-			for (int j = 0; j < NUM_UPDATE_PER_ROTATION - 1; j++) {
-
-				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK ,0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+			if (k_dynamics % NUM_UPDATE_PER_ROTATION==0) {
+#ifdef ROTATION
+				rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+				SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
 				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+
+				//SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+				//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
+				//SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
+				//MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
+
 				//gpuErrchk(cudaPeekAtLastError());
 			}
-			//cudaEventRecord(event, 0);
-			//cudaStreamWaitEvent(stream[0], event, 0);
-			//cudaEventRecord(event_rotation, stream[0]);
-			//cudaStreamWaitEvent(NULL, event_rotation, 0);
-
-#ifdef ROTATION
-			rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
-			SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-			MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-
-			//SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-			//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
-			//SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-			//MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
-
-			//gpuErrchk(cudaPeekAtLastError());
+			else {
+				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+				//gpuErrchk(cudaPeekAtLastError());
+//			//cudaEventRecord(event, 0);
+//			//cudaStreamWaitEvent(stream[0], event, 0);
+//			//cudaEventRecord(event_rotation, stream[0]);
+//			//cudaStreamWaitEvent(NULL, event_rotation, 0);
+			}
+#else
+				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 #endif // ROTATION
+			k_dynamics++;
 		}
+
+
 		//cudaEventDestroy(event);//destroy the event, necessary to prevent memory leak
 		//cudaEventDestroy(event_rotation);//destroy the event, necessary to prevent memory leak
 
@@ -572,7 +576,6 @@ void Simulation::update_physics() { // repeatedly start next
 		mass.CopyPosVelAccFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
 		//cudaStreamSynchronize(stream[NUM_CUDA_STREAM - 1]);
 		cudaDeviceSynchronize();
-
 
 		//Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
 		//Vec3d com_vel = mass.vel[id_oxyz_start];
@@ -584,21 +587,12 @@ void Simulation::update_physics() { // repeatedly start next
 		////}
 		////com_acc /= 7;
 
-		//Vec3d ox = (mass.pos[id_oxyz_start + 1] - com_pos).normalize();
-		//Vec3d oy = mass.pos[id_oxyz_start + 2] - com_pos;
-		//oy = (oy - oy.dot(ox) * ox).normalize();
-		//Vec3d oz = cross(ox, oy);
-		////Vec3d oz = mass.pos[id_oxyz_start + 3] - com_pos;
-		////oz = (oz - oz.dot(ox) * ox- oz.dot(oy) * oy).normalize();
-		//Mat3d body_rotation(ox, oy, oz, false);
-
 		//std::chrono::steady_clock::time_point ct_begin = std::chrono::steady_clock::now();
 		////std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
 		////std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(ct_end - ct_begin).count() << "[micro s]" << std::endl;
 		////std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::nanoseconds> (ct_end - ct_begin).count() << "[ns]" << std::endl;
 
-		body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS* dt);
-		jc.update(mass, joint,NUM_QUEUED_KERNELS* dt);
+		jc.update(mass, joint, NUM_QUEUED_KERNELS * dt);
 		// update joint speed
 		for (int i = 0; i < joint.anchors.num; i++) { // compute joint angles and angular velocity
 			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * jc.joint_vel_cmd[i] * dt;// update joint speed
@@ -618,96 +612,100 @@ void Simulation::update_physics() { // repeatedly start next
 
 #endif // DEBUG_ENERGY
 
+		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
+
+			body.update(mass, id_oxyz_start, NUM_UDP_MULTIPLIER*NUM_QUEUED_KERNELS* dt);
+
 #ifdef UDP
-		//msg_send.T_prev = msg_send.T;//update previous time
-		msg_send.T = T;//update time
-		
-		for (auto i = 0; i < 4; i++)
-		{
-			msg_send.joint_pos[i] = jc.joint_pos[i];
-			msg_send.joint_vel[i] = jc.joint_vel[i];
-			msg_send.actuation[i] = jc.joint_vel_cmd[i] / jc.max_joint_vel[i];
-			//msg_send.joint_vel_desired[i] = jc.joint_vel_desired[i];//desired joint velocity at last command
-		}
+			//msg_send.T_prev = msg_send.T;//update previous time
+			msg_send.T = T;//update time
 
-		msg_send.com_acc = body.acc;
-		msg_send.com_vel = body.vel;
-		msg_send.com_pos = body.pos;
-
-		msg_send.orientation[0] = body.rot.m00;
-		msg_send.orientation[1] = body.rot.m10;
-		msg_send.orientation[2] = body.rot.m20;
-		msg_send.orientation[3] = body.rot.m01;
-		msg_send.orientation[4] = body.rot.m11;
-		msg_send.orientation[5] = body.rot.m21;
-
-		msg_send.ang_vel = body.ang_vel;
-
-		udp_server.msg_send = msg_send;
-		udp_server.flag_should_send = true;
-		// receiving message
-		if (udp_server.flag_new_received) {
-			msg_rec = udp_server.msg_rec;
-			udp_server.flag_new_received = false;
-
-			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
-				printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
-					msg_rec.joint_vel_desired[0],
-					msg_rec.joint_vel_desired[1],
-					msg_rec.joint_vel_desired[2],
-					msg_rec.joint_vel_desired[3]);
-			}
-
-			switch (msg_rec.header)
+			for (auto i = 0; i < 4; i++)
 			{
-			case UDP_HEADER::TERMINATE://close the program
-				bpts.insert(T);
-				SHOULD_END = true;
-				break;
-			case UDP_HEADER::RESET: // reset
-				// set the reset flag to true, resetState() will be called 
-				// to restore the robot mass/spring/joint state to the backedup state
-				RESET = true;
-				break;
-			case UDP_HEADER::MOTOR_SPEED_COMMEND:
-				for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-					jc.joint_vel_desired[i] = msg_rec.joint_vel_desired[i];
+				msg_send.joint_pos[i] = jc.joint_pos[i];
+				msg_send.joint_vel[i] = jc.joint_vel[i];
+				msg_send.actuation[i] = jc.joint_vel_cmd[i] / jc.max_joint_vel[i];
+				//msg_send.joint_vel_desired[i] = jc.joint_vel_desired[i];//desired joint velocity at last command
+		}
+
+			msg_send.com_acc = body.acc;
+			msg_send.com_vel = body.vel;
+			msg_send.com_pos = body.pos;
+
+			msg_send.orientation[0] = body.rot.m00;
+			msg_send.orientation[1] = body.rot.m10;
+			msg_send.orientation[2] = body.rot.m20;
+			msg_send.orientation[3] = body.rot.m01;
+			msg_send.orientation[4] = body.rot.m11;
+			msg_send.orientation[5] = body.rot.m21;
+
+			msg_send.ang_vel = body.ang_vel;
+
+			udp_server.msg_send = msg_send;
+			udp_server.flag_should_send = true;
+			// receiving message
+			if (udp_server.flag_new_received) {
+				msg_rec = udp_server.msg_rec;
+				udp_server.flag_new_received = false;
+
+				if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
+					printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
+						msg_rec.joint_vel_desired[0],
+						msg_rec.joint_vel_desired[1],
+						msg_rec.joint_vel_desired[2],
+						msg_rec.joint_vel_desired[3]);
 				}
-				break;
-			default:
-				break;
+
+				switch (msg_rec.header)
+				{
+				case UDP_HEADER::TERMINATE://close the program
+					bpts.insert(T);
+					SHOULD_END = true;
+					break;
+				case UDP_HEADER::RESET: // reset
+					// set the reset flag to true, resetState() will be called 
+					// to restore the robot mass/spring/joint state to the backedup state
+					RESET = true;
+					break;
+				case UDP_HEADER::MOTOR_SPEED_COMMEND:
+					for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
+						jc.joint_vel_desired[i] = msg_rec.joint_vel_desired[i];
+					}
+					break;
+				default:
+					break;
+				}
 			}
-		}
 
-		if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-			//printf("% 6.1f",T); // time
-			//printf("|t");
-			//for (int i = 0; i < joint.anchors.num; i++) {
-			//	printf("% 4.0f", joint_pos[i] * M_1_PI * 180.0); // display joint angle in deg
-			//}
-			//printf("|w");
-			//for (int i = 0; i < joint.anchors.num; i++) {
-			//	printf("% 4.0f", joint_vel[i] * M_1_PI * 30.0); // display joint speed in RPM
-			//}
+			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
+				//printf("% 6.1f",T); // time
+				//printf("|t");
+				//for (int i = 0; i < joint.anchors.num; i++) {
+				//	printf("% 4.0f", joint_pos[i] * M_1_PI * 180.0); // display joint angle in deg
+				//}
+				//printf("|w");
+				//for (int i = 0; i < joint.anchors.num; i++) {
+				//	printf("% 4.0f", joint_vel[i] * M_1_PI * 30.0); // display joint speed in RPM
+				//}
 
-			//printf("|wc");
-			//for (int i = 0; i < joint.anchors.num; i++) {
-			//	printf("% 4.0f", joint_vel_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
-			//}
+				//printf("|wc");
+				//for (int i = 0; i < joint.anchors.num; i++) {
+				//	printf("% 4.0f", joint_vel_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
+				//}
 
-			////printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
-			////printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
+				////printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
+				////printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
 
-			//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
-			//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
-			//printf("\r\r");
+				//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
+				//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
+				//printf("\r\r");
 
-
-
-		}
-		//printf("\n");
-	//}
+			}
+			//printf("\n");
+		//}
 #endif // UDP
+	}
+		k_udp += 1;
 
 		if (RESET) {
 			cudaDeviceSynchronize();

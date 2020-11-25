@@ -246,7 +246,7 @@ int main()
 	sim.jc.reset(sim.mass, sim.joint);
 
 	// set max speed for each joint
-	double max_rpm = 600;//maximun revolution per minute
+	double max_rpm = 500;//maximun revolution per minute
 	sim.jc.setMaxJointSpeed(max_rpm / 60. * 2 * M_PI);//max joint speed in rad/s
 
 #ifdef GRAPHICS
@@ -266,7 +266,7 @@ int main()
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 
-	double runtime = 1600;
+	double runtime = 43200;//12 hours
 	sim.setBreakpoint(runtime);
 
 	sim.start();

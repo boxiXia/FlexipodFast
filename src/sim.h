@@ -61,7 +61,7 @@ constexpr const int CUDA_GRAPHICS_COLOR_STREAM = 4; // steam to run graphics: co
 
 constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
-
+constexpr int NUM_UDP_MULTIPLIER = 3;// udp update is decreased by this factor
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -488,9 +488,6 @@ struct JointControl {
 			joint_pos[i] = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
 
 		}
-
-
-
 	}
 	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
 	void update(MASS& mass, JOINT& joint, double ndt) {
@@ -567,15 +564,38 @@ struct RigidBody {
 		this->ang_vel = w;
 	}
 	void update(const MASS& mass, const int& id_start,const double& dt) {
+		
+		//vel = mass.vel[id_start]
+		//acc = mass.acc[id_start];
+		//pos = mass.pos[id_start];
+		// instead of directly estimating the acc,
+		// estimate from vel backward difference
+
+		//Vec3d pos_new = mass.pos[id_start];
+		//Vec3d vel_new = (pos_new - pos) / dt;
+		Vec3d vel_new = mass.vel[id_start];
+		acc = (vel_new - vel) / dt; 
+		vel = vel_new;
 		pos = mass.pos[id_start];
-		vel = mass.vel[id_start];
-		acc = mass.acc[id_start];
+		//pos = pos_new;
+		
 		Vec3d ux = (mass.pos[id_start + 1] - pos).normalize();
 		Vec3d uy = mass.pos[id_start + 2] - pos;
 		uy = (uy - uy.dot(ux) * ux).normalize();
-		Vec3d uz = cross(ux, uy);
+		Vec3d uz = cross(ux, uy).normalize();
 		Mat3d rot_new = Mat3d(ux, uy, uz, false);
-		ang_vel = Mat3d::angularVelocityFromRotation(rot, rot_new, dt, true);
+
+ 		ang_vel = Mat3d::angularVelocityFromRotation(rot, rot_new, dt, true);
+
+		//Mat3d a = rot_new.dot(rot.transpose());
+		//double c = (a.trace() - 1.) / 2.;
+		//c = (c < -1.0) ? -1.0 : (c > 1.0) ? 1.0 : c; // make sure cosine is in range [-1,1]
+		//double theta = acos(c);
+		////Mat3d w = 0.5 / dt * theta / sin(theta) * (a - a.transpose());// skew symetric angular velocity matrix
+		//Mat3d w = 0.5 / dt * (abs(theta) < 1e-3? 1.0:theta / sin(theta)) * (a - a.transpose());// skew symetric angular velocity matrix
+		//Vec3d av(w.m21, w.m02, w.m10); // angular velocity
+		//ang_vel = rot_new.transpose().dot(av);
+
 		rot = rot_new;
 	}
 };

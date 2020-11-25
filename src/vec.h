@@ -81,7 +81,7 @@ struct MY_ALIGN(8) Vec3d {
 	double x, y, z;
 	MSGPACK_DEFINE(x, y, z)
 
-		CUDA_CALLABLE_MEMBER Vec3d() {
+	CUDA_CALLABLE_MEMBER Vec3d() {
 		x = 0;
 		y = 0;
 		z = 0;
@@ -619,8 +619,14 @@ struct MY_ALIGN(8) Mat3d {
 	static CUDA_CALLABLE_MEMBER Vec3d angularVelocityFromRotation(Mat3d & r0, Mat3d & r1, const double& dt, bool body_space = false) {
 		/// ref: https://math.stackexchange.com/questions/668866/how-do-you-find-angular-velocity-given-a-pair-of-3x3-rotation-matrices
 		Mat3d a = r1.dot(r0.transpose());
-		double t = acos((a.trace() - 1.) / 2.);
-		Mat3d w = 0.5 / dt * t / sin(t) * (a - a.transpose());// skew symetric angular velocity matrix
+
+		double c = (a.trace() - 1.) / 2.;
+		if (c < -1.0 || c>1.0) { return Vec3d(0, 0, 0); }
+		//c = (c < -1.0) ? -1.0 : (c > 1.0) ? 1.0 : c; // make sure cosine is in range [-1,1]
+		double theta = acos(c);
+
+		//Mat3d w = 0.5 / dt * theta / sin(theta) * (a - a.transpose());// skew symetric angular velocity matrix
+		Mat3d w = 0.5 / dt * (abs(theta) < 1e-8? 1.0:theta / sin(theta)) * (a - a.transpose());// skew symetric angular velocity matrix
 		Vec3d av(w.m21, w.m02, w.m10); // angular velocity
 		return body_space ? r1.transpose().dot(av) : av; // transform av to body space if body_space==true
 	}

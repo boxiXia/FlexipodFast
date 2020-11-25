@@ -36,15 +36,17 @@ public:
 	double T = 0; // time at the sending of this udp packet
 	double joint_pos[4] = { 0 }; // joint position (angles)
 	double joint_vel[4] = { 0 }; // joint angular velocity
-	Vec3d com_acc = Vec3d();// COM (body) acceleration
+	double actuation[4] = { 0 }; // acutation of the joint
+
 	double orientation[6] = { 0 }; // orientation of the body
 	Vec3d ang_vel = Vec3d(); // angular velocity of the body
-	double actuation[4] = { 0 }; // acutation of the joint
-	Vec3d com_pos = Vec3d(); // COM (body) position
+
+	Vec3d com_acc = Vec3d();// COM (body) acceleration
 	Vec3d com_vel = Vec3d(); // COM (body) velocity
+	Vec3d com_pos = Vec3d(); // COM (body) position
 	//double joint_vel_desired[4] = { 0 };// desired joint velocity at last command
 	//double T_prev = 0; // time at last command
-	MSGPACK_DEFINE(header, T, joint_pos, joint_vel, com_acc, orientation, ang_vel, actuation, com_pos, com_vel)
+	MSGPACK_DEFINE(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel, com_pos)
 };
 
 class UdpDataReceive {/*the high level command to be received */
