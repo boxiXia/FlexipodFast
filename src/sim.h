@@ -571,13 +571,13 @@ struct RigidBody {
 		// instead of directly estimating the acc,
 		// estimate from vel backward difference
 
-		//Vec3d pos_new = mass.pos[id_start];
-		//Vec3d vel_new = (pos_new - pos) / dt;
-		Vec3d vel_new = mass.vel[id_start];
+		Vec3d pos_new = mass.pos[id_start];
+		Vec3d vel_new = (pos_new - pos) / dt;
+		//Vec3d vel_new = mass.vel[id_start];
 		acc = (vel_new - vel) / dt; 
 		vel = vel_new;
-		pos = mass.pos[id_start];
-		//pos = pos_new;
+		//pos = mass.pos[id_start];
+		pos = pos_new;
 		
 		Vec3d ux = (mass.pos[id_start + 1] - pos).normalize();
 		Vec3d uy = mass.pos[id_start + 2] - pos;
