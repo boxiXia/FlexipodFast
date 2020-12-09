@@ -3,3 +3,7 @@ build/
 .vs/
 
 src/.ipynb_checkpoints/
+
+src/python/.ipynb_checkpoints/
+
+data/
