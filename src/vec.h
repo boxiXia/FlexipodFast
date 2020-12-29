@@ -291,7 +291,7 @@ struct MY_ALIGN(8) Vec3d {
 	}
 
 
-	inline CUDA_DEVICE void Vec3d::atomicVecAdd(const Vec3d & v) {
+	inline CUDA_DEVICE void atomicVecAdd(Vec3d& v) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600
 		atomicAdd(&x, v.x);
 		atomicAdd(&y, v.y);
