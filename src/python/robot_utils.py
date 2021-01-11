@@ -13,7 +13,9 @@ import meshio
 import itertools
 import shutil  # file copying
 import networkx as nx # graph representation
-
+from matplotlib.colors import to_hex
+from lxml import etree
+import os
 def normalizeSignedDistance(signed_distance, zero_map_to=0.5):
     """
     Normalize to 0-1
@@ -94,10 +96,10 @@ def uniformRandomAroundPoints(points, radius, num_per_grid=50):
     return xyz
 
 
-# example, compile
-_ = uniformRandomAroundPoints(np.zeros((2, 3)), 1.0, num_per_grid=5)
-_ = uniformRandomAroundPoints(np.ascontiguousarray(
-    np.zeros((2, 3))), 1.0, num_per_grid=5)
+# # example, compile
+# _ = uniformRandomAroundPoints(np.zeros((2, 3)), 1.0, num_per_grid=5)
+# _ = uniformRandomAroundPoints(np.ascontiguousarray(
+#     np.zeros((2, 3))), 1.0, num_per_grid=5)
 ########################################################################################
 ########## geometry #####################################################################
 
@@ -343,16 +345,16 @@ def vmeshSummary(vmesh):
         # edges from tetrahedron
         edges_tetra = tetra[:, list(itertools.combinations(range(4), 2))].reshape((-1, 2))
         edges_tetra, edges_tetra_counts = getUniqueEdges(edges_tetra)
-        
+
     vertices = vmesh.points
     faces = vmesh.get_cells_type("triangle")
-    
+
     edges_face = faces[:, list(itertools.combinations(range(3), 2))].reshape((-1, 2))
     edges_face, edges_face_counts = getUniqueEdges(edges_face)
-    
+
     edges = edges_face if dim==2 else edges_tetra
     edges_counts = edges_face_counts if dim==2 else edges_tetra_counts
-    
+
     neighbor_counts = getNeighborCounts(edges)
     edge_lengths = np.linalg.norm(vertices[edges[:,0]]-vertices[edges[:,1]],axis=1)
 
@@ -363,19 +365,21 @@ def vmeshSummary(vmesh):
         print(f"# unique tetra edges= {edges_tetra.shape[0]}")
     print(f"# unique face edges = {edges_face.shape[0]}")
     with np.printoptions(precision=3, suppress=True):
-        print("COM                 = ",np.mean(vmesh.points,axis=0))
+        com = np.mean(vmesh.points,axis=0)
+        print("COM                 = ",com)
+    print(f"COM norm            = {np.linalg.norm(com):.3f}")
     print(f"mean edge length    = {edge_lengths.mean():.2f}")
-        
+
     fig,ax = plt.subplots(1,3,figsize=(12,2),dpi=75)
-    ax[0].hist(edges_counts,bins=np.arange(0.5,10), density=True)
-    ax[0].set_xticks(np.arange(10))
+    ax[0].hist(edges_counts,bins='auto', density=True)
     ax[0].set_xlabel("edge counts")
-    ax[1].hist(edge_lengths, density=True, bins='auto')
+    n,bins,_ = ax[1].hist(edge_lengths, density=True, bins='auto')
     ax[1].set_xlabel("edge length")
+    ax[1].text(bins[0],0,f"{bins[0]:.1f}",ha="left",va="bottom",fontsize="large",color='r')
+    ax[1].text(bins[-1],0,f"{bins[-1]:.1f}",ha="right",va="bottom",fontsize="large",color='r')
     ax[2].hist(neighbor_counts, density=True, bins='auto')
     ax[2].set_xlabel("neighbor counts")
     plt.show()
-    
     
 ###################################################################################
 def generateGmsh(
@@ -416,12 +420,19 @@ def generateGmsh(
     """
     gmsh.initialize() # !!must be call for initialization!!
     gmsh.model.add('Mesh_Generation')
-    gmsh.open(in_file_name)
-#     gmsh.model.geo.synchronize()
+    
+
     for arg in gmsh_args:
         gmsh.option.setNumber(*arg)
+        
+    gmsh.open(in_file_name)
+    
+    gmsh.model.geo.synchronize()
+    gmsh.model.occ.synchronize()
+    
     gmsh.model.mesh.generate(2)  # generate 2d mesh
-
+#     gmsh.model.mesh.optimize('Relocate2D', True,niter=10)
+    
     if dim==3:
         for arg in gmsh_args_3d:
             gmsh.option.setNumber(*arg)
@@ -486,14 +497,12 @@ class VolumeMesh(dict):
         """return triangle faces (nx3 int np.array)"""
         self["triangles"] = np.asarray(value,dtype=np.int64)
 
-    @property
     def pcd(self):
         """ return o3d pointcloud """
         pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(self["vertices"]))
         pointcloud.colors = o3d.utility.Vector3dVector(self["vertices_color"])
         return pointcloud
-    
-    @property
+
     def lsd(self):
         """return o3d lineset """
         lineset = o3d.geometry.LineSet(
@@ -501,10 +510,16 @@ class VolumeMesh(dict):
             o3d.utility.Vector2iVector(self["lines"]))
         lineset.colors = o3d.utility.Vector3dVector(self["lines_color"])
         return lineset
-    @property
-    def mesh(self):
+    
+    def triMesh(self):
         """return trimesh mesh"""
         return trimesh.Trimesh(self["vertices"],self["triangles"],process = False, maintain_order=True)
+    
+    def o3dMesh(self):
+        """return open3d triangle mesh"""
+        return o3d.geometry.TriangleMesh(
+            o3d.utility.Vector3dVector(self["vertices"]),
+            o3d.utility.Vector3iVector(self["triangles"]))
     
     def reColor(self,cmap,update_signed_distance=False):
         """update the vertex and lines colors"""
@@ -524,9 +539,331 @@ class VolumeMesh(dict):
         """
         if test_points is None:
             test_points = self["vertices"] 
-        sd = trimesh.proximity.signed_distance(self.mesh,test_points)
+        sd = trimesh.proximity.signed_distance(self.triMesh(),test_points)
         if normalized:
             return normalizeMinMax(sd)
         return sd
     
 ########################################################################################
+
+
+class Unit(dict):
+    def __init__(self,unit_dict=dict()):
+        """
+        define the working units
+        use toSI(name) method to get the multiplier that convert to SI unit
+        ref:
+            https://en.wikipedia.org/wiki/International_System_of_Units
+            https://en.wikipedia.org/wiki/SI_derived_unit
+        """
+        self.si = { # si multiplier
+        # length -> meters
+        "mm": 1e-3,"cm": 1e-2,"m":1.0,
+        # time -> seconds
+        "hour": 3600.,"minute":60.,"s":1.0,
+        # mass -> kilogram
+        "kg":1.0,"g":1e-3,
+        # angle -> radian
+        "deg": np.pi/180.,"rad":1.0,
+        # density -> kg/m^3
+        "kg/m^3": 1,"g/mm^3":1e6,
+        # force - > N
+        "N":1,
+        }
+        for name,unit in unit_dict.items():
+            if unit not in self.si:
+                raise KeyError(f"invalid unit:{unit}, supported units are {self.si.keys()}")
+        super().__init__(unit_dict)
+        self.default_unit = dict(time="s",length="m",mass="kg",angle = "rad",density="kg/m^3")
+        for key,value in self.default_unit.items():
+            if key not in self:
+                self[key] = value
+
+        # derived unit
+        self.du = {
+            "force":("mass","length",("time",-2)),
+            "torque":("mass",("length",2),("time",-2)),
+#             "inertia":("mass",("length",2)),
+            "area":(("length",2),),
+            "volume":(("length",3),),
+            "density":(("length",-3),"mass"),
+        }
+    def toSI(self,name):
+        try: # can overwrite unit with key:value
+            return self.si[self[name]]
+        except KeyError:
+            derived = 1.0
+            for n in self.du[name]:
+                if type(n) is tuple:
+                    derived*=self.si[self[n[0]]]**n[1]
+                else:
+                    derived*=self.si[self[n]]
+            return derived
+
+# # example
+# unit = Unit({"length":"mm"})
+# print(unit.toSI("torque"))
+# print(unit.toSI("inertia"))
+# print(unit.toSI("area"))
+# print(unit.toSI("volume"))
+# print(unit.toSI("density"))
+##########################################################################
+# number of points in a coordinate (o,x,y,z,-x,-y,-z)
+NUM_POINTS_PER_COORDINATE = 7
+
+def getCoordinateOXYZ(transform):
+    coordinate_radius = 16
+    o = transform[:3, -1]  # origin
+    ox = coordinate_radius * transform[:3, 0]
+    oy = coordinate_radius * transform[:3, 1]
+    oz = coordinate_radius * transform[:3, 2]
+    x = o + ox
+    y = o + oy
+    z = o + oz
+    nx = o - ox  # negative x
+    ny = o - oy  # negative y
+    nz = o - oz  # netative z
+    oxyz = np.vstack([o, x, y, z, nx, ny, nz])
+    return oxyz
+
+def getCoordinateOXYZSelfSprings():
+    return np.asarray(list(itertools.combinations(range(NUM_POINTS_PER_COORDINATE), 2)), dtype=int)
+# print(getCoordinateOXYZSelfSprings())
+
+class RobotDescription(nx.classes.digraph.DiGraph):
+    def __init__(self, incoming_graph_data=None,unit_dict=dict(), **attr):
+        """
+        a directed graph of the robot description
+        """
+        super().__init__(incoming_graph_data, **attr)
+        self.unit = Unit(unit_dict)
+
+    def reverseTraversal(self, node, return_edge: bool = False):
+        """
+        return a list traversing from root to node
+        input:
+            node: the name of a node (robot link)
+            return_edge: return the eges if true, else return the nodes
+        returns:
+            a list of nodes or edges traversing from root to node
+        """
+        nodes = [node]
+        while(1):
+            try:
+                parent = next(self.predecessors(node))
+                nodes.append(parent)
+                node = parent
+            except StopIteration:  # at root node
+                nodes.reverse()
+                if return_edge:  # return the edges leading from root to node
+                    return list(zip(nodes[:-1], nodes[1:]))
+                else:  # return a list of nodes from root leading node
+                    return nodes
+
+    def worldTransform(self, node, t=np.eye(4), update: bool = True):
+        """
+        return the the transform from world space
+        input:
+            node: the name of a node (robot link)
+            t: initial (world) 4x4 homogeneous transformation
+            update: [bool] if true update the composed transorm of this node
+        return:
+            t: the composed 4x4 homogeneous transformation in world space
+        """
+        edges = self.reverseTraversal(node, return_edge=True)
+        for e in edges:
+            ge = self.edges[e]
+            if ge["joint_type"] in {'revolute', 'continous'}:
+                t = t@ge["transform"]@axisAngleRotation(
+                    ge["axis"], ge["joint_pos"])
+            else:
+                raise NotImplementedError
+        if update:
+            self.nodes[node]["world_transform"] = t
+        return t
+
+    @property
+    def rootNode(self):
+        """
+        return the name of root node (base link) of the graph
+        ref:https://stackoverflow.com/questions/4122390/getting-the-root-head-of-a-digraph-in-networkx-python
+        """
+        return [n for n, d in self.in_degree() if d == 0][0]
+
+    def updateWorldTransform(self, t=None):
+        """
+        update the world_transform property for nodes and edges
+        input:
+            t: initial (world) 4x4 homogeneous transformation
+        return: 
+            the updated graph
+        """
+        if t is None:
+            t = np.eye(4)
+        rn = self.rootNode
+        self.nodes[rn]["world_transform"] = t
+        for e in nx.edge_bfs(self, source=rn):
+            parent_node = self.nodes[e[0]]
+            child_node = self.nodes[e[1]]
+            edge = self.edges[e]
+            edge["world_transform"] = parent_node["world_transform"]@edge["transform"]
+            child_node["world_transform"] = edge["world_transform"]@axisAngleRotation(
+                edge["axis"], edge["joint_pos"])
+        return self
+
+    def nodesProperty(self, property_name, value):
+        return [self.nodes[n][property_name] for n in self.nodes]
+
+    @property
+    def joint_pos(self):
+        """return the joint_pos for all edges"""
+        return np.fromiter((self.edges[e]["joint_pos"] for e in self.edges), dtype=np.float64)
+
+    @joint_pos.setter
+    def joint_pos(self, values):
+        """
+        set the joint_pos for all edges given values
+        support dict input or iterable
+        """
+        if values is dict:
+            for e, v in values:
+                self.edges[e]["joint_pos"] = v
+        else:
+            for e, v in zip(self.edges, values):
+                self.edges[e]["joint_pos"] = v
+
+    def updateCoordinateOXYZ(self):
+        for n in self.nodes:
+            self.nodes[n]["coord_oxyz"] = getCoordinateOXYZ(
+                self.nodes[n]["world_transform"])
+        for e in self.edges:
+            self.edges[e]["coord_oxyz"] = getCoordinateOXYZ(
+                self.edges[e]["world_transform"])
+            
+    def exportURDF(self,path):
+        """
+        generate the URDF at path, path should be *./urdf
+        """
+        tree = URDF(self).export(path)
+        return tree
+
+class URDF:
+    def __init__(self, graph):
+        self.graph = graph
+
+    def _urdfJoint(self, e, root):
+        toSI = self.graph.unit.toSI
+        name = f"{e[0]},{e[1]}"
+        edge = self.graph.edges[e]
+
+        joint_tag = etree.SubElement(root, "joint", name=name)
+        joint_tag.attrib["type"] = edge["joint_type"]
+
+        rpy = Rotation.from_matrix(edge["transform"][:3, :3]).as_euler(
+            'xyz')*toSI("angle")  # roll pitch yaw
+        xyz = edge["transform"][:3, 3]*toSI("length")
+        origin_tag = etree.SubElement(joint_tag, "origin",
+                                      xyz=" ".join(map(str, xyz)),
+                                      rpy=" ".join(map(str, rpy)))
+        parent_tag = etree.SubElement(joint_tag, "parent", link=e[0])
+        child_tag = etree.SubElement(joint_tag, "child", link=e[1])
+
+        axis_tag = etree.SubElement(joint_tag, "axis",
+                                    xyz=' '.join(map(str, edge["axis"])))
+
+        limit_tag = etree.SubElement(joint_tag, "limit")
+        for key, value in edge["limit"].items():
+            limit_tag.attrib[key] = str(value)  # to do convert to SI
+        return joint_tag
+
+    def _urdfLink(self, n, root, export_dir):
+        toSI = self.graph.unit.toSI
+        node = self.graph.nodes[n]
+        name = f"{n}"
+        link_tag = etree.SubElement(root, "link", name=name)
+        inertial_tag = etree.SubElement(link_tag, "inertial")
+
+        rpy = Rotation.from_matrix(node["transform"][:3, :3]).as_euler(
+            'xyz')*toSI("angle")  # roll pitch yaw
+        xyz = node["transform"][:3, 3]*toSI("length")
+
+        inertial_origin_tag = etree.SubElement(inertial_tag, "origin",
+                                               xyz=" ".join(map(str, xyz)),
+                                               rpy=" ".join(map(str, rpy)))
+
+        # deepcopy to avoid changing orginal vertices
+        mesh = copy.deepcopy(node["vmd"].triMesh())  # trimesh mesh
+        density = node["density"]*toSI("density")
+        mesh.density = density
+        mesh.vertices *= toSI("length")
+        mass = mesh.mass
+        moment_inertia = mesh.moment_inertia
+
+        mass_tag = etree.SubElement(inertial_tag, "mass", value=str(mass))
+
+        inertia_tag = etree.SubElement(
+            inertial_tag, "inertia",
+            ixx=str(moment_inertia[0, 0]), ixy=str(moment_inertia[0, 1]),
+            ixz=str(moment_inertia[0, 2]), iyy=str(moment_inertia[1, 1]),
+            iyz=str(moment_inertia[1, 2]), izz=str(moment_inertia[2, 2]))
+
+        file_name = f"mesh/{name}.obj"
+
+        _ = mesh.export(file_obj=f"{export_dir}/{file_name}")
+
+        visual_tag = etree.SubElement(link_tag, "visual")
+        visual_origin_tag = etree.SubElement(
+            visual_tag, "origin",
+            xyz=" ".join(map(str, xyz)),
+            rpy=" ".join(map(str, rpy)),
+        )
+        visual_geometry_tag = etree.SubElement(visual_tag, "geometry")
+        visual_geometry_mesh_tage = etree.SubElement(
+            visual_geometry_tag, "mesh",
+            filename=file_name
+        )
+        
+        visual_material_tag = etree.SubElement(
+            visual_tag, "material", name=to_hex(node["color"],keep_alpha=True))
+        visual_material_color_tag = etree.SubElement(
+            visual_material_tag, "color", rgba=" ".join(map(str, node["color"])))
+
+        collision_tag = etree.SubElement(link_tag, "collision")
+
+        collision_origin_tag = etree.SubElement(
+            collision_tag, "origin",
+            xyz=" ".join(map(str, xyz)),
+            rpy=" ".join(map(str, rpy)),
+        )
+        collision_geometry_tag = etree.SubElement(collision_tag, "geometry")
+
+        collision_geometry_mesh_tage = etree.SubElement(
+            collision_geometry_tag, "mesh",
+            filename=file_name
+        )
+        return link_tag
+
+    def export(self, path):
+        """
+        generate the URDF at path, path should be *./urdf
+        """
+        # example:
+        # URDF(graph).export(path= "../../data/urdf/test/robot.urdf")
+        # ref: https://github.com/MPEGGroup/trimesh/blob/master/trimesh/exchange/urdf.py
+        full_path = os.path.abspath(path)
+        dir_path = os.path.dirname(full_path)
+        name, ext = os.path.splitext(os.path.basename(full_path))
+        mesh_dir_path = os.path.join(dir_path, "mesh")
+        if not os.path.exists(mesh_dir_path):
+            os.makedirs(mesh_dir_path)
+        root = etree.Element("robot", name=f"{name}")
+        links = [self._urdfLink(n, root, export_dir=dir_path)
+                 for n in self.graph.nodes]
+        joints = [self._urdfJoint(e, root) for e in self.graph.edges]
+        tree = etree.ElementTree(root)
+        tree.write(f"{full_path}", pretty_print=True,
+                   xml_declaration=True, encoding="utf-8")
+        print(f"URDF path:{full_path}\n")
+        print(etree.tostring(root, pretty_print=True,
+                             xml_declaration=True).decode('utf-8'))
+        return tree
