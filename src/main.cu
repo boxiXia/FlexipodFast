@@ -124,9 +124,7 @@ int main()
 	}
 
 
-/*bot.idVertices: body,leg0,leg1,leg2,leg3,anchor0,anchor1,anchor2,anchor3,
-				oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,
-				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,the end
+/*bot.idVertices: body,leg0,leg1,leg2,leg3,anchor,coord,the end
  bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end */
 	
 	// set higher mass value for robot body
@@ -190,8 +188,8 @@ int main()
 
 	/*oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,
 				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,*/
-	sim.id_oxyz_start = bot.idVertices[num_body + num_joint];
-	sim.id_oxyz_end = bot.idVertices[num_body + num_joint + 1 + 2* num_joint];
+	sim.id_oxyz_start = bot.idVertices[num_body + 1];
+	sim.id_oxyz_end = bot.idVertices[num_body + 2];
 	
 	// set lower mass for the anchored coordinate systems
 	for (int i = sim.id_oxyz_start; i < sim.id_oxyz_end; i++)

@@ -567,13 +567,15 @@ class VolumeMesh(dict):
             o3d.utility.Vector3dVector(self["vertices"]),
             o3d.utility.Vector3iVector(self["triangles"]))
     
-    def reColor(self,cmap,update_signed_distance=False):
+    def reColor(self,cmap=None,update_signed_distance=False):
         """update the vertex and lines colors"""
-        if type(cmap)==str:
-            cmap = plt.get_cmap(cmap)
+        if cmap is not None:
+            if type(cmap)==str:
+                cmap = plt.get_cmap(cmap)
+            self["cmap"] = cmap
         if update_signed_distance:
             self["nsd"] = self.signedDistance(normalized=True)
-        self["vertices_color"] = cmap(self["nsd"])[:,:3]
+        self["vertices_color"] = self["cmap"](self["nsd"])[:,:3]
         self["lines_color"] = (self["vertices_color"][self["lines"][:,0]]+
                                self["vertices_color"][self["lines"][:,1]])/2
         return self
@@ -589,7 +591,137 @@ class VolumeMesh(dict):
         if normalized:
             return normalizeMinMax(sd)
         return sd
-    
+    def appendVertices(self,new_vertices,min_radius=0,max_radius=-1.,max_nn=None):
+        len_v = len(self["vertices"]) # length of the vertices before adding new vertices
+        self["vertices"] = np.vstack((self["vertices"],new_vertices))
+        
+        new_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(self["vertices"]))
+        pcd_tree = o3d.geometry.KDTreeFlann(new_pcd)
+        
+        result = [pcd_tree.search_hybrid_vector_3d(
+                point, max_radius,max_nn = int(max_nn*1.5)) for point in new_vertices]
+        edges_list = []
+        min_norm2 = min_radius**2
+        for k, (num,index,norm2) in enumerate(result):
+            selected = np.asarray(norm2)>=min_norm2
+            index = np.asarray(index)[selected][:max_nn]
+            edges_k = np.column_stack((index,[len_v+k]*index.size))
+            edges_list.append(edges_k) 
+        edges,_ = getUniqueEdges(np.vstack(edges_list))
+        self.lines = np.vstack((self.lines,edges))
+        
+        self["nsd"] = np.hstack((self["nsd"],
+                   self.signedDistance(test_points=new_vertices)))
+        self.reColor(update_signed_distance=False)
+#         return result
+        return self
+####################################################################################
+def descretize(msh_file, min_radius, max_radius, max_nn,transform=None):
+    vmesh = meshio.read(msh_file)
+    if (transform is not None) and ~np.array_equal(transform, np.eye(4)):# should transform the points
+        vmesh.points = applyTransform(vmesh.points, transform)
+
+    tetra = vmesh.cells_dict["tetra"]  # (nx4) np array of tetrahedron
+    vertices = vmesh.points
+    triangles = vmesh.cells_dict["triangle"]
+    # edges from tetrahedron
+    edges_tetra = tetra[:, list(
+        itertools.combinations(range(4), 2))].reshape((-1, 2))
+    edges_face = triangles[:, list(
+        itertools.combinations(range(3), 2))].reshape((-1, 2))
+
+    # trimesh mesh, process=False to reserve vertex order
+    mesh = trimesh.Trimesh(vertices, triangles,
+                           process=False, maintain_order=True)
+    mesh.visual.face_colors = [255, 255, 255, 255]
+
+    # #     ###############################################################
+    # mesh_dict = mesh.to_dict()
+    # bounds,xyz_grid_edge,xyz_grid_inside = voxelizeMesh(mesh)
+    # vertices = sample_helper(mesh_dict, xyz_grid_edge, xyz_grid_inside)
+
+    pcd_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(vertices))
+    # KDTree for nearest neighbor search
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd_o3d)
+    neighbors = [np.asarray(pcd_tree.search_hybrid_vector_3d(
+        point, max_radius, max_nn=max_nn)[1]) for point in vertices]
+    edges = np.vstack([getEdges(neighbor[:max_nn]) for neighbor in neighbors])
+    edges, edge_counts = getUniqueEdges(edges)
+    # trim springs outside the mesh
+    mid_points = getMidpoints(vertices, edges)
+    is_inside = mesh.ray.contains_points(mid_points)
+    edges = edges[is_inside]
+    # #     ###############################################################
+    edges = np.vstack((edges, edges_tetra))
+#     edges = edges_tetra[:]
+
+    edges, edge_counts = getUniqueEdges(edges)
+    neighbor_counts = getNeighborCounts(edges)
+    edge_lengths = np.linalg.norm(
+        vertices[edges[:, 0]]-vertices[edges[:, 1]], axis=1)
+
+    # select only long enough edges
+    selected_edges = edge_lengths >= min_radius
+    edges = edges[selected_edges]  # make it larger
+    edge_lengths = edge_lengths[selected_edges]
+
+    print(f"# vertices         = {vertices.shape[0]}")
+    print(f"# surface triangle =", triangles.shape[0])
+    print(f"# tetra            =", tetra.shape[0])
+    print(f"# unique edges     = {edges.shape[0]}")
+
+    fig, ax = plt.subplots(1, 3, figsize=(12, 2), dpi=75)
+    ax[0].hist(edge_counts, bins=np.arange(0.5, 10), density=True)
+    ax[0].set_xticks(np.arange(10))
+    ax[0].set_xlabel("edge counts")
+    ax[1].hist(edge_lengths, density=True, bins='auto')
+    ax[1].set_xlabel("edge length")
+    ax[2].hist(neighbor_counts, density=True, bins='auto')
+    ax[2].set_xlabel("neighbor counts")
+    #     plt.tight_layout()
+    plt.show()
+
+    signed_distance = trimesh.proximity.signed_distance(mesh, vertices)
+
+    nsd = normalizeMinMax(signed_distance)  # normalized_signed_distance
+#     print(signed_distance.min(),signed_distance.max())
+
+    pcd_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(vertices))
+
+    cmap = plt.cm.get_cmap('plasma')
+    pcd_o3d.colors = o3d.utility.Vector3dVector(cmap(nsd)[:, :3])
+
+    lsd_o3d = o3d.geometry.LineSet(
+        o3d.utility.Vector3dVector(vertices),
+        o3d.utility.Vector2iVector(edges))
+
+    cmap = plt.cm.get_cmap('seismic')
+
+    normalized_edge_lengths = normalizeMinMax(edge_lengths)
+    edges_colors = cmap(normalized_edge_lengths)[:, :3]  # drop alpha channel
+
+    #     normalized_edge_counts = normalizeMinMax(edge_counts)
+    #     print(edge_counts.min(),edge_counts.max())
+    #     edges_colors = cmap(normalized_edge_counts)[:,:3]# drop alpha channel
+
+    lsd_o3d.colors = o3d.utility.Vector3dVector(edges_colors)
+#     o3dShow([lsd_o3d,pcd_o3d,coord_frame],background_color=(255,255,255),mesh_show_wireframe=True)
+
+    # lsd_o3d = o3d.geometry.TetraMesh(
+    #     o3d.utility.Vector3dVector(vmesh.points),
+    #     o3d.utility.Vector4iVector(vmesh.get_cells_type("tetra")))
+    # o3d.visualization.draw_geometries([lsd_o3d],mesh_show_wireframe=True)
+
+    #     vsmesh_o3d = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(vertices),o3d.utility.Vector3iVector(triangles))
+    # o3dShow([vsmesh_o3d,pcd_o3d],background_color=(0,0,0),show_coordinate_frame=False,mesh_show_wireframe=True)
+
+    # display(mesh.show())
+    #     display(trimesh.scene.Scene([mesh],).show())
+    vmd = VolumeMesh(vertices, edges, triangles)
+    return vmd
+
+# vmesh_leg,mesh_leg,pcd_leg,lsd_leg,nsd_leg = descretize(msh_file="../../mesh/leg_simplified.msh")
+
 ########################################################################################
 def equidistantDisk(nr):
     """
@@ -697,16 +829,18 @@ class Unit(dict):
 # print(unit.toSI("volume"))
 # print(unit.toSI("density"))
 ##########################################################################
+##########################################################################
 # number of points in a coordinate (o,x,y,z,-x,-y,-z)
 NUM_POINTS_PER_COORDINATE = 7
 
-def getCoordinateOXYZ(transform=None,coordinate_radius = 1):
+
+def getCoordinateOXYZ(transform=None, radius=1):
     if transform is None:
         transform = np.eye(4)
     o = transform[:3, -1]  # origin
-    ox = coordinate_radius * transform[:3, 0]
-    oy = coordinate_radius * transform[:3, 1]
-    oz = coordinate_radius * transform[:3, 2]
+    ox = radius * transform[:3, 0]
+    oy = radius * transform[:3, 1]
+    oz = radius * transform[:3, 2]
     x = o + ox
     y = o + oy
     z = o + oz
@@ -716,12 +850,14 @@ def getCoordinateOXYZ(transform=None,coordinate_radius = 1):
     oxyz = np.vstack([o, x, y, z, nx, ny, nz])
     return oxyz
 
+
 def getCoordinateOXYZSelfSprings():
     return np.asarray(list(itertools.combinations(range(NUM_POINTS_PER_COORDINATE), 2)), dtype=int)
 # print(getCoordinateOXYZSelfSprings())
 
+
 class RobotDescription(nx.classes.digraph.DiGraph):
-    def __init__(self, incoming_graph_data=None,unit_dict=dict(), **attr):
+    def __init__(self, incoming_graph_data=None, unit_dict=dict(), **attr):
         """
         a directed graph of the robot description
         """
@@ -763,7 +899,7 @@ class RobotDescription(nx.classes.digraph.DiGraph):
         edges = self.reverseTraversal(node, return_edge=True)
         for e in edges:
             ge = self.edges[e]
-            if ge["joint_type"] in {'revolute', 'continous'}:
+            if ge["joint_type"] in {'revolute', 'continous', 'fixed'}:
                 t = t@ge["transform"]@axisAngleRotation(
                     ge["axis"], ge["joint_pos"])
             else:
@@ -822,20 +958,221 @@ class RobotDescription(nx.classes.digraph.DiGraph):
             for e, v in zip(self.edges, values):
                 self.edges[e]["joint_pos"] = v
 
-    def updateCoordinateOXYZ(self):
+    def createCoordinateOXYZ(self, radius):
         for n in self.nodes:
-            self.nodes[n]["coord_oxyz"] = getCoordinateOXYZ(
-                self.nodes[n]["world_transform"])
+            self.nodes[n]["coord"] = getCoordinateOXYZ(radius=radius)
+            self.nodes[n]["coord_self_lines"] = getCoordinateOXYZSelfSprings()
         for e in self.edges:
-            self.edges[e]["coord_oxyz"] = getCoordinateOXYZ(
-                self.edges[e]["world_transform"])
-            
-    def exportURDF(self,path):
+            self.edges[e]["coord"] = getCoordinateOXYZ(radius=radius)
+            self.edges[e]["coord_self_lines"] = getCoordinateOXYZSelfSprings()
+
+    def exportURDF(self, path):
         """
         generate the URDF at path, path should be *./urdf
         """
         tree = URDF(self).export(path)
         return tree
+
+    def makeJoint(self,e, opt):
+        """
+        add the necessary vertices and lines for the joints,
+        should only run once
+        """
+        max_nn = opt["max_nn"]
+        min_radius = opt["min_radius"]
+        max_radius = opt["max_radius"]
+        joint_radius = opt["joint_radius"]
+        joint_height = opt["joint_height"]
+        joint_sections = opt["joint_sections"]
+        joint_axis_radius = joint_height/2.+min_radius
+        
+        parent_node = self.nodes[e[0]]
+        child_node = self.nodes[e[1]]
+        edge = self.edges[e]
+        if "id_joint_parent" in edge:# check if already processed
+            print(f"edge{e}: ({len(edge['id_joint_parent']), len(edge['id_joint_child'])}) already processed, skip this")
+            return
+            
+        # operate in body-space of parent node
+        T_edge = edge["transform"]  # edge transform
+        # parent transform
+        T_parent = parent_node["transform"]
+        # child transform
+        T_child = T_edge@axisAngleRotation(edge["axis"],
+                                        edge["joint_pos"])@child_node["transform"]
+
+        parent_vertices_t = applyTransform(parent_node["vmd"].vertices, T_parent)
+        child_vertices_t = applyTransform(child_node["vmd"].vertices, T_child)
+
+        cylinder_transform = T_edge@vecAlignRotation((0, 0, 1), edge["axis"])
+        cylinder = trimesh.creation.cylinder(radius=joint_radius, height=joint_height,
+                                            transform=cylinder_transform, sections=joint_sections,)
+
+        o3d_cylinder = trimeshToO3dMesh(cylinder)
+
+        is_joint_parent = cylinder.ray.contains_points(parent_vertices_t)
+        is_joint_child = cylinder.ray.contains_points(child_vertices_t)
+
+        parent_node["vmd"].appendVertices(
+            applyTransform(
+                child_vertices_t[is_joint_child], np.linalg.inv(T_parent)),
+            min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+
+        child_node["vmd"].appendVertices(
+            applyTransform(
+                parent_vertices_t[is_joint_parent], np.linalg.inv(T_child)),
+            min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+
+        is_joint_parent, is_joint_child = (  # combined
+            np.hstack((is_joint_parent, np.ones(sum(is_joint_child), dtype=bool))),
+            np.hstack((is_joint_child, np.ones(sum(is_joint_parent), dtype=bool)))
+        )
+
+        id_joint_child = np.flatnonzero(is_joint_child)
+        id_joint_parent = np.flatnonzero(is_joint_parent)
+
+        print(len(id_joint_parent), len(id_joint_child))
+
+        edge['axis'] = np.asarray(edge['axis'], dtype=np.float64)
+        edge['anchor'] = np.stack((-edge['axis'], edge['axis']))*joint_axis_radius
+        edge["id_joint_parent"] = id_joint_parent
+        edge["id_joint_child"] = id_joint_child
+        
+    #     parent_pcd = parent_node["vmd"].pcd().transform(T_parent)
+    #     parent_lsd = parent_node["vmd"].lsd().transform(T_parent)
+    #     child_pcd = child_node["vmd"].pcd().transform(T_child)
+    #     child_lsd = child_node["vmd"].lsd().transform(T_child)
+    #     color = np.asarray(parent_pcd.colors)
+    #     color[id_joint_parent] = (1,1,1)
+    #     parent_pcd.colors = o3d.utility.Vector3dVector(color)
+
+    #     color = np.asarray(child_pcd.colors)
+    #     color[id_joint_child] = (1,1,1)
+    #     child_pcd.colors = o3d.utility.Vector3dVector(color)
+
+    #     o3dShow([parent_pcd,parent_lsd,child_pcd,child_lsd])
+    #     o3dShow([parent_pcd,parent_lsd,child_pcd,child_lsd,o3d_cylinder])
+
+################################################
+
+def joinLines(left_vertices,
+              right_vertices,
+              min_radius,
+              max_radius,
+              max_nn,
+              left_id_start=0,
+              right_id_start=0):
+    """
+    joint left_vertices with right_vertices using kdtreee from left_vertices
+    """
+    pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(left_vertices))
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    result = [pcd_tree.search_hybrid_vector_3d(
+        point, max_radius, max_nn=int(max_nn*2)) for point in right_vertices]
+    edges_list = []
+    min_norm2 = min_radius**2
+    for k, (num, index, norm2) in enumerate(result):
+        if num > 0:
+            index = np.asarray(index)
+            norm2 = np.asarray(norm2)
+            index = index[norm2 >= min_norm2][:max_nn]
+            edges_k = np.empty((index.size, 2), dtype=np.int64)
+            edges_k[:, 0] = index
+            edges_k[:, 1] = k
+            edges_list.append(edges_k)
+    edges = np.vstack(edges_list)
+    if left_id_start > 0:
+        edges[:, 0] += left_id_start
+    if right_id_start > 0:
+        edges[:, 1] += right_id_start
+    return edges
+
+###################################################################################
+
+
+def CreateJointLines(id_0, id_1, id_joint):
+    """
+    return the joint lines(rotation springs) defined by a joint 
+    input:
+        id_0: m numpy indices of the first points
+        id_1: n numpy indices of the second points
+        id_joint: 2 indices of the end points of a joint
+    """
+    return np.vstack([np.column_stack([id_0, [id_joint[0]]*len(id_0)]),  # left  (id_0) - axis_0
+                      # left  (id_0) - axis_1
+                      np.column_stack([id_1, [id_joint[0]]*len(id_1)]),
+                      # right (id_1) - axis_0
+                      np.column_stack([id_0, [id_joint[1]]*len(id_0)]),
+                      np.column_stack([id_1, [id_joint[1]]*len(id_1)])])  # right (id_1) - axis_1
+
+
+def CreateJointFrictionSpring(id_0, id_1, num_spring_per_mass):
+    """
+    return the friction springs defined by a joint 
+    input:
+        id_0: m numpy indices of the first points
+        id_1: n numpy indices of the second points
+        num_spring_per_mass: num of springs per mass point
+    """
+    max_size = int((len(id_0)+len(id_1))*num_spring_per_mass/2)
+    frictionSpring = np.vstack(
+        [np.column_stack([[id_0_k]*len(id_1), id_1]) for id_0_k in id_0])
+    if frictionSpring.shape[0] > max_size:
+        frictionSpring = frictionSpring[np.random.choice(
+            frictionSpring.shape[0], max_size, replace=False)]
+    return frictionSpring
+
+
+class Joint:
+    def __init__(
+        s,# self
+        left, # indices of the left mass
+        right, # indices of the right mass
+        anchor, # anchoring points for the joint 
+        left_coord, # start id of the left coordinate
+        right_coord, # start id of the right coordinate (child)
+        num_spring_per_mass=20,
+        axis = None # joint axis, in joint space
+    ):
+        s.left = np.copy(left)  # indices of the left mass
+        s.right = np.copy(right)  # indices of the right mass
+        # indices of the two ends of the center of rotation
+        s.anchor = np.asarray(anchor)
+        s.rotSpring = CreateJointLines(
+            s.left, s.right, s.anchor)  # rotation spring
+        s.friSpring = CreateJointFrictionSpring(
+            s.left, s.right,num_spring_per_mass)  # friction spring
+        s.leftCoord = left_coord  # start id of the left coordinate
+        s.righCoord = right_coord  # start id of the right coordinate (child)
+        s.axis = np.asarray(axis)
+
+    def __repr__(s):
+        s_rotationSpring = np.array2string(
+            s.rotSpring, threshold=10, edgeitems=2).replace("\n", ",")
+        s_frictionSpring = np.array2string(
+            s.friSpring, threshold=10, edgeitems=2).replace("\n", ",")
+
+        return f"{{left({len(s.left)}):  {np.array2string(s.left,threshold=10,edgeitems=5)}\n" +\
+               f" right({len(s.right)}): {np.array2string(s.right,threshold=10,edgeitems=5)}\n" +\
+            f" anchor(2): {s.anchor}\n" +\
+               f" leftCoord: {s.leftCoord}\n" +\
+            f" righCoord: {s.righCoord}\n" +\
+            f" rotSpring({len(s.rotSpring)}):{s_rotationSpring}\n" +\
+            f" friSpring({len(s.friSpring)}):{s_frictionSpring}}}\n" +\
+            f"axis = {s.axis}\n"
+
+    def tolist(s):
+        return [s.left.tolist(), s.right.tolist(), s.anchor.tolist(), int(s.leftCoord), int(s.righCoord),s.axis.tolist()]
+    def toDict(s):
+        return {
+            "left":s.left.tolist(),
+            "right":s.right.tolist(),
+            "anchor":s.anchor.tolist(),
+            "leftCoord": int(s.leftCoord),
+            "rightCoord":int(s.righCoord),
+            "axis":s.axis.tolist()
+        }
+        
 #############################################################################
 class URDF:
     def __init__(self, graph):

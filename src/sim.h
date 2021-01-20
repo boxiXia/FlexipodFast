@@ -110,7 +110,8 @@ struct StdJoint {
 	std::vector<int> anchor;// the 2 indices of the anchor points: left_anchor_id,right_anchor_id
 	int leftCoord;
 	int rightCoord;
-	MSGPACK_DEFINE(left, right, anchor, leftCoord, rightCoord);
+	Vec3d axis;
+	MSGPACK_DEFINE(left, right, anchor, leftCoord, rightCoord, axis);
 };
 class Model {
 public:
@@ -483,10 +484,13 @@ struct JointControl {
 
 			Vec2i anchor_edge = joint.anchors.edge[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
-			Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
-			Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
-			joint_pos[i] = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
-
+			//Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+			//Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			//joint_pos[i] = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+			//
+			Vec3d y_left = mass.pos[joint.anchors.leftCoord[i] + 2] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+			Vec3d y_right = mass.pos[joint.anchors.rightCoord[i] + 2] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			joint_pos[i] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 		}
 	}
 	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
@@ -496,9 +500,13 @@ struct JointControl {
 		{
 			Vec2i anchor_edge = joint.anchors.edge[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
-			Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
-			Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
-			double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+			//Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+			//Vec3d x_right = mass.pos[joint.anchors.rightCoord[i] + 1] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			//double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+			//
+			Vec3d y_left = mass.pos[joint.anchors.leftCoord[i] + 2] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
+			Vec3d y_right = mass.pos[joint.anchors.rightCoord[i] + 2] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			double angle = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 
 			// assuming delta_angle is within (-pi,pi)
 			double delta_angle = angle - joint_pos[i];

@@ -33,9 +33,13 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 # use CUDA
 find_package(CUDA REQUIRED) # find and include CUDA
 
+
+
 ###### here you must modify to fit your GPU architecture #####
 # check https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
-string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
+set(CMAKE_CUDA_ARCHITECTURES 75)
+message(STATUS "CMAKE_CUDA_ARCHITECTURES=" ${CMAKE_CUDA_ARCHITECTURES})
+# string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
 string(APPEND CMAKE_CUDA_FLAGS " --default-stream per-thread")
 # https://devblogs.nvidia.com/gpu-pro-tip-cuda-7-streams-simplify-concurrency/
 ##############################################################
@@ -74,7 +78,11 @@ add_executable(flexipod
     src/vec.h src/vec.cu 
     src/shader.h src/shader.cpp 
     src/object.h src/object.cu
-    src/sim.h src/sim.cu) 
+    src/sim.h src/sim.cu
+    ) 
+# set target cuda architecture
+set_property(TARGET flexipod PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
+
 
 option(USE_UDP "Enter UDP mode" ON)
 if(USE_UDP)
@@ -113,6 +121,7 @@ add_executable(testNetwork
     src/network.h
     src/network.cpp
 )
+set_property(TARGET testNetwork PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
 target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
 target_link_libraries(testNetwork PRIVATE asio asio::asio)
 target_link_libraries(testNetwork PRIVATE cuda)
@@ -124,9 +133,19 @@ add_executable(mathTest
     src/mathTest.cu
     src/vec.h src/vec.cu
 )
+set_property(TARGET mathTest PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
 target_link_libraries(mathTest PRIVATE msgpackc-cxx)
 target_link_libraries(mathTest PRIVATE cuda)
 target_include_directories(mathTest PUBLIC ${CUDA_INCLUDE_DIRS} src)
+
+add_executable(
+    testMsgpack
+    "src/msgpackTest.cu"
+    src/vec.h src/vec.cu)
+set_property(TARGET testMsgpack PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
+target_link_libraries(testMsgpack PRIVATE msgpackc-cxx)
+target_link_libraries(testMsgpack PRIVATE cuda)
+target_include_directories(testMsgpack PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
 
 
