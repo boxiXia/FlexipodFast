@@ -148,16 +148,62 @@ def applyTransform(xyz, t):
     output:
         nx3 np array of the transformed xyz points
     """
-    xyz = np.asarray(xyz)
     t = np.asarray(t)
     if t.shape == (3, 3):  # rotation matrix
         return np.dot(xyz, t.T)
     elif t.shape == (4, 4):  # homogeneous matrix
         return np.dot(xyz, t[:-1, :-1].T)+t[:-1, -1]
     else:
-        raise AssertionError("dimension error")
+        raise AssertionError(f"dimension error: input t shape is {t.shape},but should be (3,3) or (4,4)")
     
 
+def vecAlignRotation(src_vec, dst_vec, homogeneous = True):
+    """
+    return a numpy rotation matrix that rotate src_vec to align with dst_vec
+    input:
+        src_vec: source vector (3)
+        dst_vec: destination vector (3)
+        homogeneous: if true return a 4x4 homogeneous transformation,
+                    if false return a 3x3 rotation matrix
+    ref：
+        https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d/897677#897677
+        https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.transform.Rotation.html
+    """
+    a = np.array(src_vec,dtype=np.float64)
+    b = np.array(dst_vec,dtype=np.float64)
+    a/=np.linalg.norm(a)
+    b/=np.linalg.norm(b)
+    v = np.cross(a, b)
+    s = np.linalg.norm(v)
+    c = a.dot(b)
+    if np.allclose(s, 0): 
+        if np.allclose(c, 1):
+            rot = np.eye(3)  # same direction
+        else:  # inverse direction
+            vec = np.array([1, 0, 0.])
+            if np.allclose(vec.dot(a), 1):
+                vec = np.array([0, 1, 0])
+            axis = np.cross(a, vec)
+            axis /= np.linalg.norm(axis)  # noramalize
+            rot =  Rotation.from_rotvec(axis*np.pi).as_matrix()
+    else:
+        v_cross = np.array([
+            [0,   -v[2], v[1]],
+            [v[2], 0,   -v[0]],
+            [-v[1], v[0],  0]])
+        rot = np.eye(3) + v_cross+v_cross.dot(v_cross)*1/(1+c)
+    if homogeneous:
+        t = np.eye(4)
+        t[:3,:3]=rot
+        return t
+    else:
+        return rot
+
+# a = np.array([0, 0, 1.])
+# b = np.array([0, 1, -1.])
+# a/=np.linalg.norm(a)
+# b/=np.linalg.norm(b)
+# assert(np.allclose(vecAlignRotation(a,b,False).dot(a),b))
 ################################################################
 
 def ColorizePcdAndLsd(nsd,pcd,lsd,cmap):
@@ -545,8 +591,51 @@ class VolumeMesh(dict):
         return sd
     
 ########################################################################################
+def equidistantDisk(nr):
+    """
+    generate equidistant points on unit disk
+    input:
+        nr: number of radial circles
+    output:
+        x,y: coordinates of generated points
+    ref: 
+        http://www.holoborodko.com/pavel/2015/07/23/generating-equidistant-points-on-unit-disk/
+    """
+    dr = 1./nr
+    r = np.arange(dr,1+dr,dr)
+    
+    n = np.round(np.pi/np.arcsin(1./(2*np.arange(1,nr+1)))).astype(int)
+    n = n//6*6 # optionally force to be multiple of 6
+    t = [np.arange(0,2*np.pi,2*np.pi/k) for k in n]
+    x = np.concatenate([rk*np.cos(tk) for rk,tk in zip(r,t)])
+    y = np.concatenate([rk*np.sin(tk) for rk,tk in zip(r,t)])
+    x = np.insert(x,0,0) # add (0,0)
+    y = np.insert(y,0,0) # add (0,0)
+    return x,y
 
+def equidistantCylinder(r:float,h:float,dr:float):
+    """
+    return vertices (point cloud) of cylinders made up of equidistant disk
+    input:
+        r: radius of the cylinder
+        h: height of the cylinder
+        dr: discretization radius 
+    output:
+        vertices of the equidistant cylinder
+    """
+    nr = int(r/dr)
+    nz = int(h/dr)+1
+    x,y = equidistantDisk(nr)
+#     plt.plot(x,y,'.')
+#     plt.axis("equal")
+    n_slice = len(x)
+    x = np.tile(r*x,nz)
+    y = np.tile(r*y,nz)
+    z = np.repeat(np.linspace(-h/2.,h/2.,nz),n_slice)
+    vertices = np.stack((x,y,z),axis=1)
+    return vertices  
 
+########################################################################################
 class Unit(dict):
     def __init__(self,unit_dict=dict()):
         """
@@ -611,8 +700,9 @@ class Unit(dict):
 # number of points in a coordinate (o,x,y,z,-x,-y,-z)
 NUM_POINTS_PER_COORDINATE = 7
 
-def getCoordinateOXYZ(transform):
-    coordinate_radius = 16
+def getCoordinateOXYZ(transform=None,coordinate_radius = 1):
+    if transform is None:
+        transform = np.eye(4)
     o = transform[:3, -1]  # origin
     ox = coordinate_radius * transform[:3, 0]
     oy = coordinate_radius * transform[:3, 1]
@@ -746,7 +836,7 @@ class RobotDescription(nx.classes.digraph.DiGraph):
         """
         tree = URDF(self).export(path)
         return tree
-
+#############################################################################
 class URDF:
     def __init__(self, graph):
         self.graph = graph
