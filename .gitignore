@@ -7,3 +7,5 @@ src/.ipynb_checkpoints/
 src/python/.ipynb_checkpoints/
 
 data/
+
+src/python/__pycache__/
