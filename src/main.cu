@@ -53,9 +53,10 @@ int main()
 	// for time measurement
 	auto start = std::chrono::steady_clock::now();
 
-	constexpr int num_body = 5;//number of bodies
+	
 	Model bot("..\\src\\data.msgpack"); //defined in sim.h
 
+	const size_t num_body = bot.idVertices.size()-3;//number of bodies
 	const size_t num_mass = bot.vertices.size(); // number of mass
 	const size_t num_spring = bot.edges.size(); // number of spring
 
