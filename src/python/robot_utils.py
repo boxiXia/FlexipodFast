@@ -592,6 +592,9 @@ class VolumeMesh(dict):
             return normalizeMinMax(sd)
         return sd
     def appendVertices(self,new_vertices,min_radius=0,max_radius=-1.,max_nn=None):
+        if len(new_vertices)==0:
+            print("no vertices added")
+            return self
         len_v = len(self["vertices"]) # length of the vertices before adding new vertices
         self["vertices"] = np.vstack((self["vertices"],new_vertices))
         
@@ -985,14 +988,14 @@ class RobotDescription(nx.classes.digraph.DiGraph):
         joint_height = opt["joint_height"]
         joint_sections = opt["joint_sections"]
         joint_axis_radius = joint_height/2.+min_radius
-        
+
         parent_node = self.nodes[e[0]]
         child_node = self.nodes[e[1]]
         edge = self.edges[e]
         if "id_joint_parent" in edge:# check if already processed
             print(f"edge{e}: ({len(edge['id_joint_parent']), len(edge['id_joint_child'])}) already processed, skip this")
             return
-            
+
         # operate in body-space of parent node
         T_edge = edge["transform"]  # edge transform
         # parent transform
@@ -1031,13 +1034,13 @@ class RobotDescription(nx.classes.digraph.DiGraph):
         id_joint_child = np.flatnonzero(is_joint_child)
         id_joint_parent = np.flatnonzero(is_joint_parent)
 
-        print(len(id_joint_parent), len(id_joint_child))
+        print(e,len(id_joint_parent), len(id_joint_child))
 
         edge['axis'] = np.asarray(edge['axis'], dtype=np.float64)
         edge['anchor'] = np.stack((-edge['axis'], edge['axis']))*joint_axis_radius
         edge["id_joint_parent"] = id_joint_parent
         edge["id_joint_child"] = id_joint_child
-        
+
     #     parent_pcd = parent_node["vmd"].pcd().transform(T_parent)
     #     parent_lsd = parent_node["vmd"].lsd().transform(T_parent)
     #     child_pcd = child_node["vmd"].pcd().transform(T_child)

@@ -9,3 +9,5 @@ src/python/.ipynb_checkpoints/
 data/
 
 src/python/__pycache__/
+
+*.lck
