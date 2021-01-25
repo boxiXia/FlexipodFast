@@ -393,6 +393,7 @@ struct JOINT {
 		anchors.init(std_joints, on_host);//initialize anchor
 		points.init(std_joints, on_host);
 	}
+	// return num of joints
 	inline int size() { return anchors.num; }
 };
 
@@ -628,7 +629,7 @@ public:
 	MASS mass; // a flat fiew of all masses
 	SPRING spring; // a flat fiew of all springs
 	JOINT joint;// a flat view of all joints
-	JointControl jc; // joint controller
+	JointControl joint_control; // joint controller
 	RigidBody body; // mainbody
 	// device
 	MASS d_mass;
@@ -662,8 +663,8 @@ public:
 
 	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 
-	Simulation();
-	Simulation(size_t num_mass, size_t num_spring);
+	//Simulation();
+	Simulation(size_t num_mass, size_t num_spring, size_t num_joint);
 	~Simulation();
 
 	void getAll();

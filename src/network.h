@@ -12,7 +12,7 @@
 #include <thread>
 #include <time.h> // for timeout setup
 #include <atomic> // for atomic data sharing
-
+#include <vector>
 // copied from: https://adaickalavan.github.io/programming/udp-socket-programming-in-cpp-and-python/
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <system_error>
@@ -34,9 +34,9 @@ class UdpDataSend {/*the info to be sent to the high level controller*/
 public:
 	UDP_HEADER header = UDP_HEADER::ROBOT_STATE_REPORT;
 	double T = 0; // time at the sending of this udp packet
-	double joint_pos[4] = { 0 }; // joint position (angles)
-	double joint_vel[4] = { 0 }; // joint angular velocity
-	double actuation[4] = { 0 }; // acutation of the joint
+	std::vector<double> joint_pos; // joint position (angles)
+	std::vector<double> joint_vel; // joint angular velocity
+	std::vector<double> actuation; // acutation of the joint
 
 	double orientation[6] = { 0 }; // orientation of the body
 	Vec3d ang_vel = Vec3d(); // angular velocity of the body
@@ -46,15 +46,27 @@ public:
 	Vec3d com_pos = Vec3d(); // COM (body) position
 	//double joint_vel_desired[4] = { 0 };// desired joint velocity at last command
 	//double T_prev = 0; // time at last command
-	MSGPACK_DEFINE(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel, com_pos)
+	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel, com_pos);
+
+		UdpDataSend(int num_joint) {
+		joint_pos = std::vector<double>(num_joint, 0);
+		joint_vel = std::vector<double>(num_joint, 0);
+		actuation = std::vector<double>(num_joint, 0);
+	}
+		//UdpDataSend(){}// defualt constructor
 };
 
 class UdpDataReceive {/*the high level command to be received */
 public:
 	UDP_HEADER header = UDP_HEADER::MOTOR_SPEED_COMMEND;
 	double T;
-	double joint_vel_desired[4] = { 0 };// desired joint velocity
-	MSGPACK_DEFINE(header, T, joint_vel_desired)
+	std::vector<double> joint_vel_desired;// desired joint velocity
+	MSGPACK_DEFINE_ARRAY(header, T, joint_vel_desired);
+
+	UdpDataReceive(int num_joint) {
+		joint_vel_desired = std::vector<double>(num_joint, 0);
+	}
+	//UdpDataReceive(){}// defualt constructor
 };
 
 
@@ -205,9 +217,15 @@ public:
 
 	WSASession Session;
 
-	WsaUdpServer(int port_local = 32001,
-		int port_remote = 32000,
-		std::string ip_remote = "127.0.0.1") {
+	WsaUdpServer(
+		int port_local, // e.g.: 32001
+		int port_remote, // e.g.: 32000
+		std::string ip_remote, // e.g.:"127.0.0.1"
+		int num_joint // e.g.: 4
+		) : 
+		_msg_rec(num_joint), msg_rec(num_joint), // set size
+		_msg_send(num_joint), msg_send(num_joint)
+	{
 		this->port_remote = port_remote;
 		this->port_local = port_local;
 		this->ip_remote = ip_remote;
@@ -311,104 +329,114 @@ private:
 };
 
 
-class AsioUdpServer {
-public:
-	UdpDataReceive msg_rec; // struct to be received
-	UdpDataSend msg_send; // struct to be sent
-
-	int port_local; // local port
-	int port_remote; // remote port
-	std::string ip_remote; // remote ip
-
-	bool flag_should_send = false;// flag indicating whether to send udp packet
-	bool flag_should_close = false; // flag indicating whether to stop sending/receiving
-	bool flag_new_received = false; // flag indicating a new message has received
-
-	asio::io_context io_context; // asio io context for the socket
-	std::thread thread_udp_send; // thread for sending udp
-	std::thread thread_udp_receive; // thread for receiving udp
-
-	/*constructor*/
-	AsioUdpServer(
-		int port_local = 32001,
-		int port_remote = 32000,
-		std::string ip_remote = "127.0.0.1")
-		:socket(io_context, asio::ip::udp::endpoint(asio::ip::udp::v4(), port_local)) {
-		this->port_remote = port_remote;
-		this->port_local = port_local;
-		this->ip_remote = ip_remote;
-		remote_endpoint = asio::ip::udp::endpoint(asio::ip::address::from_string(ip_remote), port_remote);
-		socket.connect(remote_endpoint);// connect to remote_endpoint
-	}
-	/* loop for receiving the udp packet */
-	void do_receive()
-	{
-		while (!flag_should_close) {
-			socket.async_receive(// receive from remote_endpoint
-				asio::buffer(recv_buffer_, max_length),
-				[this](std::error_code ec, std::size_t bytes_recvd)
-				{
-					if (!ec && bytes_recvd > 0)
-					{
-						//for (int i = 0; i < bytes_recvd; i++) {//prints the data in hex format
-						//	printf("%02x", reinterpret_cast<unsigned char*>(recv_buffer_)[i]);
-						//}
-						//printf("\n");
-
-						// Unpack data
-						msgpack::object_handle oh = msgpack::unpack(recv_buffer_, bytes_recvd);
-						msgpack::object obj = oh.get();
-						obj.convert(msg_rec);
-						//TODO notify the simulation thread
-						//TODO use condition variable
-						flag_new_received = true;
-					}
-				});
-			io_context.run_for(std::chrono::duration<int, std::milli>(10));
-			std::this_thread::sleep_for(std::chrono::microseconds(100));
-		}
-	}
-
-	/* loop for sending the udp packet */
-	void do_send()
-	{
-		try {
-			while (!flag_should_close) {
-				while (!flag_should_send) { std::this_thread::sleep_for(std::chrono::microseconds(100)); }
-				// Pack data into msgpack
-				std::stringstream send_stream;
-				msgpack::pack(send_stream, msg_send);
-				socket.send(asio::buffer(send_stream.str()));//send to remote_endpoint
-				//std::string const& data = send_stream.str();
-				//socket.send(asio::buffer(data.c_str(), data.size()));//send to remote_endpoint
-				//TODO use condition variable
-				flag_should_send = false;//reset flag_should_send
-			}
-		}
-		catch (std::system_error e) {
-			printf("[%s:%d]: %s\n", __FILE__, __LINE__, e.what());
-		}
-
-	}
-	/*run this to start receiving and sending udp*/
-	void run() {
-		thread_udp_receive = std::thread{ &AsioUdpServer::do_receive, this };
-		thread_udp_send = std::thread(&AsioUdpServer::do_send, this);
-	}
-
-	~AsioUdpServer() { //TODO automatically close it...
-		flag_should_close = true;//just to be sure
-		thread_udp_send.join();
-		thread_udp_receive.join();
-		io_context.stop();
-		socket.close();
-	}
-private:
-	asio::ip::udp::socket socket;//local socket for sending and reciving udp packets
-	asio::ip::udp::endpoint remote_endpoint;
-	enum { max_length = 1024 };
-	char recv_buffer_[max_length];// data received from the remote endponit    
-};
+//// TODO: _msg_rec, _msg_send, mutex_running, cv_running
+//class AsioUdpServer {
+//private:
+//	UdpDataReceive _msg_rec; // struct to be received, private
+//	UdpDataSend _msg_send; // struct to be sent, private
+//	std::mutex mutex_running;
+//	std::condition_variable cv_running;
+//public:
+//	UdpDataReceive msg_rec; // struct to be received
+//	UdpDataSend msg_send; // struct to be sent
+//
+//	int port_local; // local port
+//	int port_remote; // remote port
+//	std::string ip_remote; // remote ip
+//
+//	bool flag_should_send = false;// flag indicating whether to send udp packet
+//	bool flag_should_close = false; // flag indicating whether to stop sending/receiving
+//	bool flag_new_received = false; // flag indicating a new message has received
+//
+//	asio::io_context io_context; // asio io context for the socket
+//	std::thread thread_udp_send; // thread for sending udp
+//	std::thread thread_udp_receive; // thread for receiving udp
+//
+//	/*constructor*/
+//	AsioUdpServer(
+//		int port_local = 32001,
+//		int port_remote = 32000,
+//		std::string ip_remote = "127.0.0.1",
+//		int num_joint = 4) :
+//		_msg_rec(num_joint), msg_rec(num_joint), // set size
+//		_msg_send(num_joint), msg_send(num_joint)
+//		,socket(io_context, asio::ip::udp::endpoint(asio::ip::udp::v4(), port_local)) {
+//		this->port_remote = port_remote;
+//		this->port_local = port_local;
+//		this->ip_remote = ip_remote;
+//		remote_endpoint = asio::ip::udp::endpoint(asio::ip::address::from_string(ip_remote), port_remote);
+//		socket.connect(remote_endpoint);// connect to remote_endpoint
+//	}
+//	/* loop for receiving the udp packet */
+//	void do_receive()
+//	{
+//		while (!flag_should_close) {
+//			socket.async_receive(// receive from remote_endpoint
+//				asio::buffer(recv_buffer_, max_length),
+//				[this](std::error_code ec, std::size_t bytes_recvd)
+//				{
+//					if (!ec && bytes_recvd > 0)
+//					{
+//						//for (int i = 0; i < bytes_recvd; i++) {//prints the data in hex format
+//						//	printf("%02x", reinterpret_cast<unsigned char*>(recv_buffer_)[i]);
+//						//}
+//						//printf("\n");
+//
+//						// Unpack data
+//						msgpack::object_handle oh = msgpack::unpack(recv_buffer_, bytes_recvd);
+//						msgpack::object obj = oh.get();
+//						obj.convert(_msg_rec);  // use private value to prevent modification during convert
+//						msg_rec = _msg_rec;
+//						//TODO notify the simulation thread
+//						//TODO use condition variable
+//						flag_new_received = true;
+//					}
+//				});
+//			io_context.run_for(std::chrono::duration<int, std::milli>(10));
+//			std::this_thread::sleep_for(std::chrono::microseconds(100));
+//		}
+//	}
+//
+//	/* loop for sending the udp packet */
+//	void do_send()
+//	{
+//		try {
+//			while (!flag_should_close) {
+//				while (!flag_should_send) { std::this_thread::sleep_for(std::chrono::microseconds(100)); }
+//				// Pack data into msgpack
+//				std::stringstream send_stream;
+//				msgpack::pack(send_stream, msg_send);
+//				socket.send(asio::buffer(send_stream.str()));//send to remote_endpoint
+//				//std::string const& data = send_stream.str();
+//				//socket.send(asio::buffer(data.c_str(), data.size()));//send to remote_endpoint
+//				//TODO use condition variable
+//				flag_should_send = false;//reset flag_should_send
+//			}
+//		}
+//		catch (std::system_error e) {
+//			printf("[%s:%d]: %s\n", __FILE__, __LINE__, e.what());
+//		}
+//
+//	}
+//	/*run this to start receiving and sending udp*/
+//	void run() {
+//		thread_udp_receive = std::thread{ &AsioUdpServer::do_receive, this };
+//		thread_udp_send = std::thread(&AsioUdpServer::do_send, this);
+//	}
+//
+//	~AsioUdpServer() { //TODO automatically close it...
+//		flag_should_close = true;//just to be sure
+//		thread_udp_send.join();
+//		thread_udp_receive.join();
+//		io_context.stop();
+//		socket.close();
+//	}
+//private:
+//	asio::ip::udp::socket socket;//local socket for sending and reciving udp packets
+//	asio::ip::udp::endpoint remote_endpoint;
+//	enum { max_length = 1024 };
+//	char recv_buffer_[max_length];// data received from the remote endponit    
+//};
 
 
 

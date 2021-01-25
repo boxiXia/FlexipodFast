@@ -62,7 +62,7 @@ int main()
 
 	const size_t num_joint = bot.Joints.size();//number of rotational joint
 
-	Simulation sim(num_mass, num_spring); // Simulation object
+	Simulation sim(num_mass, num_spring,num_joint); // Simulation object
 	MASS& mass = sim.mass; // reference variable for sim.mass
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 
@@ -70,12 +70,12 @@ int main()
 	//sim.dt = 4e-5; // timestep
 	sim.dt = 5e-5; // timestep
 
-	constexpr  double radius_poisson = 10 * 1e-3;
+	constexpr  double radius_poisson = 15 * 1e-3;
 
 	const double radius_knn = radius_poisson * sqrt(3.0);
-	constexpr double mimimun_radius = radius_poisson * 0.5;
+	constexpr double min_radius = radius_poisson * 0.5;
 
-	const double m = 6e-4;// mass per vertex
+	const double m = 9e-4;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
 	const double spring_constant = m * 2.4e6; //spring constant for silicone leg
@@ -118,8 +118,8 @@ int main()
 		spring.edge[i] = bot.edges[i]; // the (left,right) mass index of the spring
 		spring.damping[i] = spring_damping; // spring constant
 		spring.rest[i] = (mass.pos[spring.edge[i].x] - mass.pos[spring.edge[i].y]).norm(); // spring rest length
-		// longer spring will have a smalller influence
-		spring.k[i] = spring_constant * radius_knn / std::max(spring.rest[i], mimimun_radius); // spring constant
+		// longer spring will have a smalller influence, https://ccrma.stanford.edu/~jos/pasp/Young_s_Modulus_Spring_Constant.html
+		spring.k[i] = spring_constant * radius_knn / std::max(spring.rest[i], min_radius); // spring constant
 		//spring.k[i] = spring_constant; // spring constant
 		spring.resetable[i] = false; // set all spring as non-resetable
 	}
@@ -183,9 +183,6 @@ int main()
 		spring.resetable[i] = true;
 	}
 
-
-	/*oxyz_body,oxyz_joint0_body,oxyz_joint0_leg0,oxyz_joint1_body,oxyz_joint1_leg1,
-				oxyz_joint2_body,oxyz_joint2_leg2,oxyz_joint3_body,oxyz_joint3_leg3,*/
 	sim.id_oxyz_start = bot.idVertices[num_body + 1];
 	sim.id_oxyz_end = bot.idVertices[num_body + 2];
 
@@ -240,12 +237,9 @@ int main()
 	printf("[kg]\n");
 
 
-	sim.jc.init(num_joint, true);//init joint controller
-	sim.jc.reset(sim.mass, sim.joint);
-
 	// set max speed for each joint
 	double max_rpm = 500;//maximun revolution per minute
-	sim.jc.setMaxJointSpeed(max_rpm / 60. * 2 * M_PI);//max joint speed in rad/s
+	sim.joint_control.setMaxJointSpeed(max_rpm / 60. * 2 * M_PI);//max joint speed in rad/s
 
 #ifdef GRAPHICS
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));

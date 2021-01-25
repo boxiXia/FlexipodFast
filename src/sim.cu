@@ -267,26 +267,30 @@ __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 #endif // ROTATION
 
 
-Simulation::Simulation() {
-	//dynamicsUpdate(d_mass.m, d_mass.pos, d_mass.vel, d_mass.acc, d_mass.force, d_mass.force_extern, d_mass.fixed,
-	//	d_spring.k,d_spring.rest,d_spring.damping,d_spring.left,d_spring.right,
-	//	d_mass.num,d_spring.num,global_acc, d_constraints,dt);
+//Simulation::Simulation() {
+//	//cudaSetDevice(1);
+//	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
+//		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
+//	}
+//}
 
-	//cudaSetDevice(1);
+Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint):
+	mass(num_mass, true), // allocate host
+	d_mass(num_mass, false),// allocate device
+	spring(num_spring, true),// allocate host
+	d_spring(num_spring, false),// allocate device
+	joint_control(num_joint,true) // joint controller, must also call reset, see update_physics()
+#ifdef UDP
+	,msg_rec(num_joint)
+	,msg_send(num_joint)
+	,udp_server(port_local, port_remote, ip_remote, num_joint)// port_local,port_remote,ip_remote,num_joint
+#endif //UDP
+{
+	//cudaDeviceSynchronize();
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
 		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 	}
 
-}
-
-Simulation::Simulation(size_t num_mass, size_t num_spring) :Simulation() {
-	mass = MASS(num_mass, true); // allocate host
-	d_mass = MASS(num_mass, false); // allocate device
-	spring = SPRING(num_spring, true); // allocate host
-	d_spring = SPRING(num_spring, false); // allocate device
-	//this->num_mass = num_mass;//refer to spring.num
-	//this->num_spring = num_spring;// refer to mass.num
-	//cudaDeviceSynchronize();
 }
 
 void Simulation::getAll() {//copy from gpu
@@ -386,7 +390,7 @@ void Simulation::resetState() {//TODO...fix bug
 	//	joint_vel_error[i] = 0.;
 	//	joint_pos_error[i] = 0.;
 	//}
-	jc.reset(backup_mass, backup_joint);
+	joint_control.reset(backup_mass, backup_joint);
 	body.init(backup_mass, id_oxyz_start); // init body frame
 
 }
@@ -467,8 +471,7 @@ void Simulation::update_physics() { // repeatedly start next
 	energy_start = energy(); // compute the total energy of the system at T=0
 #endif // DEBUG_ENERGY
 
-	//jc.init(joint.size(), true);//init joint controller
-	//jc.reset(mass, joint);
+	joint_control.reset(mass, joint);// reset joint controller, must do
 	body.init(mass, id_oxyz_start); // init body frame
 
 	while (true) {
@@ -592,10 +595,10 @@ void Simulation::update_physics() { // repeatedly start next
 		////std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(ct_end - ct_begin).count() << "[micro s]" << std::endl;
 		////std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::nanoseconds> (ct_end - ct_begin).count() << "[ns]" << std::endl;
 
-		jc.update(mass, joint, NUM_QUEUED_KERNELS * dt);
+		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
 		// update joint speed
 		for (int i = 0; i < joint.anchors.num; i++) { // compute joint angles and angular velocity
-			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * jc.joint_vel_cmd[i] * dt;// update joint speed
+			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.joint_vel_cmd[i] * dt;// update joint speed
 		}
 		d_joint.anchors.copyThetaFrom(joint.anchors, stream[CUDA_MEMORY_STREAM]);
 
@@ -620,12 +623,12 @@ void Simulation::update_physics() { // repeatedly start next
 			//msg_send.T_prev = msg_send.T;//update previous time
 			msg_send.T = T;//update time
 
-			for (auto i = 0; i < 4; i++)
+			for (auto i = 0; i < joint.size(); i++)
 			{
-				msg_send.joint_pos[i] = jc.joint_pos[i];
-				msg_send.joint_vel[i] = jc.joint_vel[i];
-				msg_send.actuation[i] = jc.joint_vel_cmd[i] / jc.max_joint_vel[i];
-				//msg_send.joint_vel_desired[i] = jc.joint_vel_desired[i];//desired joint velocity at last command
+				msg_send.joint_pos[i] = joint_control.joint_pos[i];
+				msg_send.joint_vel[i] = joint_control.joint_vel[i];
+				msg_send.actuation[i] = joint_control.joint_vel_cmd[i] / joint_control.max_joint_vel[i];
+				//msg_send.joint_vel_desired[i] = joint_control.joint_vel_desired[i];//desired joint velocity at last command
 		}
 
 			msg_send.com_acc = body.acc;
@@ -669,7 +672,7 @@ void Simulation::update_physics() { // repeatedly start next
 					break;
 				case UDP_HEADER::MOTOR_SPEED_COMMEND:
 					for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-						jc.joint_vel_desired[i] = msg_rec.joint_vel_desired[i];
+						joint_control.joint_vel_desired[i] = msg_rec.joint_vel_desired[i];
 					}
 					break;
 				default:
@@ -781,31 +784,31 @@ void Simulation::update_graphics() {
 			else if (glfwGetKey(window, GLFW_KEY_E)) {camera_up_offset += 0.05;}// camera moves up
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
-				if (jc.joint_vel_desired[0] < jc.max_joint_vel[0]) { jc.joint_vel_desired[0] += speed_multiplier; }
-				if (jc.joint_vel_desired[1] < jc.max_joint_vel[1]) { jc.joint_vel_desired[1] += speed_multiplier; }
-				if (jc.joint_vel_desired[2] > -jc.max_joint_vel[2]) { jc.joint_vel_desired[2] -= speed_multiplier; }
-				if (jc.joint_vel_desired[3] > -jc.max_joint_vel[3]) { jc.joint_vel_desired[3] -= speed_multiplier; }
+				if (joint_control.joint_vel_desired[0] < joint_control.max_joint_vel[0]) { joint_control.joint_vel_desired[0] += speed_multiplier; }
+				if (joint_control.joint_vel_desired[1] < joint_control.max_joint_vel[1]) { joint_control.joint_vel_desired[1] += speed_multiplier; }
+				if (joint_control.joint_vel_desired[2] > -joint_control.max_joint_vel[2]) { joint_control.joint_vel_desired[2] -= speed_multiplier; }
+				if (joint_control.joint_vel_desired[3] > -joint_control.max_joint_vel[3]) { joint_control.joint_vel_desired[3] -= speed_multiplier; }
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
-				if (jc.joint_vel_desired[0] > -jc.max_joint_vel[0]) { jc.joint_vel_desired[0] -= speed_multiplier; }
-				if (jc.joint_vel_desired[1] > -jc.max_joint_vel[1]) { jc.joint_vel_desired[1] -= speed_multiplier; }
-				if (jc.joint_vel_desired[2] < jc.max_joint_vel[2]) { jc.joint_vel_desired[2] += speed_multiplier; }
-				if (jc.joint_vel_desired[3] < jc.max_joint_vel[3]) { jc.joint_vel_desired[3] += speed_multiplier; }
+				if (joint_control.joint_vel_desired[0] > -joint_control.max_joint_vel[0]) { joint_control.joint_vel_desired[0] -= speed_multiplier; }
+				if (joint_control.joint_vel_desired[1] > -joint_control.max_joint_vel[1]) { joint_control.joint_vel_desired[1] -= speed_multiplier; }
+				if (joint_control.joint_vel_desired[2] < joint_control.max_joint_vel[2]) { joint_control.joint_vel_desired[2] += speed_multiplier; }
+				if (joint_control.joint_vel_desired[3] < joint_control.max_joint_vel[3]) { joint_control.joint_vel_desired[3] += speed_multiplier; }
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 				for (int i = 0; i < joint.size(); i++)
 				{
-					if (jc.joint_vel_desired[i] > -jc.max_joint_vel[i]) { jc.joint_vel_desired[i] -= speed_multiplier; }
+					if (joint_control.joint_vel_desired[i] > -joint_control.max_joint_vel[i]) { joint_control.joint_vel_desired[i] -= speed_multiplier; }
 				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 				for (int i = 0; i < joint.size(); i++)
 				{
-					if (jc.joint_vel_desired[i] < jc.max_joint_vel[i]) { jc.joint_vel_desired[i] += speed_multiplier; }
+					if (joint_control.joint_vel_desired[i] < joint_control.max_joint_vel[i]) { joint_control.joint_vel_desired[i] += speed_multiplier; }
 				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
-				for (int i = 0; i < joint.size(); i++) { jc.joint_vel_desired[i] = 0.; }
+				for (int i = 0; i < joint.size(); i++) { joint_control.joint_vel_desired[i] = 0.; }
 			}
 			else if (glfwGetKey(window, GLFW_KEY_R)) { // reset
 				RESET = true;

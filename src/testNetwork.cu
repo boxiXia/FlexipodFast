@@ -17,6 +17,12 @@ public:
 	UdpServer s;
 	std::thread control_thread;
 
+	TestUdp(int num_joint=4):
+	s(32001, 32000, "127.0.0.1", num_joint)// port_local,port_remote,ip_remote,num_joint
+	{
+		
+	}
+
 	void controlLoop() {
 
 		s.run();
