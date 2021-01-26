@@ -281,8 +281,6 @@ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint):
 	d_spring(num_spring, false),// allocate device
 	joint_control(num_joint,true) // joint controller, must also call reset, see update_physics()
 #ifdef UDP
-	,msg_rec(num_joint)
-	,msg_send(num_joint)
 	,udp_server(port_local, port_remote, ip_remote, num_joint)// port_local,port_remote,ip_remote,num_joint
 #endif //UDP
 {
@@ -621,45 +619,35 @@ void Simulation::update_physics() { // repeatedly start next
 
 #ifdef UDP
 			//msg_send.T_prev = msg_send.T;//update previous time
-			msg_send.T = T;//update time
+			udp_server.msg_send.T = T;//update time
 
 			for (auto i = 0; i < joint.size(); i++)
 			{
-				msg_send.joint_pos[i] = joint_control.joint_pos[i];
-				msg_send.joint_vel[i] = joint_control.joint_vel[i];
-				msg_send.actuation[i] = joint_control.joint_vel_cmd[i] / joint_control.max_joint_vel[i];
+				udp_server.msg_send.joint_pos[i] = joint_control.joint_pos[i];
+				udp_server.msg_send.joint_vel[i] = joint_control.joint_vel[i];
+				udp_server.msg_send.actuation[i] = joint_control.joint_vel_cmd[i] / joint_control.max_joint_vel[i];
 				//msg_send.joint_vel_desired[i] = joint_control.joint_vel_desired[i];//desired joint velocity at last command
-		}
+			}
 
-			msg_send.com_acc = body.acc;
-			msg_send.com_vel = body.vel;
-			msg_send.com_pos = body.pos;
+			udp_server.msg_send.com_acc = body.acc;
+			udp_server.msg_send.com_vel = body.vel;
+			udp_server.msg_send.com_pos = body.pos;
 
-			msg_send.orientation[0] = body.rot.m00;
-			msg_send.orientation[1] = body.rot.m10;
-			msg_send.orientation[2] = body.rot.m20;
-			msg_send.orientation[3] = body.rot.m01;
-			msg_send.orientation[4] = body.rot.m11;
-			msg_send.orientation[5] = body.rot.m21;
+			udp_server.msg_send.orientation[0] = body.rot.m00;
+			udp_server.msg_send.orientation[1] = body.rot.m10;
+			udp_server.msg_send.orientation[2] = body.rot.m20;
+			udp_server.msg_send.orientation[3] = body.rot.m01;
+			udp_server.msg_send.orientation[4] = body.rot.m11;
+			udp_server.msg_send.orientation[5] = body.rot.m21;
 
-			msg_send.ang_vel = body.ang_vel;
+			udp_server.msg_send.ang_vel = body.ang_vel;
 
-			udp_server.msg_send = msg_send;
 			udp_server.flag_should_send = true;
 			// receiving message
 			if (udp_server.flag_new_received) {
-				msg_rec = udp_server.msg_rec;
 				udp_server.flag_new_received = false;
 
-				if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
-					printf("%3.3f \t %3.3f %3.3f %3.3f %3.3f\r\r", msg_rec.T,
-						msg_rec.joint_vel_desired[0],
-						msg_rec.joint_vel_desired[1],
-						msg_rec.joint_vel_desired[2],
-						msg_rec.joint_vel_desired[3]);
-				}
-
-				switch (msg_rec.header)
+				switch (udp_server.msg_rec.header)
 				{
 				case UDP_HEADER::TERMINATE://close the program
 					bpts.insert(T);
@@ -672,39 +660,48 @@ void Simulation::update_physics() { // repeatedly start next
 					break;
 				case UDP_HEADER::MOTOR_SPEED_COMMEND:
 					for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-						joint_control.joint_vel_desired[i] = msg_rec.joint_vel_desired[i];
+						joint_control.joint_vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
 					}
 					break;
 				default:
 					break;
 				}
+				if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
+					printf("%3.3f \t", T); // alternative lagged: udp_server.msg_rec.T
+					for (int i = 0; i < joint.size(); i++)
+					{
+						printf("%3.3f ", joint_control.joint_vel_desired[i]);
+					}
+					printf("\r\r"); // TODO: improve speed, maybe create string and print at once
+				}
 			}
 
-			if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-				//printf("% 6.1f",T); // time
-				//printf("|t");
-				//for (int i = 0; i < joint.anchors.num; i++) {
-				//	printf("% 4.0f", joint_pos[i] * M_1_PI * 180.0); // display joint angle in deg
-				//}
-				//printf("|w");
-				//for (int i = 0; i < joint.anchors.num; i++) {
-				//	printf("% 4.0f", joint_vel[i] * M_1_PI * 30.0); // display joint speed in RPM
-				//}
 
-				//printf("|wc");
-				//for (int i = 0; i < joint.anchors.num; i++) {
-				//	printf("% 4.0f", joint_vel_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
-				//}
 
-				////printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
-				////printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
+			//if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
+			//	//printf("% 6.1f",T); // time
+			//	//printf("|t");
+			//	//for (int i = 0; i < joint.anchors.num; i++) {
+			//	//	printf("% 4.0f", joint_pos[i] * M_1_PI * 180.0); // display joint angle in deg
+			//	//}
+			//	//printf("|w");
+			//	//for (int i = 0; i < joint.anchors.num; i++) {
+			//	//	printf("% 4.0f", joint_vel[i] * M_1_PI * 30.0); // display joint speed in RPM
+			//	//}
 
-				//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
-				//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
-				//printf("\r\r");
+			//	//printf("|wc");
+			//	//for (int i = 0; i < joint.anchors.num; i++) {
+			//	//	printf("% 4.0f", joint_vel_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
+			//	//}
 
-			}
-			//printf("\n");
+			//	////printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
+			//	////printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
+
+			//	//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
+			//	//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
+			//	//printf("\r\r");
+			//}
+			////printf("\n");
 		//}
 #endif // UDP
 	}

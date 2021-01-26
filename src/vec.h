@@ -44,6 +44,7 @@ index 2 (int)
 */
 struct MY_ALIGN(8) Vec2i {
 	int x, y;
+	MSGPACK_DEFINE_ARRAY(x, y);
 
 	CUDA_CALLABLE_MEMBER Vec2i() {
 		x = 0;
@@ -79,7 +80,7 @@ use align to force alignment for gpu memory
 */
 struct MY_ALIGN(8) Vec3d {
 	double x, y, z;
-	MSGPACK_DEFINE(x, y, z)
+	MSGPACK_DEFINE_ARRAY(x, y, z);
 
 	CUDA_CALLABLE_MEMBER Vec3d() {
 		x = 0;
@@ -323,7 +324,7 @@ struct MY_ALIGN(8) Vec3d {
 
 struct MY_ALIGN(8) Mat3d {
 	double m00, m01, m02, m10, m11, m12, m20, m21, m22;
-	MSGPACK_DEFINE(m00, m01, m02, m10, m11, m12, m20, m21, m22);
+	MSGPACK_DEFINE_ARRAY(m00, m01, m02, m10, m11, m12, m20, m21, m22);
 
 	// defualt constructor
 	CUDA_CALLABLE_MEMBER Mat3d() {}

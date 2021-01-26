@@ -115,6 +115,7 @@ struct StdJoint {
 };
 class Model {
 public:
+	double radius_poisson;// poisson discretization radius
 	std::vector<std::vector<double> > vertices;// the mass xyzs
 	std::vector<std::vector<int> > edges;//the spring ids
 	std::vector<bool> isSurface;// whether the mass is near the surface
@@ -122,7 +123,7 @@ public:
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<std::vector<double> > colors;// the mass xyzs
 	std::vector<StdJoint> Joints;// the joints
-	MSGPACK_DEFINE(vertices, edges, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
+	MSGPACK_DEFINE(radius_poisson, vertices, edges, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
 		Model() {}
 	Model(const char* file_path) {
 		// get the msgpack robot model
@@ -703,9 +704,6 @@ public:
 	std::string ip_remote = "127.0.0.1"; // remote ip
 	int port_remote = 32000; // remote port
 	int port_local = 32001;
-
-	UdpDataSend msg_send; // message to be sent
-	UdpDataReceive msg_rec; // message that is received
 
 	UdpServer udp_server;
 #endif //UDP

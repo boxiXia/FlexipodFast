@@ -70,10 +70,12 @@ int main()
 	//sim.dt = 4e-5; // timestep
 	sim.dt = 5e-5; // timestep
 
-	constexpr  double radius_poisson = 15 * 1e-3;
+	//constexpr double radius_poisson = 12.5 * 1e-3;
+	const double  radius_poisson = bot.radius_poisson;
+	printf("radius_poisson=%.3e [m] \n",radius_poisson);
 
 	const double radius_knn = radius_poisson * sqrt(3.0);
-	constexpr double min_radius = radius_poisson * 0.5;
+	const double min_radius = radius_poisson * 0.5;
 
 	const double m = 9e-4;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
