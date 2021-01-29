@@ -59,13 +59,14 @@ int main()
 	const size_t num_body = bot.idVertices.size() - 3;//number of bodies
 	const size_t num_mass = bot.vertices.size(); // number of mass
 	const size_t num_spring = bot.edges.size(); // number of spring
-
+	const size_t num_triangle = bot.triangles.size();// number of triangle
 	const size_t num_joint = bot.Joints.size();//number of rotational joint
 
-	Simulation sim(num_mass, num_spring,num_joint); // Simulation object
+	Simulation sim(num_mass, num_spring,num_joint,num_triangle); // Simulation object
+
 	MASS& mass = sim.mass; // reference variable for sim.mass
 	SPRING& spring = sim.spring; // reference variable for sim.spring
-
+	TRIANGLE triangle = sim.triangle;// reference variable for sim.triangle
 
 	//sim.dt = 4e-5; // timestep
 	sim.dt = 5e-5; // timestep
@@ -80,9 +81,9 @@ int main()
 	const double m = 9e-4;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
-	const double spring_constant = m * 2.4e6; //spring constant for silicone leg
-	//const double spring_damping = m*1.8e2; // damping for spring
-	const double spring_damping = m * 1.5e2; // damping for spring
+	const double spring_constant = m * 5e6; //spring constant for silicone leg
+	const double spring_damping = m*3e2; // damping for spring
+	//const double spring_damping = m * 1.5e2; // damping for spring
 
 	//const double spring_constant = m * 1.5e6; //spring constant for silicone leg
 	//const double spring_damping = m * 1.5e2; // damping for spring
@@ -95,7 +96,7 @@ int main()
 	const double spring_constant_rigid = spring_constant * scale_high;//spring constant for rigid spring
 
 	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping * 2.4; // spring damping for resetable spring
+	const double spring_damping_restable = spring_damping * 2; // spring damping for resetable spring
 
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
@@ -105,6 +106,11 @@ int main()
 	const double spring_constant_probe_self = spring_constant * scale_probe * scale_high; // spring constant for coordiates self springs
 	const double spring_damping_probe = spring_damping * scale_probe * scale_high;
 
+#pragma omp parallel for simd
+	for (int i = 0; i < num_triangle; i++)
+	{
+		triangle.triangle[i] = bot.triangles[i];
+	}
 
 #pragma omp parallel for simd
 	for (int i = 0; i < num_mass; i++)

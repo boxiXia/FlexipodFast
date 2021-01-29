@@ -55,9 +55,7 @@ typedef WsaUdpServer UdpServer;
 constexpr const int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr const int CUDA_DYNAMICS_STREAM = 0;  // stream to run the dynamics update
 constexpr const int CUDA_MEMORY_STREAM = 1;  // stream to run the memory operations
-constexpr const int CUDA_GRAPHICS_POS_STREAM = 2; // steam to run graphics: position update
-constexpr const int CUDA_GRAPHICS_EDGE_STREAM = 3; // steam to run graphics: edge update
-constexpr const int CUDA_GRAPHICS_COLOR_STREAM = 4; // steam to run graphics: color update
+constexpr const int CUDA_GRAPHICS_STREAM = 2; // steam to run graphics update
 
 constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
@@ -116,14 +114,15 @@ struct StdJoint {
 class Model {
 public:
 	double radius_poisson;// poisson discretization radius
-	std::vector<std::vector<double> > vertices;// the mass xyzs
-	std::vector<std::vector<int> > edges;//the spring ids
+	std::vector<Vec3d> vertices;// the mass xyzs
+	std::vector<Vec2i> edges;//the spring ids
+	std::vector<Vec3i> triangles; // the triangle indices
 	std::vector<bool> isSurface;// whether the mass is near the surface
 	std::vector<int> idVertices;// the edge id of the vertices
 	std::vector<int> idEdges;// the edge id of the springs
-	std::vector<std::vector<double> > colors;// the mass xyzs
+	std::vector<Vec3d> colors;// the mass xyzs
 	std::vector<StdJoint> Joints;// the joints
-	MSGPACK_DEFINE(radius_poisson, vertices, edges, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
+	MSGPACK_DEFINE(radius_poisson, vertices, edges,triangles, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
 		Model() {}
 	Model(const char* file_path) {
 		// get the msgpack robot model
@@ -196,7 +195,6 @@ struct MASS {
 		cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream);
-
 		//this->num = other.num;
 		gpuErrchk(cudaPeekAtLastError());
 	}
@@ -205,8 +203,8 @@ struct MASS {
 		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		gpuErrchk(cudaPeekAtLastError());
-
 	}
+
 };
 
 struct SPRING {
@@ -249,6 +247,33 @@ struct SPRING {
 	}
 };
 
+// for displaying triangle mesh
+struct TRIANGLE { 
+	Vec3i* triangle = nullptr; // triangle indices
+	Vec3d* vertex_normal = nullptr;// vertex normal calculated from the triangle
+	int num = 0; // number of triangles
+	inline int size() { return num; }
+	TRIANGLE(){}
+	TRIANGLE(int num, bool on_host) {
+		init(num, on_host);
+	}
+	/* initialize and copy the state from other SPRING object. must keep the second argument*/
+	TRIANGLE(TRIANGLE other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		init(other.num, on_host);
+		copyFrom(other, stream);
+	}
+	void init(int num, bool on_host = true) { // initialize
+		cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function
+		allocateMemory((void**)&triangle, num * sizeof(Vec3i));
+		gpuErrchk(cudaPeekAtLastError());
+		this->num = num;
+	}
+	void copyFrom(const TRIANGLE& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
+		cudaMemcpyAsync(triangle, other.triangle, num * sizeof(Vec3i), cudaMemcpyDefault, stream);
+		gpuErrchk(cudaPeekAtLastError());
+		//this->num = other.num;
+	}
+};
 
 struct RotAnchors { // the anchors that belongs to the rotational joints
 	Vec2i* edge; // index of the (left,right) anchor of the joint
@@ -258,7 +283,8 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 	int* leftCoord; // the index of left coordintate (oxyz) start for all joints (flat view)
 	int* rightCoord;// the index of right coordintate (oxyz) start for all joints (flat view)
 
-	int num; // num of anchor
+	int num; // num of joint, num_anchor=num*2
+	/*return number of joint*/
 	inline int size() { return num; }
 
 	RotAnchors() {}
@@ -439,13 +465,6 @@ struct JointControl {
 		allocateMemory((void**)&max_joint_vel_error, num * sizeof(double));//initialize maximum joint speed error array 
 		allocateMemory((void**)&max_joint_pos_error, num * sizeof(double));//initialize maximum joint position error array 
 
-		
-		//joint_vel_desired[0] = 0.5 * M_PI;
-		//joint_vel_desired[1] = 0.5 * M_PI;
-		//joint_vel_desired[2] = -0.5 * M_PI;
-		//joint_vel_desired[3] = -0.5 * M_PI;
-
-
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
@@ -498,7 +517,7 @@ struct JointControl {
 	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
 	void update(MASS& mass, JOINT& joint, double ndt) {
 		////#pragma omp parallel for simd
-		for (int i = 0; i < joint.anchors.num; i++) // compute joint angles and angular velocity
+		for (int i = 0; i < joint.anchors.size(); i++) // compute joint angles and angular velocity
 		{
 			Vec2i anchor_edge = joint.anchors.edge[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
@@ -597,15 +616,6 @@ struct RigidBody {
 
  		ang_vel = Mat3d::angularVelocityFromRotation(rot, rot_new, dt, true);
 
-		//Mat3d a = rot_new.dot(rot.transpose());
-		//double c = (a.trace() - 1.) / 2.;
-		//c = (c < -1.0) ? -1.0 : (c > 1.0) ? 1.0 : c; // make sure cosine is in range [-1,1]
-		//double theta = acos(c);
-		////Mat3d w = 0.5 / dt * theta / sin(theta) * (a - a.transpose());// skew symetric angular velocity matrix
-		//Mat3d w = 0.5 / dt * (abs(theta) < 1e-3? 1.0:theta / sin(theta)) * (a - a.transpose());// skew symetric angular velocity matrix
-		//Vec3d av(w.m21, w.m02, w.m10); // angular velocity
-		//ang_vel = rot_new.transpose().dot(av);
-
 		rot = rot_new;
 	}
 };
@@ -629,12 +639,14 @@ public:
 	// host
 	MASS mass; // a flat fiew of all masses
 	SPRING spring; // a flat fiew of all springs
+	TRIANGLE triangle; // a flat view of all triangles
 	JOINT joint;// a flat view of all joints
 	JointControl joint_control; // joint controller
 	RigidBody body; // mainbody
 	// device
 	MASS d_mass;
 	SPRING d_spring;
+	TRIANGLE d_triangle; // a flat view of all triangles
 	JOINT d_joint;
 
 	// host (backup);
@@ -665,7 +677,7 @@ public:
 	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 
 	//Simulation();
-	Simulation(size_t num_mass, size_t num_spring, size_t num_joint);
+	Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle);
 	~Simulation();
 
 	void getAll();
@@ -721,11 +733,12 @@ private:
 	std::set<double> bpts; // list of breakpoints
 
 
-
-
 	int massBlocksPerGrid; // blocksPergrid for mass update
 	int springBlocksPerGrid; // blocksPergrid for spring update
 	int jointBlocksPerGrid;// blocksPergrid for joint rotation
+#ifdef GRAPHICS
+	int triangleBlocksPerGrid; // blocksPergrid for viewing triangles
+#endif //GRAPHICS
 
 	std::vector<Constraint*> constraints;
 	thrust::device_vector<CudaContactPlane> d_planes; // used for constraints
@@ -775,9 +788,12 @@ public:
 	uint2* dptr_edge = nullptr; // used in updateBuffers(), device pointer,stores indices (line plot)
 	struct cudaGraphicsResource* cuda_resource_edge;
 
-	bool update_indices = true; // update vbo_vertex if true
-	bool update_colors = true; // update vbo_color if true
-	bool resize_buffers = true; // update all (vbo_vertex,vbo_color,vbo_edge) if true
+	GLuint vbo_triangle; // handle for elementbuffer (spring)
+	uint3* dptr_triangle = nullptr; // used in updateBuffers(), device pointer,stores indices (line plot)
+	struct cudaGraphicsResource* cuda_resource_triangle;
+
+	bool show_triangle = true;
+	bool resize_buffers = true; // update all (vbo_vertex,vbo_color,vbo_edge, vbo_triangles) if true
 
 	inline void updateBuffers();
 	inline void updateVertexBuffers();//only update vertex (positions)
@@ -791,15 +807,14 @@ public:
 	/*-------------------------------------------------------------------------------*/
 	inline void draw();
 	void createGLFWWindow();
+	static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+	static void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
 #endif
 };
 
 
 #ifdef GRAPHICS
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
-
 #endif
 
 
