@@ -64,35 +64,6 @@ __device__ void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
 //    _FRICTION_K = p._FRICTION_K;
 //}
 
-//CUDA_CALLABLE_MEMBER void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
-//    //    m -> force += (disp < 0) ? - disp * K_NORMAL * _normal : 0 * _normal; // TODO fix this for the host
-//    
-//    double disp = _normal.dot(pos) - _offset; // displacement into the plane
-//#ifdef __CUDA_ARCH__
-//    if(signbit(disp)){ // Determine whether the floating-point value a is negative:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1g2bd7d6942a8b25ae518636dab9ad78a7
-//#else
-//    if (disp < 0) {// if inside the plane
-//#endif
-//        Vec3d f_normal = _normal.dot(force) * _normal; // normal force
-//
-//        if (_FRICTION_S > 0 || _FRICTION_K > 0) {
-//            Vec3d v_t = vel - _normal.dot(vel) * _normal; // velocity tangential to the plane
-//            double v_t_norm = v_t.norm();
-//
-//            if (v_t_norm > 1e-10) { // kinetic friction domain
-//                double friction_mag = _FRICTION_K * f_normal.norm();
-//                force -=  friction_mag / v_t_norm * v_t;
-//            }
-//            else { // static friction
-//                Vec3d f_t = force - f_normal; //  force tangential to the plain
-//                if (_FRICTION_S * f_normal.norm() > f_t.norm()) {
-//                    force -= f_t;
-//                }
-//            }
-//        }
-//        force -= disp * _normal * K_NORMAL;// displacement force
-//    }
-//}
 
 
 __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
@@ -289,11 +260,11 @@ void ContactPlane::generateBuffers() {
             GLfloat y = j*s;
             vertex_data.insert(vertex_data.end(), {
                 x,y,0,
-                x+s,y+s,0,
                 x+s,y,0,
+                x + s,y + s,0,
                 x,y,0,
-                x,y+s,0,
-                x+s,y+s,0});//2 triangles of a quad
+                x + s,y + s,0,
+                x,y+s,0});//2 triangles of a quad
             // pick one color
             glm::vec3 c = (i + j) % 2 == 0? glm::vec3(0.729f, 0.78f, 0.655f): glm::vec3(0.533f, 0.62f, 0.506f);
             color_data.insert(color_data.end(), {
