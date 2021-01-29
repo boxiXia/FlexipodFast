@@ -429,8 +429,10 @@ def vmeshSummary(vmesh):
     
 ###################################################################################
 def generateGmsh(
-    in_file_name: str, # should be a step cad file
+    in_file_name: str = None, # should be a step cad file
     out_file_name: str = None,# should end with .msh or .stl(2D only)
+    gmshGeoFcn = None, # gmsh geo subprogram
+    gmsh_geo_kwargs = dict(), # keyword args pass to the gmshGeoFcn
     gmsh_args: list = [],
     gmsh_args_3d:list = [],# 3d specific gmsh argument
     dim:int = 3, #mesh dimension {3:volume, 2: surface mesh}
@@ -447,6 +449,10 @@ def generateGmsh(
     out_file_name : str
         Location of the file to be imported, file type should be
         '.msh' for 2D/3D mesh or '.stl' for 2D mesh only
+    gmshGeoFcn: function pointer
+        a gmsh geo sub-program to run for defining the geometry
+    gmsh_geo_kwargs: dict
+        a dictionary of keyword argment to pass to the gmshGeoFcn
     gmsh_args : (n, 2) list
       List of (parameter, value) pairs to be passed to
       gmsh.option.setNumber, called before generating 2d mesh
@@ -471,7 +477,10 @@ def generateGmsh(
     for arg in gmsh_args:
         gmsh.option.setNumber(*arg)
         
-    gmsh.open(in_file_name)
+    if in_file_name:
+        gmsh.open(in_file_name)
+    elif gmshGeoFcn:
+        gmshGeoFcn(**gmsh_geo_kwargs)
     
     gmsh.model.geo.synchronize()
     gmsh.model.occ.synchronize()
@@ -496,6 +505,21 @@ def generateGmsh(
     
     gmsh.finalize()  # !!must be call for ending!!
     return meshio.read(out_file_name),out_file_name
+
+def gmshGeoAddCylinder(center,axis,radius:float,height:float):
+    """
+    gmsh sub-pgrogram to add cylinder
+    input:
+        center: (x,y,z) of the cylinder center
+        axis: (dx,dy,dz) of the cylinder axis
+        radius: radius of the cylinder
+        height: height of the cylinder
+    """
+    k = np.asarray(axis)/np.linalg.norm(axis) # normalized axis
+    p = np.asarray(center)-height/2.*k # center of the first disk
+    d = height*k # vector pointing from center of the first disk to the second disk
+    return gmsh.model.occ.addCylinder(p[0], p[1], p[2], d[0], d[1],d[2], radius)
+
 
 
 ####################################################################################
