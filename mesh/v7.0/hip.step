@@ -9,10 +9,8 @@ FILE_DESCRIPTION(
 /* implementation_level */ '2;1');
 
 FILE_NAME(
-/* name */ 
-'F:\\SoftRobot2.0\\FlexipodHardware2.0\\FlexipodHardware\\Flexipod2.0\\
-Cadquery_module\\v8.0\\hip.step',
-/* time_stamp */ '2021-01-29T23:25:56-05:00',
+/* name */ 'F:\\SoftRobot2.0\\FlexipodFast\\mesh\\v7.0\\hip.step',
+/* time_stamp */ '2021-01-31T01:17:14-05:00',
 /* author */ ('DELL'),
 /* organization */ (''),
 /* preprocessor_version */ 'ST-DEVELOPER v18',
