@@ -16,6 +16,7 @@ import networkx as nx # graph representation
 from matplotlib.colors import to_hex
 from lxml import etree
 import os
+import functools
 def normalizeSignedDistance(signed_distance, zero_map_to=0.5):
     """
     Normalize to 0-1
