@@ -777,11 +777,11 @@ public:
 
 	/*------------- vertex buffer object and their device pointers--------------------*/
 	GLuint vbo_vertex; // handle for vertexbuffer (mass pos)
-	float3* dptr_vertex = nullptr;// used in updateBuffers(), device pointer,stores positions of the vertices
+	GLfloat* dptr_vertex = nullptr;// used in updateBuffers(), device pointer,stores positions of the vertices
 	struct cudaGraphicsResource* cuda_resource_vertex;
 
 	GLuint vbo_color; // handle for colorbuffer (color)
-	float3* dptr_color = nullptr; // used in updateBuffers(), device pointer,stores colors of the vertices
+	GLfloat* dptr_color = nullptr; // used in updateBuffers(), device pointer,stores colors of the vertices
 	struct cudaGraphicsResource* cuda_resource_color;
 
 	GLuint vbo_edge; // handle for elementbuffer (spring)

@@ -1072,6 +1072,7 @@ void Simulation::computeMVP(bool update_view) {
 
 
 /* create vertex buffer object // modified form cuda samples: simpleGL.cu
+* ref:https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__OPENGL.html
 */
 void Simulation::createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type) {
 	assert(vbo);
@@ -1104,38 +1105,53 @@ void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GL
 	glCheckError();// check opengl error code
 }
 
+#define VERTEX_SIZE 9
+// vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
+
 inline void Simulation::generateBuffers() {
-	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	createVBO(&vbo_color, &cuda_resource_color, mass.size() * sizeof(float3), cudaGraphicsMapFlagsNone, GL_ARRAY_BUFFER);
-	createVBO(&vbo_edge, &cuda_resource_edge, spring.size() * sizeof(uint2), cudaGraphicsMapFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
-	createVBO(&vbo_triangle, &cuda_resource_triangle, triangle.size() * sizeof(uint3), cudaGraphicsMapFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
+	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat)* VERTEX_SIZE, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	//createVBO(&vbo_color, &cuda_resource_color, mass.size() * sizeof(float3), cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);
+	createVBO(&vbo_edge, &cuda_resource_edge, spring.size() * sizeof(uint2), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
+	createVBO(&vbo_triangle, &cuda_resource_triangle, triangle.size() * sizeof(uint3), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 }
 
 inline void Simulation::resizeBuffers() {
 	////TODO>>>>>>
-	resizeVBO(&vbo_vertex, mass.size() * sizeof(float3), GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	resizeVBO(&vbo_color, mass.size() * sizeof(float3), GL_ARRAY_BUFFER);
+	resizeVBO(&vbo_vertex, mass.size() * sizeof(GLfloat) * VERTEX_SIZE, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	//resizeVBO(&vbo_color, mass.size() * sizeof(float3), GL_ARRAY_BUFFER);
 	resizeVBO(&vbo_edge, spring.size() * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
 	resizeVBO(&vbo_triangle, triangle.size() * sizeof(uint3), GL_ELEMENT_ARRAY_BUFFER);
 	resize_buffers = false;
 }
 inline void Simulation::deleteBuffers() {
 	deleteVBO(&vbo_vertex, cuda_resource_vertex, GL_ARRAY_BUFFER);
-	deleteVBO(&vbo_color, cuda_resource_color, GL_ARRAY_BUFFER);
+	//deleteVBO(&vbo_color, cuda_resource_color, GL_ARRAY_BUFFER);
 	deleteVBO(&vbo_edge, cuda_resource_edge, GL_ELEMENT_ARRAY_BUFFER);
 	deleteVBO(&vbo_triangle, cuda_resource_triangle, GL_ELEMENT_ARRAY_BUFFER);
 }
 
 
 // update vertex positions
-__global__ void updateVertices(float3* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
+__global__ void updateVertices(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
 	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
 	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		Vec3d pos_i = pos[i];
-		gl_ptr[i].x = (float)pos_i.x;
-		gl_ptr[i].y = (float)pos_i.y;
-		gl_ptr[i].z = (float)pos_i.z;
+		int k = VERTEX_SIZE * i; //x,y,z
+		gl_ptr[k] = (float)pos_i.x;
+		gl_ptr[k+1] = (float)pos_i.y;
+		gl_ptr[k+2] = (float)pos_i.z;
+	}
+}
+
+// update color rgb
+__global__ void updateColors(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
+		Vec3d color_i = color[i];
+		int k = VERTEX_SIZE * i+3; // x,y,z, r,g,b
+		gl_ptr[k] = (float)color_i.x;
+		gl_ptr[k+1] = (float)color_i.y;
+		gl_ptr[k+2] = (float)color_i.z;
 	}
 }
 
@@ -1145,16 +1161,6 @@ __global__ void updateLines(uint2* __restrict__ gl_ptr, const Vec2i* __restrict_
 		Vec2i e = edge[i];
 		gl_ptr[i].x = (unsigned int)e.x; // todo check if this is needed
 		gl_ptr[i].y = (unsigned int)e.y;
-	}
-}
-
-// update color rgb
-__global__ void updateColors(float3* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		Vec3d color_i = color[i];
-		gl_ptr[i].x = (float)color_i.x;
-		gl_ptr[i].y = (float)color_i.y;
-		gl_ptr[i].z = (float)color_i.z;
 	}
 }
 
@@ -1173,15 +1179,18 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 	// position update, map OpenGL buffer object for writing from CUDA
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));
 	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
+
 	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.size());
+	updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.color, mass.size());
+
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 
-	// color update
-	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_STREAM]));
-	cudaGraphicsResourceGetMappedPointer((void**)&dptr_color, &num_bytes,cuda_resource_color);
-	updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_color, d_mass.color, mass.size());
-	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
+	//// color update
+	//gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_STREAM]));
+	//cudaGraphicsResourceGetMappedPointer((void**)&dptr_color, &num_bytes,cuda_resource_color);
+	//updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_color, d_mass.color, mass.size());
+	//gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 
 	// line indices update
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));
@@ -1193,8 +1202,7 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));
 	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_triangle, &num_bytes, cuda_resource_triangle));
 	updateTriangles << <triangleBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_triangle, d_triangle.triangle, triangle.size());
-	// unmap buffer object
-	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));
+	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 
 }
 
@@ -1204,11 +1212,12 @@ void Simulation::updateVertexBuffers() {
 	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
-	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0));// unmap buffer object
+	cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0);// unmap buffer object
 }
 
 inline void Simulation::draw() {
-	glEnableVertexAttribArray(0);
+	
+	// ref: https://stackoverflow.com/questions/16380005/opengl-3-4-glvertexattribpointer-stride-and-offset-miscalculation
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
 	//glCheckError(); // check opengl error code
 	glVertexAttribPointer(
@@ -1216,20 +1225,22 @@ inline void Simulation::draw() {
 		3,                  // size
 		GL_FLOAT,           // type
 		GL_FALSE,           // normalized?
-		0,                  // stride
+		VERTEX_SIZE * sizeof(GL_FLOAT),// stride
 		(void*)0            // array buffer offset
 	);
+	glEnableVertexAttribArray(0);
+
 	//glCheckError(); // check opengl error code
-	glEnableVertexAttribArray(1);
-	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_color);
+	//glBindBuffer(GL_ARRAY_BUFFER, this->vbo_color);
 	glVertexAttribPointer(
 		1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
 		3,                                // size
 		GL_FLOAT,                         // type
 		GL_FALSE,                         // normalized?
-		0,                                // stride
-		(void*)0                          // array buffer offset
+		VERTEX_SIZE * sizeof(GL_FLOAT),   // stride
+		(GLvoid*)(3 * sizeof(GL_FLOAT))   // array buffer offset
 	);
+	glEnableVertexAttribArray(1);
 
 	glDrawArrays(GL_POINTS, 0, mass.num); // 3 indices starting at 0 -> 1 triangle
 
