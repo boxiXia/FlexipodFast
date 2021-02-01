@@ -178,35 +178,51 @@ void Ball::generateBuffers() {
             {7,10,3}, {7,6,10}, {7,11,6}, {11,0,6}, {0,1,6},
             {6,1,10}, {9,0,11}, {9,11,2}, {9,2,5}, {7,2,11} };
 
+    int num_div = 3 * (int)pow(4, depth);
+    int num_triangle = 20 * num_div; // number of triangles
+    int num_vertex = 3 * num_div; // number of vertices
+    
+
     for (int i = 0; i < 20; i++) {
-        subdivide(&vertex_data[3 * 3 * (int) pow(4, depth) * i], vdata[tindices[i][0]], vdata[tindices[i][1]], vdata[tindices[i][2]], depth);
+        subdivide(&vertex_data[3*num_div * i], vdata[tindices[i][0]], vdata[tindices[i][1]], vdata[tindices[i][2]], depth);
     }
 
-    glGenBuffers(1, &vertices); // create buffer for these vertices
-    glBindBuffer(GL_ARRAY_BUFFER, vertices);
-    glBufferData(GL_ARRAY_BUFFER, 20 * 3 * 3 * (int) pow(4, depth) * sizeof(GLfloat), vertex_data, GL_STATIC_DRAW);
+    glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, num_vertex * sizeof(GLfloat), vertex_data, GL_STATIC_DRAW);
 
-    GLfloat * color_data = new GLfloat[20 * 3 * 3 * (int) pow(4, depth)]; // TODO constant length array
+    GLfloat * color_data = new GLfloat[num_vertex]; // TODO constant length array
+    GLfloat* normal_data = new GLfloat[num_vertex];
 
-    for (int i = 0; i < 20 * 3 * (int) pow(4, depth); i++) {
+    for (int i = 0; i < num_triangle; i++) {
         color_data[3*i] = color[0];
         color_data[3*i + 1] = color[1];
         color_data[3*i + 2] = color[2];
+        
+        // vertex normals, not normalized
+		normal_data[3 * i] = vertex_data[3 * i] - (GLfloat)_center.x;
+		normal_data[3 * i + 1] = vertex_data[3 * i + 1] - (GLfloat)_center.y;
+		normal_data[3 * i + 2] = vertex_data[3 * i + 2] - (GLfloat)_center.z;
     }
 
-    glGenBuffers(1, &colors);
-    glBindBuffer(GL_ARRAY_BUFFER, colors);
-    glBufferData(GL_ARRAY_BUFFER, 20 * 3 * 3 * (int) pow(4, depth) * sizeof(GLfloat), color_data, GL_STATIC_DRAW);
+    glGenBuffers(1, &color_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
+    glBufferData(GL_ARRAY_BUFFER, num_vertex * sizeof(GLfloat), color_data, GL_STATIC_DRAW);
+
+    glGenBuffers(1, &normal_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
+    glBufferData(GL_ARRAY_BUFFER, num_vertex * sizeof(GLfloat), normal_data, GL_STATIC_DRAW);
 
     delete [] color_data;
     delete [] vertex_data;
+    delete[] normal_data;
 
     _initialized = true;
 }
 
 void Ball::draw() {
     glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, vertices);
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
 
     glVertexAttribPointer(
             0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
@@ -218,7 +234,7 @@ void Ball::draw() {
     );
 
     glEnableVertexAttribArray(1);
-    glBindBuffer(GL_ARRAY_BUFFER, colors);
+    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
     glVertexAttribPointer(
             1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
             3,                                // size
@@ -240,7 +256,7 @@ void Ball::draw() {
 #ifdef GRAPHICS
 
 constexpr int const CONTACT_PLANE_RADIUS = 100;// radius [unit] of the plane
-constexpr int const CONTACT_PLANE_GL_DRAW_SIZE = CONTACT_PLANE_RADIUS* CONTACT_PLANE_RADIUS*4*6;
+constexpr int const CONTACT_PLANE_GL_DRAW_SIZE = (CONTACT_PLANE_RADIUS+1)* (CONTACT_PLANE_RADIUS+1)*4*6;
 // total 50*50*4*6=60000 points 
 
 void ContactPlane::generateBuffers() {
@@ -250,11 +266,12 @@ void ContactPlane::generateBuffers() {
     // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
     std::vector<GLfloat> vertex_data;
     std::vector<GLfloat> color_data;
+    std::vector<GLfloat> normal_data(CONTACT_PLANE_GL_DRAW_SIZE*3);// vertex normals
 
     GLfloat s = 0.5f;// scale
-    for (int i = -CONTACT_PLANE_RADIUS; i < CONTACT_PLANE_RADIUS; i++)
+    for (int i = -CONTACT_PLANE_RADIUS; i <= CONTACT_PLANE_RADIUS; i++)
     {
-        for (int j = -CONTACT_PLANE_RADIUS; j < CONTACT_PLANE_RADIUS; j++)
+        for (int j = -CONTACT_PLANE_RADIUS; j <= CONTACT_PLANE_RADIUS; j++)
         {
             GLfloat x = i*s;
             GLfloat y = j*s;
@@ -275,7 +292,6 @@ void ContactPlane::generateBuffers() {
                 c[0],c[1],c[2],
                 c[0],c[1],c[2]});
         }
-
     }
 
     glm::vec3 glm_normal = glm::vec3(_normal[0], _normal[1], _normal[2]);
@@ -291,16 +307,23 @@ void ContactPlane::generateBuffers() {
         vertex_data[3 * i] = v[0];
         vertex_data[3 * i+1] = v[1];
         vertex_data[3 * i+2] = v[2];
+        normal_data[3 * i] = (GLfloat)_normal.x;
+        normal_data[3 * i+1] = (GLfloat)_normal.y;
+        normal_data[3 * i+2] = (GLfloat)_normal.z;
     }
 
-    glGenBuffers(1, &vertices); // create buffer for these vertices
-    glBindBuffer(GL_ARRAY_BUFFER, vertices);
+    glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)* vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
 
 
-    glGenBuffers(1, &colors);
-    glBindBuffer(GL_ARRAY_BUFFER, colors);
+    glGenBuffers(1, &color_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * color_data.size(), color_data.data(), GL_STATIC_DRAW);
+
+    glGenBuffers(1, &normal_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * normal_data.size(), normal_data.data(), GL_STATIC_DRAW);
 
     _initialized = true;
 }
@@ -308,7 +331,7 @@ void ContactPlane::generateBuffers() {
 void ContactPlane::draw() {
     // 1st attribute buffer : vertices
     glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, vertices);
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
 
     glVertexAttribPointer(
             0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
@@ -320,7 +343,7 @@ void ContactPlane::draw() {
     );
 
     glEnableVertexAttribArray(1);
-    glBindBuffer(GL_ARRAY_BUFFER, colors);
+    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
     glVertexAttribPointer(
             1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
             3,                                // size

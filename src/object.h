@@ -70,9 +70,13 @@ struct Ball : public Constraint {
 
 #ifdef GRAPHICS
     ~Ball() {
-        glDeleteBuffers(1, &vertices);
-        glDeleteBuffers(1, &colors);
+        glDeleteBuffers(1, &vertex_buffer);
+        glDeleteBuffers(1, &color_buffer);
+        glDeleteBuffers(1, &normal_buffer);
     }
+    GLuint vertex_buffer;
+    GLuint color_buffer;
+    GLuint normal_buffer;
 
     void generateBuffers();
     void draw();
@@ -83,8 +87,7 @@ struct Ball : public Constraint {
 
     int depth = 2;
 
-    GLuint vertices;
-    GLuint colors;
+
 #endif
 };
 
@@ -122,15 +125,16 @@ struct ContactPlane : public Constraint {
 
 #ifdef GRAPHICS
     ~ContactPlane() {
-        glDeleteBuffers(1, &vertices);
-        glDeleteBuffers(1, &colors);
+        glDeleteBuffers(1, &vertex_buffer);
+        glDeleteBuffers(1, &color_buffer);
     }
 
     void generateBuffers();
     void draw();
 
-    GLuint vertices;
-    GLuint colors;
+    GLuint vertex_buffer;
+    GLuint color_buffer;
+    GLuint normal_buffer;
 
 
 #endif
