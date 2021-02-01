@@ -21,7 +21,7 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 constexpr int THREADS_PER_BLOCK = 128;
-constexpr int MASS_THREADS_PER_BLOCK = 128;
+constexpr int MASS_THREADS_PER_BLOCK = 64;
 
 
 GLenum glCheckError_(const char* file, int line)
@@ -1233,13 +1233,13 @@ inline void Simulation::draw() {
 
 	glDrawArrays(GL_POINTS, 0, mass.num); // 3 indices starting at 0 -> 1 triangle
 
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
-
-
-	glDrawElements(GL_LINES, 2 * spring.num, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
 	if (show_triangle) {
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_triangle);
-		glDrawElements(GL_TRIANGLES, 3 * triangle.size(), GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
+		glDrawElements(GL_TRIANGLES, 3 * triangle.size(), GL_UNSIGNED_INT, (void*)0); // 3 indices for a triangle
+	}
+	else {
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
+		glDrawElements(GL_LINES, 2 * spring.num, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
 	}
 	
 	glDisableVertexAttribArray(1);

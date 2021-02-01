@@ -17,6 +17,23 @@ from matplotlib.colors import to_hex
 from lxml import etree
 import os
 import functools
+
+def remapArray(arr:np.ndarray,src,dst):
+    """
+    remap an array (arr), replacing values (src) in (arr) to (dst)
+    input: 
+        arr:(np.ndarray) the array to be remapped
+        src:(1d np.ndarray) the values in the array to be replaced
+        dst (1d np.ndarray) the values to replace the src
+    output:
+        a remapped array, shaped the same as arr
+    """
+    arr_flat = arr.ravel()
+    arr_remap = np.copy(arr_flat)
+    for k, v in zip(src,dst): 
+        arr_remap[arr_flat==k] = v
+    return arr_remap.reshape(arr.shape)
+
 def normalizeSignedDistance(signed_distance, zero_map_to=0.5):
     """
     Normalize to 0-1
@@ -41,8 +58,10 @@ def normalizeMinMax(v):
     """
     v_min = v.min()
     v_max = v.max()
-    v_n = (v - v_min)/(v_max-v_min)  # normalized
-    return v_n
+    if v_max>v_min:
+        return (v - v_min)/(v_max-v_min)  # normalized
+    else: # all the same, return zeros
+        return np.zeros_like(v)
 
 
 # # # https://matplotlib.org/tutorials/colors/colormaps.html
@@ -528,6 +547,8 @@ class VolumeMesh(dict):
     """
     contains vertices, lines and triangles of a volume mesh
     the class is inherited form dict, and can be extended with custom key:value pair
+    calss dictionary member:
+        vertices, lines, trianges, nsd, vertices_color, lines_color, cmap
     """
     def __init__(self,vertices,lines,triangles,cmap = 'hot'):
         self["vertices"] = np.asarray(vertices,dtype=np.float64)
@@ -536,7 +557,7 @@ class VolumeMesh(dict):
         self.reColor(cmap,update_signed_distance=True)# update colors
         
     def copy(self,cmap=None):
-        other = copy.copy(self)
+        other = copy.deepcopy(self)
         if cmap is not None:
             other = other.reColor(cmap)
         return other
@@ -588,10 +609,16 @@ class VolumeMesh(dict):
     
     def o3dMesh(self):
         """return open3d triangle mesh"""
-        return o3d.geometry.TriangleMesh(
+        o3d_mesh = o3d.geometry.TriangleMesh(
             o3d.utility.Vector3dVector(self["vertices"]),
             o3d.utility.Vector3iVector(self["triangles"]))
+        o3d_mesh.compute_vertex_normals()
+        o3d_mesh.vertex_colors = o3d.utility.Vector3dVector(self["vertices_color"][:3])
+        return o3d_mesh
     
+    def transform(self,t):
+        self["vertices"] = applyTransform(self["vertices"],t)
+        return self
     def reColor(self,cmap=None,update_signed_distance=False):
         """update the vertex and lines colors"""
         if cmap is not None:
@@ -610,38 +637,213 @@ class VolumeMesh(dict):
         return signed distance from surface of test_points(default vertices),
         normalize if normalized==True
         """
-        if test_points is None:
-            test_points = self["vertices"] 
-        sd = trimesh.proximity.signed_distance(self.triMesh(),test_points)
+        if test_points is None: # test_points are self.vertices
+            # assume indices belonging to triangles are on the surface
+            triangle_ids = np.unique(self.triangles)
+            sd = np.zeros(len(self.vertices),dtype=np.float64)
+            id_test = np.ones_like(sd,dtype=bool)
+            id_test[triangle_ids] = False
+            test_points = self.vertices[id_test] # points to be tested
+            if len(test_points)>0:
+                sd[id_test] = trimesh.proximity.signed_distance(self.triMesh(),test_points)
+        else: # given test_points
+            sd = trimesh.proximity.signed_distance(self.triMesh(),test_points)
         if normalized:
             return normalizeMinMax(sd)
         return sd
-    def appendVertices(self,new_vertices,min_radius=0,max_radius=-1.,max_nn=None):
+    def describe(self):
+        """describe the vmd"""
+        line_lengths = np.linalg.norm(np.diff(self.vertices[self.lines],axis=1)[:,0,:],axis=1)
+        neighbor_counts = getNeighborCounts(self.lines)
+        print(f"# vertices         = {self.vertices.shape[0]}")
+        print(f"# lines            = {self.lines.shape[0]}")
+        print(f"# surface triangle =",self.triangles.shape[0])
+        print(f"mean line length   = {line_lengths.mean():.2f}")
+        with np.printoptions(precision=3, suppress=True):
+            com = np.mean(self.vertices,axis=0)
+            print("COM                =",com)
+        print(f"COM norm           = {np.linalg.norm(com):.3f}")
+
+        fig,ax = plt.subplots(1,2,figsize=(8,2),dpi=75)
+        n,bins,_ = ax[0].hist(line_lengths, density=True, bins='auto')
+        ax[0].set_xlabel("edge length")
+        ax[0].text(bins[0],0,f"{bins[0]:.1f}",ha="left",va="bottom",fontsize="large",color='r')
+        ax[0].text(bins[-1],0,f"{bins[-1]:.1f}",ha="right",va="bottom",fontsize="large",color='r')
+        ax[1].hist(neighbor_counts, density=True, bins='auto')
+        ax[1].set_xlabel("neighbor counts")
+        plt.show()
+    
+    @staticmethod
+    def fromGmsh(
+        gmsh, 
+        min_radius:float=0., max_radius:float=-1., max_nn:int=1,
+        transform=None,
+        cmap="hot"):
+        """
+        generate VolumeMesh from gmsh, generate additional lines if 
+        min_radius, max_radius and max_nn are specified
+        input:
+            gmsh: (str):file_path of ".gmsh", or
+                  (meshio._mesh.Mesh) a gmsh file opened by meshio
+            min_radius: (float) minimum radius for line generation, min_radius>0
+            max_radius: (float)  maximum radius for line generation,max_radius>min_radius
+            max_nn:  (int) maximun number of neighbor, max_nn>0
+        returns:
+            a VolumMesh object
+        """
+        if type(gmsh) is str:
+            vmesh = meshio.read(gmsh)
+        elif type(gmsh) is meshio._mesh.Mesh:
+            vmesh = gmsh
+        else:
+            raise TypeError("input mesh is should be a .gmsh string or meshio._mesh.Mesh.")
+
+        # numpy array:(3x3) rotation or (4x4) homogeneous transform
+        if (transform !=None) and ~np.array_equal(transform, np.eye(4)):# should transform the points
+            vmesh.points = applyTransform(vmesh.points, transform) 
+
+        vertices = vmesh.points
+        triangles = vmesh.cells_dict["triangle"]
+        tetra = vmesh.cells_dict["tetra"]
+        lines = tetra[:, list(itertools.combinations(range(4), 2))].reshape((-1, 2))
+        lines, lines_counts = getUniqueEdges(lines)
+
+        if max_nn>1:  # generate additional lines
+            assert((0<min_radius) and (min_radius<max_radius))
+            # trimesh mesh, process=False to reserve vertex order
+            mesh = trimesh.Trimesh(vertices, triangles,process=False, maintain_order=True)
+            pcd_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(vertices))
+            pcd_tree = o3d.geometry.KDTreeFlann(pcd_o3d) # nearest neighbor search
+            result = [pcd_tree.search_hybrid_vector_3d(
+                    point, max_radius,max_nn = int(max_nn*1.5)) for point in vertices]
+            edges_list = []
+            min_norm2 = min_radius**2
+            for k, (num,index,norm2) in enumerate(result):
+                selected = np.asarray(norm2)>=min_norm2
+                index = np.asarray(index)[selected][:max_nn]
+                edges_k = np.column_stack((index,[k]*index.size))
+                edges_list.append(edges_k) 
+            edges,_ = getUniqueEdges(np.vstack(edges_list))
+
+            # trim springs outside the mesh
+            mid_points = getMidpoints(vertices, edges)
+            is_inside = mesh.ray.contains_points(mid_points)
+            edges = edges[is_inside]
+            # combine tetra lines and lines from nearest neighbor search
+            lines,_ = getUniqueEdges(np.vstack((lines, edges)))
+        return VolumeMesh(vertices=vertices,lines=lines,triangles=triangles,cmap=cmap)
+    
+    def removeVertices(self,ids,keep_triangles:bool=False):
+        """
+        remove vertices given indices ids
+        input:
+            ids: vertex indices to be removed
+            keep_triangles:(bool) not removing vertices belong to triangles if true
+                            else remove all vertices specified by ids
+        return:
+            self: (VolumeMesh) vmd after remove vertices operation
+        example:
+            vmd = vmd.copy().removeVertices(ids = np.arange(10,20),keep_triangles=False)
+            o3dShow([vmd.pcd(), vmd.lsd(),vmd.o3dMesh()])
+        """
+        # mask for vertices to be removed
+        mask_remove = np.zeros(len(self.vertices),dtype=bool)
+        mask_remove[ids] = True
+        if keep_triangles:
+            triangle_ids = np.unique(self.triangles)
+            mask_remove[triangle_ids] = False
+            ids = np.flatnonzero(mask_remove)
+        if len(ids)==0: # no vertices are removed
+            return self
+        mask_keep = ~mask_remove # mask for vertices to keep
+        self.vertices = self.vertices[mask_keep]
+        # remap vertices:
+        ids_keep = np.flatnonzero(mask_keep)
+        ids_remap = np.arange(len(ids_keep)) # ids_keep -> ids_remap
+        # remap lines
+        lines_mask = ~np.bitwise_or.reduce(np.isin(self.lines,ids),1)
+        self.lines = remapArray(self.lines[lines_mask],src=ids_keep,dst=ids_remap)
+        # remap triangles
+        triangles_mask = ~np.bitwise_or.reduce(np.isin(self.triangles,ids),1)
+        self.triangles = remapArray(self.triangles[triangles_mask],src=ids_keep,dst=ids_remap)
+        # remap colors:
+        self["vertices_color"] = self["vertices_color"][mask_keep]
+        self["lines_color"] =  self["lines_color"][lines_mask]
+        self["nsd"] = self["nsd"][mask_keep]
+        return self
+
+    def appendVertices(self,new_vertices:np.ndarray,
+                       min_radius:float=0,max_radius:float=-1.,max_nn:int=1):
+        """
+        append new_vertices to the VolumeMesh, add lines connecting new_vertices
+        Input:
+            new_vertices:(?x3 np.ndaray) added xyzs of the vertices
+            min_radius: (float) minimum radius for line generation, min_radius>0
+            max_radius: (float)  maximum radius for line generation,max_radius>min_radius
+            max_nn:  (int) maximun number of neighbor, max_nn>0
+        example:
+            cylinder_spec = dict(center=(0,0,0),axis=(1,0,0), radius =30,height=30)
+            cylinder,_ = generateGmsh(gmshGeoFcn=gmshGeoAddCylinder,gmsh_geo_kwargs=cylinder_spec,
+                         gmsh_args=gmsh_args,gmsh_args_3d=gmsh_args_3d,gui=False)
+            vmd= vmd_leg.copy()
+            vmd = vmd.appendVertices(
+                cylinder.points, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+            o3dShow([vmd.pcd(), vmd.lsd(),vmd.o3dMesh()])
+            vmd.describe()
+        """
         if len(new_vertices)==0:
             print("no vertices added")
             return self
         len_v = len(self["vertices"]) # length of the vertices before adding new vertices
         self["vertices"] = np.vstack((self["vertices"],new_vertices))
         
-        new_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(self["vertices"]))
-        pcd_tree = o3d.geometry.KDTreeFlann(new_pcd)
-        
-        result = [pcd_tree.search_hybrid_vector_3d(
-                point, max_radius,max_nn = int(max_nn*1.5)) for point in new_vertices]
-        edges_list = []
-        min_norm2 = min_radius**2
-        for k, (num,index,norm2) in enumerate(result):
-            selected = np.asarray(norm2)>=min_norm2
-            index = np.asarray(index)[selected][:max_nn]
-            edges_k = np.column_stack((index,[len_v+k]*index.size))
-            edges_list.append(edges_k) 
-        edges,_ = getUniqueEdges(np.vstack(edges_list))
-        self.lines = np.vstack((self.lines,edges))
+        if max_nn>1: # add lines connecting new_vertices
+            assert((0<min_radius) and (min_radius<max_radius))
+            pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(self["vertices"]))
+            pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+            result = [pcd_tree.search_hybrid_vector_3d(
+                    point, max_radius,max_nn = int(max_nn*1.5)) for point in new_vertices]
+            edges_list = []
+            min_norm2 = min_radius**2
+            for k, (num,index,norm2) in enumerate(result):
+                selected = np.asarray(norm2)>=min_norm2
+                index = np.asarray(index)[selected][:max_nn]
+                edges_k = np.column_stack((index,[len_v+k]*index.size))
+                edges_list.append(edges_k) 
+            edges,_ = getUniqueEdges(np.vstack(edges_list))
+            self.lines = np.vstack((self.lines,edges))
         
         self["nsd"] = np.hstack((self["nsd"],
                    self.signedDistance(test_points=new_vertices)))
         self.reColor(update_signed_distance=False)
 #         return result
+        return self
+
+    def combine(
+            self, other,
+            min_radius: float = 0, max_radius: float = -1., max_nn: int = 1,
+            keep_vertices:bool=False, keep_triangles:bool=True):
+        """
+        combine volumeMesh with other VolumeMesh
+        Input:
+            other: (VolumeMesh) other VolumeMesh
+            min_radius: (float) minimum radius for line generation, min_radius>0
+            max_radius: (float)  maximum radius for line generation,max_radius>min_radius
+            max_nn:  (int) maximun number of neighbor, max_nn>0
+            keep_vertices: (bool) remove overlapping vertices if False
+            keep_triangels: (bool): remove overlapping triangles if False and keep_vertices==False
+        """
+
+        new_vertices = other.vertices
+        if len(new_vertices) == 0:
+            print("combine:no vertices added")
+            return self
+        if ~keep_vertices: # remove overlapping vertices 
+            is_inside = other.triMesh().ray.contains_points(self.vertices)
+            self = self.removeVertices(ids=np.flatnonzero(is_inside), 
+                                       keep_triangles=keep_triangles)
+        self = self.appendVertices(
+            new_vertices, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
         return self
 ####################################################################################
 def descretize(msh_file, min_radius, max_radius, max_nn,transform=None):
@@ -709,31 +911,27 @@ def descretize(msh_file, min_radius, max_radius, max_nn,transform=None):
     #     plt.tight_layout()
     plt.show()
 
-    signed_distance = trimesh.proximity.signed_distance(mesh, vertices)
-
-    nsd = normalizeMinMax(signed_distance)  # normalized_signed_distance
-#     print(signed_distance.min(),signed_distance.max())
-
     pcd_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(vertices))
 
-    cmap = plt.cm.get_cmap('plasma')
-    pcd_o3d.colors = o3d.utility.Vector3dVector(cmap(nsd)[:, :3])
+    # signed_distance = trimesh.proximity.signed_distance(mesh, vertices)
+    # nsd = normalizeMinMax(signed_distance)  # normalized_signed_distance
+    # cmap = plt.cm.get_cmap('plasma')
+    # pcd_o3d.colors = o3d.utility.Vector3dVector(cmap(nsd)[:, :3])
 
     lsd_o3d = o3d.geometry.LineSet(
         o3d.utility.Vector3dVector(vertices),
         o3d.utility.Vector2iVector(edges))
 
-    cmap = plt.cm.get_cmap('seismic')
+    # cmap = plt.cm.get_cmap('seismic')
+    # normalized_edge_lengths = normalizeMinMax(edge_lengths)
+    # edges_colors = cmap(normalized_edge_lengths)[:, :3]  # drop alpha channel
 
-    normalized_edge_lengths = normalizeMinMax(edge_lengths)
-    edges_colors = cmap(normalized_edge_lengths)[:, :3]  # drop alpha channel
-
-    #     normalized_edge_counts = normalizeMinMax(edge_counts)
-    #     print(edge_counts.min(),edge_counts.max())
-    #     edges_colors = cmap(normalized_edge_counts)[:,:3]# drop alpha channel
-
-    lsd_o3d.colors = o3d.utility.Vector3dVector(edges_colors)
-#     o3dShow([lsd_o3d,pcd_o3d,coord_frame],background_color=(255,255,255),mesh_show_wireframe=True)
+    # normalized_edge_counts = normalizeMinMax(edge_counts)
+    # print(edge_counts.min(),edge_counts.max())
+    # edges_colors = cmap(normalized_edge_counts)[:,:3]# drop alpha channel
+    
+    # lsd_o3d.colors = o3d.utility.Vector3dVector(edges_colors)
+    # o3dShow([lsd_o3d,pcd_o3d,coord_frame],background_color=(255,255,255),mesh_show_wireframe=True)
 
     # lsd_o3d = o3d.geometry.TetraMesh(
     #     o3d.utility.Vector3dVector(vmesh.points),
@@ -1001,71 +1199,71 @@ class RobotDescription(nx.classes.digraph.DiGraph):
         tree = URDF(self).export(path)
         return tree
 
-    def makeJoint(self,e, opt):
-        """
-        add the necessary vertices and lines for the joints,
-        should only run once
-        """
-        max_nn = opt["max_nn"]
-        min_radius = opt["min_radius"]
-        max_radius = opt["max_radius"]
-        joint_radius = opt["joint_radius"]
-        joint_height = opt["joint_height"]
-        joint_sections = opt["joint_sections"]
-        joint_axis_radius = joint_height/2.+min_radius
+    # def makeJoint(self,e, opt):
+    #     """
+    #     add the necessary vertices and lines for the joints,
+    #     should only run once
+    #     """
+    #     max_nn = opt["max_nn"]
+    #     min_radius = opt["min_radius"]
+    #     max_radius = opt["max_radius"]
+    #     joint_radius = opt["joint_radius"]
+    #     joint_height = opt["joint_height"]
+    #     joint_sections = opt["joint_sections"]
+    #     joint_axis_radius = joint_height/2.+min_radius
 
-        parent_node = self.nodes[e[0]]
-        child_node = self.nodes[e[1]]
-        edge = self.edges[e]
-        if "id_joint_parent" in edge:# check if already processed
-            print(f"edge{e}: ({len(edge['id_joint_parent']), len(edge['id_joint_child'])}) already processed, skip this")
-            return
+    #     parent_node = self.nodes[e[0]]
+    #     child_node = self.nodes[e[1]]
+    #     edge = self.edges[e]
+    #     if "id_joint_parent" in edge:# check if already processed
+    #         print(f"edge{e}: ({len(edge['id_joint_parent']), len(edge['id_joint_child'])}) already processed, skip this")
+    #         return
 
-        # operate in body-space of parent node
-        T_edge = edge["transform"]  # edge transform
-        # parent transform
-        T_parent = parent_node["transform"]
-        # child transform
-        T_child = T_edge@axisAngleRotation(edge["axis"],
-                                        edge["joint_pos"])@child_node["transform"]
+    #     # operate in body-space of parent node
+    #     T_edge = edge["transform"]  # edge transform
+    #     # parent transform
+    #     T_parent = parent_node["transform"]
+    #     # child transform
+    #     T_child = T_edge@axisAngleRotation(edge["axis"],
+    #                                     edge["joint_pos"])@child_node["transform"]
 
-        parent_vertices_t = applyTransform(parent_node["vmd"].vertices, T_parent)
-        child_vertices_t = applyTransform(child_node["vmd"].vertices, T_child)
+    #     parent_vertices_t = applyTransform(parent_node["vmd"].vertices, T_parent)
+    #     child_vertices_t = applyTransform(child_node["vmd"].vertices, T_child)
 
-        cylinder_transform = T_edge@vecAlignRotation((0, 0, 1), edge["axis"])
-        cylinder = trimesh.creation.cylinder(radius=joint_radius, height=joint_height,
-                                            transform=cylinder_transform, sections=joint_sections,)
+    #     cylinder_transform = T_edge@vecAlignRotation((0, 0, 1), edge["axis"])
+    #     cylinder = trimesh.creation.cylinder(radius=joint_radius, height=joint_height,
+    #                                         transform=cylinder_transform, sections=joint_sections,)
 
-        o3d_cylinder = trimeshToO3dMesh(cylinder)
+    #     o3d_cylinder = trimeshToO3dMesh(cylinder)
 
-        is_joint_parent = cylinder.ray.contains_points(parent_vertices_t)
-        is_joint_child = cylinder.ray.contains_points(child_vertices_t)
+    #     is_joint_parent = cylinder.ray.contains_points(parent_vertices_t)
+    #     is_joint_child = cylinder.ray.contains_points(child_vertices_t)
 
-        parent_node["vmd"].appendVertices(
-            applyTransform(
-                child_vertices_t[is_joint_child], np.linalg.inv(T_parent)),
-            min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+    #     parent_node["vmd"].appendVertices(
+    #         applyTransform(
+    #             child_vertices_t[is_joint_child], np.linalg.inv(T_parent)),
+    #         min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
 
-        child_node["vmd"].appendVertices(
-            applyTransform(
-                parent_vertices_t[is_joint_parent], np.linalg.inv(T_child)),
-            min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+    #     child_node["vmd"].appendVertices(
+    #         applyTransform(
+    #             parent_vertices_t[is_joint_parent], np.linalg.inv(T_child)),
+    #         min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
 
-        is_joint_parent, is_joint_child = (  # combined
-            np.hstack((is_joint_parent, np.ones(sum(is_joint_child), dtype=bool))),
-            np.hstack((is_joint_child, np.ones(sum(is_joint_parent), dtype=bool)))
-        )
+    #     is_joint_parent, is_joint_child = (  # combined
+    #         np.hstack((is_joint_parent, np.ones(sum(is_joint_child), dtype=bool))),
+    #         np.hstack((is_joint_child, np.ones(sum(is_joint_parent), dtype=bool)))
+    #     )
 
-        id_joint_child = np.flatnonzero(is_joint_child)
-        id_joint_parent = np.flatnonzero(is_joint_parent)
+    #     id_joint_child = np.flatnonzero(is_joint_child)
+    #     id_joint_parent = np.flatnonzero(is_joint_parent)
 
-        print(e,len(id_joint_parent), len(id_joint_child))
+    #     print(e,len(id_joint_parent), len(id_joint_child))
 
-        edge['axis'] = np.asarray(edge['axis'], dtype=np.float64)
-        edge['anchor'] = np.stack((-edge['axis'], edge['axis']))*joint_axis_radius
-        edge["id_joint_parent"] = id_joint_parent
-        edge["id_joint_child"] = id_joint_child
-
+    #     edge['axis'] = np.asarray(edge['axis'], dtype=np.float64)
+    #     edge['anchor'] = np.stack((-edge['axis'], edge['axis']))*joint_axis_radius
+    #     edge["id_joint_parent"] = id_joint_parent
+    #     edge["id_joint_child"] = id_joint_child
+    
     #     parent_pcd = parent_node["vmd"].pcd().transform(T_parent)
     #     parent_lsd = parent_node["vmd"].lsd().transform(T_parent)
     #     child_pcd = child_node["vmd"].pcd().transform(T_child)
@@ -1080,6 +1278,96 @@ class RobotDescription(nx.classes.digraph.DiGraph):
 
     #     o3dShow([parent_pcd,parent_lsd,child_pcd,child_lsd])
     #     o3dShow([parent_pcd,parent_lsd,child_pcd,child_lsd,o3d_cylinder])
+
+    def makeJoint(self, opt):
+        """
+        add the necessary vertices and lines for the joints,
+        should only run once
+        """
+        max_nn = opt["max_nn"]
+        min_radius = opt["min_radius"]
+        max_radius = opt["max_radius"]
+        joint_radius = opt["joint_radius"]
+        joint_height = opt["joint_height"]
+        joint_sections = opt["joint_sections"]
+        joint_axis_radius = joint_height/2.+min_radius
+        gmsh_args = opt["gmsh_args"]
+        gmsh_args_3d = opt["gmsh_args_3d"]
+
+        cylinder_spec = dict(center=(0, 0, 0), axis=(1, 0, 0),
+                            radius=joint_radius, height=joint_height)
+
+        fitness = 0
+        for k in range(10):  # choose the cylinder with best symmetry from 10 candidates
+            cyliner_k, _ = generateGmsh(gmshGeoFcn=gmshGeoAddCylinder, gmsh_geo_kwargs=cylinder_spec,
+                                        gmsh_args=gmsh_args, gmsh_args_3d=gmsh_args_3d, gui=False)
+            moi = momentOfInertia(cyliner_k.points)
+            fitness_k = np.linalg.norm(
+                moi.diagonal())/np.linalg.norm((moi[0, 1], moi[0, 2], moi[1, 2]))
+            if fitness_k > fitness:
+                fitness = fitness_k
+                cylinder = cyliner_k
+        # convert to VolumeMesh
+        vmd_cylinder = VolumeMesh.fromGmsh(
+            cylinder, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+
+        for e in self.edges:  # first pass
+            parent_node = self.nodes[e[0]]
+            child_node = self.nodes[e[1]]
+            edge = self.edges[e]
+
+            if "anchor" in edge:  # check if already processed
+                continue
+
+            # operate in body-space of parent node
+            T_edge = edge["transform"]  # edge transform
+            # parent transform
+            T_parent = parent_node["transform"]
+            # child transform
+            T_child = T_edge@axisAngleRotation(edge["axis"],
+                                            edge["joint_pos"])@child_node["transform"]
+
+            cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])
+
+            cylinder_to_parent_transform = np.linalg.inv(
+                T_parent)@cylinder_transform
+            # cylinder at child space
+            edge["cylinder_parent"] = vmd_cylinder.copy(
+            ).transform(cylinder_to_parent_transform)
+            parent_node["vmd"] = parent_node["vmd"].combine(edge["cylinder_parent"],
+                                        min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+
+            cylinder_to_child_transform = np.linalg.inv(T_child)@cylinder_transform
+            # cylinder at parent space
+            edge["cylinder_child"] = vmd_cylinder.copy(
+            ).transform(cylinder_to_child_transform)
+            child_node["vmd"] = child_node["vmd"].combine(edge["cylinder_child"],
+                                        min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+
+            edge['axis'] = np.asarray(edge['axis'], dtype=np.float64)
+            edge['anchor'] = np.stack(
+                (-edge['axis'], edge['axis']))*joint_axis_radius
+
+        for e in self.edges:  # update id_joint_parent and id_joint_child
+            parent_node = self.nodes[e[0]]
+            child_node = self.nodes[e[1]]
+            edge = self.edges[e]
+            if "id_joint_parent" in edge:
+                print(
+                    f"edge{e}: ({len(edge['id_joint_parent']), len(edge['id_joint_child'])}) already processed, skipping")
+                continue
+            pcd = parent_node["vmd"].pcd()
+            pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+            edge["id_joint_parent"] = np.asarray([pcd_tree.search_hybrid_vector_3d(
+                point, 0.1, max_nn=1)[1][0] for point in edge["cylinder_parent"].vertices])
+
+            pcd = child_node["vmd"].pcd()
+            pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+            edge["id_joint_child"] = np.asarray([pcd_tree.search_hybrid_vector_3d(
+                point, 0.1, max_nn=1)[1][0] for point in edge["cylinder_child"].vertices])
+            print(
+                f"{e}:{len(edge['id_joint_child'])},{len(edge['id_joint_parent'])}")
+        return self
 
 ################################################
 
