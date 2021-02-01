@@ -114,7 +114,7 @@ Modify the [.vs/launch.vs.json](.vs/launch.vs.json): ```CUDA_VISIBLE_DEVICES``` 
 ```json
 "env": { "CUDA_VISIBLE_DEVICES": "0" }
 ```
-
+For more information: [link](https://docs.microsoft.com/en-us/cpp/build/configure-cmake-debugging-sessions)
 ## Reference:
 [1](#ref-1) J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, "Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA," ICRA 2020, May 2020.
 
