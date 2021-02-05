@@ -746,7 +746,12 @@ void Simulation::update_graphics() {
 	glUseProgram(programID);// Use our shader
 	// Get a handle for our "MVP" uniform
 	computeMVP(); // compute perspective projection matrix
-	MatrixID = glGetUniformLocation(programID, "MVP"); // doesn't seem to be necessary
+	// get handles for the gl unifrom variables
+	GL_ID_MVP = glGetUniformLocation(programID, "MVP");
+	GL_ID_viewPos = glGetUniformLocation(programID, "viewPos");
+	GL_ID_lightDir = glGetUniformLocation(programID, "lightDir");
+	GL_ID_lightColor = glGetUniformLocation(programID, "lightColor");
+
 	generateBuffers(); // generate buffers for all masses and springs
 
 	for (Constraint* c : constraints) { // generate buffers for constraint objects
@@ -840,8 +845,13 @@ void Simulation::update_graphics() {
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
-			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP[0][0]);// update transformation "MVP" uniform
-
+			glUniformMatrix4fv(GL_ID_MVP, 1, GL_FALSE, &MVP[0][0]);// update transformation "MVP" uniform
+			glUniform3f(GL_ID_viewPos, // update shader viewDir
+				(float)camera_pos.x,(float)camera_pos.y,(float)camera_pos.z);
+			glUniform3f(GL_ID_lightDir, // update shader lightDir
+				light_dir.x,light_dir.y,light_dir.z);
+			glUniform3f(GL_ID_lightColor, // update shader lightDir
+				light_color.x, light_color.y, light_color.z);
 
 			draw();
 
@@ -1105,27 +1115,26 @@ void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GL
 	glCheckError();// check opengl error code
 }
 
-#define VERTEX_SIZE 9
+constexpr int NUM_PER_VERTEX = 9; // number of float per vertex;
+constexpr int VERTEX_COLOR_OFFSET = 3; // offset for the vertex color
+constexpr int VERTEX_NORMAL_OFFSET = 6; // offset for the vertex normal
 // vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
 
 inline void Simulation::generateBuffers() {
-	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat)* VERTEX_SIZE, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	//createVBO(&vbo_color, &cuda_resource_color, mass.size() * sizeof(float3), cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);
+	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat)* NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
 	createVBO(&vbo_edge, &cuda_resource_edge, spring.size() * sizeof(uint2), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 	createVBO(&vbo_triangle, &cuda_resource_triangle, triangle.size() * sizeof(uint3), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 }
 
 inline void Simulation::resizeBuffers() {
 	////TODO>>>>>>
-	resizeVBO(&vbo_vertex, mass.size() * sizeof(GLfloat) * VERTEX_SIZE, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	//resizeVBO(&vbo_color, mass.size() * sizeof(float3), GL_ARRAY_BUFFER);
+	resizeVBO(&vbo_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
 	resizeVBO(&vbo_edge, spring.size() * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
 	resizeVBO(&vbo_triangle, triangle.size() * sizeof(uint3), GL_ELEMENT_ARRAY_BUFFER);
 	resize_buffers = false;
 }
 inline void Simulation::deleteBuffers() {
 	deleteVBO(&vbo_vertex, cuda_resource_vertex, GL_ARRAY_BUFFER);
-	//deleteVBO(&vbo_color, cuda_resource_color, GL_ARRAY_BUFFER);
 	deleteVBO(&vbo_edge, cuda_resource_edge, GL_ELEMENT_ARRAY_BUFFER);
 	deleteVBO(&vbo_triangle, cuda_resource_triangle, GL_ELEMENT_ARRAY_BUFFER);
 }
@@ -1137,10 +1146,16 @@ __global__ void updateVertices(GLfloat* __restrict__ gl_ptr, const Vec3d* __rest
 	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		Vec3d pos_i = pos[i];
-		int k = VERTEX_SIZE * i; //x,y,z
-		gl_ptr[k] = (float)pos_i.x;
-		gl_ptr[k+1] = (float)pos_i.y;
-		gl_ptr[k+2] = (float)pos_i.z;
+		int k = NUM_PER_VERTEX * i; //x,y,z
+		// update positions
+		gl_ptr[k] = (GLfloat)pos_i.x;
+		gl_ptr[k+1] = (GLfloat)pos_i.y;
+		gl_ptr[k+2] = (GLfloat)pos_i.z;
+		// zero vertex normals, must run before update normals
+		k += VERTEX_NORMAL_OFFSET;
+		gl_ptr[k] = 0.f;
+		gl_ptr[k+1] = 0.f;
+		gl_ptr[k + 2] = 0.f;
 	}
 }
 
@@ -1148,12 +1163,59 @@ __global__ void updateVertices(GLfloat* __restrict__ gl_ptr, const Vec3d* __rest
 __global__ void updateColors(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		Vec3d color_i = color[i];
-		int k = VERTEX_SIZE * i+3; // x,y,z, r,g,b
-		gl_ptr[k] = (float)color_i.x;
-		gl_ptr[k+1] = (float)color_i.y;
-		gl_ptr[k+2] = (float)color_i.z;
+		int k = NUM_PER_VERTEX * i+3; // x,y,z, r,g,b
+		gl_ptr[k] = (GLfloat)color_i.x;
+		gl_ptr[k+1] = (GLfloat)color_i.y;
+		gl_ptr[k+2] = (GLfloat)color_i.z;
 	}
 }
+
+// update vertex normals from triangles, should run after updateVertices
+__global__ void updateNormals(
+	GLfloat* __restrict__ gl_ptr, 
+	const Vec3d* __restrict__  pos, // vertex positions
+	const Vec3i* __restrict__ triangle, // triangle indices
+	const int num_triangles
+) { // https://www.iquilezles.org/www/articles/normals/normals.htm
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_triangles; i += blockDim.x * gridDim.x) {
+		Vec3i t = triangle[i]; // triangle indices i
+		//TODO check if direction is correct
+		Vec3d pos_ty = pos[t.y];
+		Vec3d e1 = pos_ty - pos[t.x];
+		Vec3d e2 = pos[t.z] - pos_ty;
+		Vec3d no = cross(e1, e2); // triangle normals
+
+		float nx = (float)no.x;
+		float ny = (float)no.y;
+		float nz = (float)no.z;
+
+		int k = NUM_PER_VERTEX * t.x + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
+		atomicAdd(&gl_ptr[k], nx);
+		atomicAdd(&gl_ptr[k + 1], ny);
+		atomicAdd(&gl_ptr[k + 2], nz);
+		//gl_ptr[k] += nx;
+		//gl_ptr[k + 1] += ny;
+		//gl_ptr[k + 2] += nz;
+
+		k = NUM_PER_VERTEX * t.y + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
+		atomicAdd(&gl_ptr[k], nx);
+		atomicAdd(&gl_ptr[k + 1], ny);
+		atomicAdd(&gl_ptr[k + 2], nz);
+		//gl_ptr[k] += nx;
+		//gl_ptr[k + 1] += ny;
+		//gl_ptr[k + 2] += nz;
+
+		k = NUM_PER_VERTEX * t.z + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
+		atomicAdd(&gl_ptr[k], nx);
+		atomicAdd(&gl_ptr[k + 1], ny);
+		atomicAdd(&gl_ptr[k + 2], nz);
+		//gl_ptr[k] += nx;
+		//gl_ptr[k + 1] += ny;
+		//gl_ptr[k + 2] += nz;
+	}
+}
+
+
 
 // update line indices
 __global__ void updateLines(uint2* __restrict__ gl_ptr, const Vec2i* __restrict__ edge, const int num_spring) {
@@ -1176,21 +1238,15 @@ __global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restr
 
 void Simulation::updateBuffers() { // todo: check the kernel call
 	size_t num_bytes;
-	// position update, map OpenGL buffer object for writing from CUDA
+	// vertex update, map OpenGL buffer object for writing from CUDA: update positions and colors
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));
 	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
-
 	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.size());
 	updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.color, mass.size());
-
+	updateNormals << <triangleBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos,d_triangle.triangle,triangle.size());
+	
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-
-	//// color update
-	//gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_STREAM]));
-	//cudaGraphicsResourceGetMappedPointer((void**)&dptr_color, &num_bytes,cuda_resource_color);
-	//updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_color, d_mass.color, mass.size());
-	//gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_color, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 
 	// line indices update
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));
@@ -1212,6 +1268,9 @@ void Simulation::updateVertexBuffers() {
 	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
+	if (show_triangle) {
+		updateNormals << <triangleBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
+	}
 	cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0);// unmap buffer object
 }
 
@@ -1220,41 +1279,50 @@ inline void Simulation::draw() {
 	// ref: https://stackoverflow.com/questions/16380005/opengl-3-4-glvertexattribpointer-stride-and-offset-miscalculation
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
 	//glCheckError(); // check opengl error code
-	glVertexAttribPointer(
+	glVertexAttribPointer( // vertex position
 		0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
 		3,                  // size
 		GL_FLOAT,           // type
 		GL_FALSE,           // normalized?
-		VERTEX_SIZE * sizeof(GL_FLOAT),// stride
+		NUM_PER_VERTEX * sizeof(GL_FLOAT),// stride
 		(void*)0            // array buffer offset
 	);
 	glEnableVertexAttribArray(0);
 
 	//glCheckError(); // check opengl error code
-	//glBindBuffer(GL_ARRAY_BUFFER, this->vbo_color);
-	glVertexAttribPointer(
+	glVertexAttribPointer( // vertex color
 		1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
 		3,                                // size
 		GL_FLOAT,                         // type
 		GL_FALSE,                         // normalized?
-		VERTEX_SIZE * sizeof(GL_FLOAT),   // stride
-		(GLvoid*)(3 * sizeof(GL_FLOAT))   // array buffer offset
+		NUM_PER_VERTEX * sizeof(GL_FLOAT),   // stride
+		(GLvoid*)(VERTEX_COLOR_OFFSET * sizeof(GL_FLOAT))   // array buffer offset
 	);
 	glEnableVertexAttribArray(1);
 
-	glDrawArrays(GL_POINTS, 0, mass.num); // 3 indices starting at 0 -> 1 triangle
+	glVertexAttribPointer( // vertex normal
+		2,                                // attribute. No particular reason for 1, but must match the layout in the shader.
+		3,                                // size
+		GL_FLOAT,                         // type
+		GL_FALSE,                         // normalized?
+		NUM_PER_VERTEX * sizeof(GL_FLOAT),   // stride
+		(GLvoid*)(VERTEX_NORMAL_OFFSET * sizeof(GL_FLOAT))   // array buffer offset
+	);
+	glEnableVertexAttribArray(2);
 
 	if (show_triangle) {
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_triangle);
 		glDrawElements(GL_TRIANGLES, 3 * triangle.size(), GL_UNSIGNED_INT, (void*)0); // 3 indices for a triangle
 	}
-	else {
+	else { // draw lines
+		glDrawArrays(GL_POINTS, 0, mass.num); // 3 indices starting at 0 -> 1 triangle
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
 		glDrawElements(GL_LINES, 2 * spring.num, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
 	}
 	
-	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
+	glDisableVertexAttribArray(1);
+	glDisableVertexAttribArray(2);
 }
 
 

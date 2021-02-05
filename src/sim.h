@@ -757,7 +757,13 @@ public:
 
 	GLuint VertexArrayID; // handle for the vertex array object
 	GLuint programID;  // handle for the shader program
-	GLuint MatrixID; // handel for the uniform MVP
+	GLuint GL_ID_MVP; // handel for the uniform MVP
+	GLuint GL_ID_viewPos; // handel for the (uniform) view position
+	GLuint GL_ID_lightDir; // handel for the (uniform) light direction
+	GLuint GL_ID_lightColor; // handel for the (uniform) light color
+	
+	glm::vec3 light_dir = glm::vec3(0,0,1);// light direction, pointing towards light
+	glm::vec3 light_color = glm::vec3(1., 1., 1.);// light color
 
 	glm::mat4 MVP; //model-view-projection matrix
 	glm::mat4 View; //view matrix
@@ -776,13 +782,9 @@ public:
 	void computeMVP(bool update_view = true); // compute MVP
 
 	/*------------- vertex buffer object and their device pointers--------------------*/
-	GLuint vbo_vertex; // handle for vertexbuffer (mass pos)
+	GLuint vbo_vertex; // handle for vertexbuffer: for vertex position,color, vertex normal update
 	GLfloat* dptr_vertex = nullptr;// used in updateBuffers(), device pointer,stores positions of the vertices
 	struct cudaGraphicsResource* cuda_resource_vertex;
-
-	GLuint vbo_color; // handle for colorbuffer (color)
-	GLfloat* dptr_color = nullptr; // used in updateBuffers(), device pointer,stores colors of the vertices
-	struct cudaGraphicsResource* cuda_resource_color;
 
 	GLuint vbo_edge; // handle for elementbuffer (spring)
 	uint2* dptr_edge = nullptr; // used in updateBuffers(), device pointer,stores indices (line plot)
