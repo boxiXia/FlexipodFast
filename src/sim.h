@@ -759,11 +759,8 @@ public:
 	GLuint programID;  // handle for the shader program
 	GLuint GL_ID_MVP; // handel for the uniform MVP
 	GLuint GL_ID_viewPos; // handel for the (uniform) view position
-	GLuint GL_ID_lightDir; // handel for the (uniform) light direction
-	GLuint GL_ID_lightColor; // handel for the (uniform) light color
-	
-	glm::vec3 light_dir = glm::vec3(0,0,1);// light direction, pointing towards light
-	glm::vec3 light_color = glm::vec3(1., 1., 1.);// light color
+
+	DirectionLight light; // directional light
 
 	glm::mat4 MVP; //model-view-projection matrix
 	glm::mat4 View; //view matrix

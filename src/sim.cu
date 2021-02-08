@@ -730,8 +730,6 @@ void Simulation::update_physics() { // repeatedly start next
 #ifdef GRAPHICS
 void Simulation::update_graphics() {
 
-
-
 	createGLFWWindow(); // create a window with  width and height
 
 	int glDeviceId;// todo:this output wrong number, maybe it is a cuda bug...
@@ -742,15 +740,25 @@ void Simulation::update_graphics() {
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 	// Create and compile our GLSL program from the shaders
-	programID = LoadShaders("shaderVertex.glsl", "shaderFragment.glsl"); //
+	programID = LoadShaders("../src/shaderVertex.glsl", "../src/shaderFragment.glsl"); //
 	glUseProgram(programID);// Use our shader
-	// Get a handle for our "MVP" uniform
-	computeMVP(); // compute perspective projection matrix
+	
 	// get handles for the gl unifrom variables
 	GL_ID_MVP = glGetUniformLocation(programID, "MVP");
 	GL_ID_viewPos = glGetUniformLocation(programID, "viewPos");
-	GL_ID_lightDir = glGetUniformLocation(programID, "lightDir");
-	GL_ID_lightColor = glGetUniformLocation(programID, "lightColor");
+
+	//GL_ID_lightDir = glGetUniformLocation(programID, "lightDir");
+	//GL_ID_lightColor = glGetUniformLocation(programID, "lightColor");
+
+	//glUniform3f(GL_ID_lightDir, // update shader lightDir
+	//	light_dir.x, light_dir.y, light_dir.z);
+	//glUniform3f(GL_ID_lightColor, // update shader lightDir
+	//	light_color.x, light_color.y, light_color.z);
+
+	light.set(programID, "light");
+
+
+	computeMVP(); // compute perspective projection matrix
 
 	generateBuffers(); // generate buffers for all masses and springs
 
@@ -783,9 +791,9 @@ void Simulation::update_graphics() {
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 			//T_previous_update = T;
 
-			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
-
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
+
+			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
 			double t_lerp = 0.01;
 			double speed_multiplier = 0.02;
@@ -848,10 +856,7 @@ void Simulation::update_graphics() {
 			glUniformMatrix4fv(GL_ID_MVP, 1, GL_FALSE, &MVP[0][0]);// update transformation "MVP" uniform
 			glUniform3f(GL_ID_viewPos, // update shader viewDir
 				(float)camera_pos.x,(float)camera_pos.y,(float)camera_pos.z);
-			glUniform3f(GL_ID_lightDir, // update shader lightDir
-				light_dir.x,light_dir.y,light_dir.z);
-			glUniform3f(GL_ID_lightColor, // update shader lightDir
-				light_color.x, light_color.y, light_color.z);
+
 
 			draw();
 
