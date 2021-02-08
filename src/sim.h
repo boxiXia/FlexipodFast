@@ -621,6 +621,14 @@ struct RigidBody {
 };
 
 
+struct BreakPoint {
+	double t;
+	bool should_end;
+	BreakPoint(double t = 0, bool should_end=false):t(t), should_end(should_end){}
+	bool operator() (BreakPoint const& p1, BreakPoint const& p2) {
+		return p1.t < p2.t;
+	}
+};
 
 class Simulation {
 public:

@@ -340,9 +340,6 @@ void Simulation::setBreakpoint(const double time) {
 void Simulation::pause(const double t) {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
 	setBreakpoint(t);
-
-	//waitForEvent();
-
 	//// Wait until main() sends data
 	std::unique_lock<std::mutex> lck(mutex_running);
 	SHOULD_RUN = false;
@@ -489,7 +486,6 @@ void Simulation::update_physics() { // repeatedly start next
 			cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 		//            std::cout << "Breakpoint set for time " << *bpts.begin() << " reached at simulation time " << T << "!" << std::endl;
 			bpts.erase(bpts.begin());
-			if (bpts.empty()) { SHOULD_END = true; }
 			if (SHOULD_END) {
 				auto end = std::chrono::steady_clock::now();
 				double duration = (double)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.;//[seconds]
@@ -508,11 +504,10 @@ void Simulation::update_physics() { // repeatedly start next
 				cv_running.notify_all(); //notify others RUNNING = false
 				cv_running.wait(lck, [this] {return GRAPHICS_ENDED; });
 #endif
-				//#ifdef UDP
-				//				udp_server.close();
-				//#endif
 				GPU_DONE = true;
 				RUNNING = false;
+				ENDED = true; // TODO maybe race condition
+				cv_running.notify_all(); //notify others RUNNING = false
 				printf("GPU done\n");
 				return;
 			}
@@ -520,9 +515,9 @@ void Simulation::update_physics() { // repeatedly start next
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
 				RUNNING = false;
 				cv_running.notify_all(); //notify others RUNNING = false
-				cv_running.wait(lck, [this] {return SHOULD_RUN; }); // wait unitl SHOULD_RUN is signaled
+				cv_running.wait(lck, [this] {return SHOULD_RUN||SHOULD_END; }); // wait unitl SHOULD_RUN is signaled
 				RUNNING = true;
-				//lck.unlock();// Manual unlocking before notifying, to avoid waking up the waiting thread only to block again
+				lck.unlock();// Manual unlocking before notifying, to avoid waking up the waiting thread only to block again
 				cv_running.notify_all(); // notifiy others RUNNING = true;
 			}
 
@@ -867,9 +862,12 @@ void Simulation::update_graphics() {
 			//	std::cerr << "OpenGL Error " << error << std::endl;
 
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
-				bpts.insert(T);// break at current time T
-				//exit(0); // TODO maybe deal with memory leak here. //key press exit,
-				SHOULD_END = true;}
+				bpts.insert(T);// break at current time T // TODO maybe deal with memory leak here. //key press exit,
+				// condition variable: REF: https://en.cppreference.com/w/cpp/thread/condition_variable
+				std::lock_guard<std::mutex> lk(mutex_running);
+				SHOULD_END = true;
+				cv_running.notify_all(); //notify others SHOULD_END = true
+			}
 		}
 
 	}
@@ -881,10 +879,9 @@ void Simulation::update_graphics() {
 	glfwTerminate(); // Close OpenGL window and terminate GLFW
 	printf("\nwindow closed\n");
 
-	{	// notify the physics thread
-		std::unique_lock<std::mutex> lck(mutex_running); // could just use lock_guard
+	{	// notify the physics thread // https://en.cppreference.com/w/cpp/thread/condition_variable
+		std::lock_guard<std::mutex> lk(mutex_running); 
 		GRAPHICS_ENDED = true;
-		lck.unlock();
 		cv_running.notify_all();
 	}
 
@@ -908,19 +905,13 @@ Simulation::~Simulation() {
 
 	if (STARTED) {
 		{		
-			//std::unique_lock<std::mutex> lck(mutex_running);
-			//cv_running.wait(lck, [this] {return !RUNNING; }); 
-			while (RUNNING) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(10));// TODO fix race condition
-			}
-
+			std::unique_lock<std::mutex> lck(mutex_running);//https://en.cppreference.com/w/cpp/thread/condition_variable
+			cv_running.wait(lck, [this] {return ENDED; });
 		}
 
-		ENDED = true; // TODO maybe race condition
-
-		while (!GPU_DONE) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));// TODO fix race condition
-		}
+		//while (!GPU_DONE) {
+		//	std::this_thread::sleep_for(std::chrono::milliseconds(1));// TODO fix race condition
+		//}
 		if (thread_physics_update.joinable()) {
 
 			thread_physics_update.join();
@@ -939,14 +930,12 @@ Simulation::~Simulation() {
 #ifdef UDP
 		udp_server.close();
 #endif // UDP
-
 	}
 	freeGPU();
 }
 
 
 void Simulation::freeGPU() {
-	ENDED = true; // just to be safe
 	//Todo
 	//for (Spring* s : springs) {
 	//	s->_left = nullptr;
@@ -965,9 +954,6 @@ void Simulation::freeGPU() {
 	d_planes.clear();
 	d_planes.shrink_to_fit();
 	printf("GPU freed\n");
-
-
-
 }
 
 
@@ -1352,6 +1338,15 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 		}
 		else if (key == GLFW_KEY_R) {// reset
 			sim->RESET = true;
+		}
+		else if (key == GLFW_KEY_P) {
+			if (sim->RUNNING) {
+				sim->pause(0);
+			}
+			else {
+				sim->resume();
+			}
+			
 		}
 	}
 	if (key == GLFW_KEY_W) { sim->camera_h_offset -= 0.05; }//camera moves closer
