@@ -331,15 +331,15 @@ inline void Simulation::updateCudaParameters() {
 
 }
 
-void Simulation::setBreakpoint(const double time) {
+void Simulation::setBreakpoint(const double time, const bool should_end) {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. Can't modify simulation after simulation end."); }
-	bpts.insert(time); // TODO mutex breakpoints
+	bpts.insert(BreakPoint(time,should_end)); // TODO mutex breakpoints
 }
 
 /*pause the simulation at (simulation) time t [s] */
 void Simulation::pause(const double t) {
 	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
-	setBreakpoint(t);
+	setBreakpoint(t,false);
 	//// Wait until main() sends data
 	std::unique_lock<std::mutex> lck(mutex_running);
 	SHOULD_RUN = false;
@@ -447,10 +447,10 @@ void Simulation::start() {
 	udp_server.run();
 #endif //UDP
 
-	thread_physics_update = std::thread(&Simulation::update_physics, this); //TODO: thread
 #ifdef GRAPHICS
 	thread_graphics_update = std::thread(&Simulation::update_graphics, this); //TODO: thread
 #endif// Graphics
+	thread_physics_update = std::thread(&Simulation::update_physics, this); //TODO: thread
 
 	{
 		int device;
@@ -482,10 +482,22 @@ void Simulation::update_physics() { // repeatedly start next
 	body.init(mass, id_oxyz_start); // init body frame
 
 	while (true) {
-		if (!bpts.empty() && *bpts.begin() <= T) {// paused when a break p
-			cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
+		if (!bpts.empty() && (*bpts.begin()).t <= T) {// paused when a break p
+			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 		//            std::cout << "Breakpoint set for time " << *bpts.begin() << " reached at simulation time " << T << "!" << std::endl;
+			SHOULD_END = (*bpts.begin()).should_end;
 			bpts.erase(bpts.begin());
+
+			{	// condition variable 
+				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
+				RUNNING = false;
+				SHOULD_RUN = false;
+				cv_running.notify_all(); //notify others RUNNING = false
+				cv_running.wait(lck, [this] {return SHOULD_RUN||SHOULD_END; }); // wait unitl SHOULD_RUN is signaled
+				RUNNING = true;
+				lck.unlock();// Manual unlocking before notifying, to avoid waking up the waiting thread only to block again
+				cv_running.notify_all(); // notifiy others RUNNING = true;
+			}
 			if (SHOULD_END) {
 				auto end = std::chrono::steady_clock::now();
 				double duration = (double)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.;//[seconds]
@@ -511,16 +523,6 @@ void Simulation::update_physics() { // repeatedly start next
 				printf("GPU done\n");
 				return;
 			}
-			{	// condition variable 
-				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
-				RUNNING = false;
-				cv_running.notify_all(); //notify others RUNNING = false
-				cv_running.wait(lck, [this] {return SHOULD_RUN||SHOULD_END; }); // wait unitl SHOULD_RUN is signaled
-				RUNNING = true;
-				lck.unlock();// Manual unlocking before notifying, to avoid waking up the waiting thread only to block again
-				cv_running.notify_all(); // notifiy others RUNNING = true;
-			}
-
 			//			// TODO NOTIFY THE OTHER THREAD
 			//			if (SHOULD_UPDATE_CONSTRAINT) {
 			//				d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
@@ -582,6 +584,9 @@ void Simulation::update_physics() { // repeatedly start next
 
 		//if (fmod(T, 1. / 100.0) < NUM_QUEUED_KERNELS * dt) {
 		mass.CopyPosVelAccFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
+
+		//cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
+		//cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
 		cudaDeviceSynchronize();
 
 		//Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
@@ -656,8 +661,8 @@ void Simulation::update_physics() { // repeatedly start next
 				switch (udp_server.msg_rec.header)
 				{
 				case UDP_HEADER::TERMINATE://close the program
-					bpts.insert(T);
-					SHOULD_END = true;
+					bpts.insert(BreakPoint(T,true));
+					//SHOULD_END = true;
 					break;
 				case UDP_HEADER::RESET: // reset
 					// set the reset flag to true, resetState() will be called 
@@ -862,7 +867,7 @@ void Simulation::update_graphics() {
 			//	std::cerr << "OpenGL Error " << error << std::endl;
 
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
-				bpts.insert(T);// break at current time T // TODO maybe deal with memory leak here. //key press exit,
+				bpts.insert(BreakPoint(T, true));// break at current time T // TODO maybe deal with memory leak here. //key press exit,
 				// condition variable: REF: https://en.cppreference.com/w/cpp/thread/condition_variable
 				std::lock_guard<std::mutex> lk(mutex_running);
 				SHOULD_END = true;

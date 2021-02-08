@@ -264,10 +264,10 @@ int main()
 
 
 	double runtime = 86400;//24 hours
-	sim.setBreakpoint(runtime);
+	sim.setBreakpoint(runtime,true);
 
 	sim.start();
-	//sim.pause(1);
+	
 	//while (sim.RUNNING) {
 	//	std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	//}
