@@ -740,7 +740,9 @@ void Simulation::update_graphics() {
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 	// Create and compile our GLSL program from the shaders
-	programID = LoadShaders("../src/shaderVertex.glsl", "../src/shaderFragment.glsl"); //
+	//programID = LoadShaders("../src/shaderVertex.glsl", "../src/shaderFragment.glsl"); 
+	programID = LoadShaders("shaderVertex.glsl", "shaderFragment.glsl");
+
 	glUseProgram(programID);// Use our shader
 	
 	// get handles for the gl unifrom variables
@@ -798,13 +800,6 @@ void Simulation::update_graphics() {
 			double t_lerp = 0.01;
 			double speed_multiplier = 0.02;
 
-			if (glfwGetKey(window, GLFW_KEY_W)) { camera_h_offset -= 0.05; }//camera moves closer
-			else if (glfwGetKey(window, GLFW_KEY_S)) {camera_h_offset += 0.05;}//camera moves away
-			if (glfwGetKey(window, GLFW_KEY_A)) {camera_yaw -= 0.05;} //camera moves left
-			else if (glfwGetKey(window, GLFW_KEY_D)) {camera_yaw += 0.05;}//camera moves right
-			if (glfwGetKey(window, GLFW_KEY_Q)) {camera_up_offset -= 0.05;} // camera moves down
-			else if (glfwGetKey(window, GLFW_KEY_E)) {camera_up_offset += 0.05;}// camera moves up
-
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				if (joint_control.joint_vel_desired[0] < joint_control.max_joint_vel[0]) { joint_control.joint_vel_desired[0] += speed_multiplier; }
 				if (joint_control.joint_vel_desired[1] < joint_control.max_joint_vel[1]) { joint_control.joint_vel_desired[1] += speed_multiplier; }
@@ -832,9 +827,7 @@ void Simulation::update_graphics() {
 			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
 				for (int i = 0; i < joint.size(); i++) { joint_control.joint_vel_desired[i] = 0.; }
 			}
-			else if (glfwGetKey(window, GLFW_KEY_R)) { // reset
-				RESET = true;
-			}
+
 
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
@@ -876,8 +869,7 @@ void Simulation::update_graphics() {
 			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) != 0) {
 				bpts.insert(T);// break at current time T
 				//exit(0); // TODO maybe deal with memory leak here. //key press exit,
-				SHOULD_END = true;
-			}
+				SHOULD_END = true;}
 		}
 
 	}
@@ -1338,26 +1330,36 @@ void Simulation::framebuffer_size_callback(GLFWwindow* window, int width, int he
 
 void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 { // ref: https://www.glfw.org/docs/latest/input_guide.html#input_key
-	if (key == GLFW_KEY_F && action == GLFW_PRESS)
-	{
-		const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-		// if window is maximized
-		if (glfwGetWindowAttrib(window, GLFW_MAXIMIZED)) {//restore default window size
-			glfwRestoreWindow(window);
-			glfwSetWindowAttrib(window, GLFW_DECORATED, GL_TRUE);
-			glfwSetWindowMonitor(window, NULL, 50, 50, 0.5*mode->width,0.5*mode->height, GLFW_DONT_CARE);
+	Simulation* sim = (Simulation*)glfwGetWindowUserPointer(window);
+	if (action == GLFW_PRESS) {
+		if (key == GLFW_KEY_F) {
+			const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+			// if window is maximized
+			if (glfwGetWindowAttrib(window, GLFW_MAXIMIZED)) {//restore default window size
+				glfwRestoreWindow(window);
+				glfwSetWindowAttrib(window, GLFW_DECORATED, GL_TRUE);
+				glfwSetWindowMonitor(window, NULL, 50, 50, 0.5 * mode->width, 0.5 * mode->height, GLFW_DONT_CARE);
+			}
+			else { // maximize the window,fullscreen
+				glfwMaximizeWindow(window);
+				glfwSetWindowAttrib(window, GLFW_MAXIMIZED, GL_TRUE);
+				glfwSetWindowAttrib(window, GLFW_DECORATED, GL_FALSE);
+				glfwSetWindowMonitor(window, NULL, 0, 0, mode->width, mode->height, GLFW_DONT_CARE);
+			}
 		}
-		else { // maximize the window,fullscreen
-			glfwMaximizeWindow(window);
-			glfwSetWindowAttrib(window, GLFW_MAXIMIZED, GL_TRUE);
-			glfwSetWindowAttrib(window, GLFW_DECORATED, GL_FALSE);
-			glfwSetWindowMonitor(window, NULL, 0, 0, mode->width, mode->height, GLFW_DONT_CARE);
+		else if (key == GLFW_KEY_T) {//enable/disable showing triangle faces
+			sim->show_triangle = !sim->show_triangle;
+		}
+		else if (key == GLFW_KEY_R) {// reset
+			sim->RESET = true;
 		}
 	}
-	else if (key == GLFW_KEY_T && action == GLFW_PRESS) {//enable/disable showing triangle faces
-		Simulation* sim = (Simulation*)glfwGetWindowUserPointer(window);
-		sim->show_triangle = !sim->show_triangle;
-	}
+	if (key == GLFW_KEY_W) { sim->camera_h_offset -= 0.05; }//camera moves closer
+	else if(key == GLFW_KEY_S) { sim->camera_h_offset += 0.05; }//camera moves away
+	else if(key == GLFW_KEY_A) { sim->camera_yaw -= 0.05; } //camera moves left
+	else if(key == GLFW_KEY_D) { sim->camera_yaw += 0.05; }//camera moves right
+	else if(key == GLFW_KEY_Q) { sim->camera_up_offset -= 0.05; } // camera moves down
+	else if(key == GLFW_KEY_E) { sim->camera_up_offset += 0.05; }// camera moves up
 }
 void Simulation::createGLFWWindow() {
 	// Initialise GLFW
