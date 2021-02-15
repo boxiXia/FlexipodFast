@@ -773,10 +773,8 @@ public:
 	GLFWwindow* window;
 	int framebuffer_width, framebuffer_height; // the width and height of the framebuffer
 
+	Shader shader; // shader object, its handel is shader.ID, call shader.use() to use
 	GLuint VertexArrayID; // handle for the vertex array object
-	GLuint programID;  // handle for the shader program
-	GLuint GL_ID_MVP; // handel for the uniform MVP
-	GLuint GL_ID_viewPos; // handel for the (uniform) view position
 
 	DirectionLight light; // directional light
 

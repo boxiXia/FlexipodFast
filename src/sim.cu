@@ -780,16 +780,10 @@ void Simulation::update_graphics() {
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 	// Create and compile our GLSL program from the shaders
-	//programID = LoadShaders("../src/shaderVertex.glsl", "../src/shaderFragment.glsl"); 
-	programID = LoadShaders("shaderVertex.glsl", "shaderFragment.glsl");
-
-	glUseProgram(programID);// Use our shader
-	
-	// get handles for the gl unifrom variables
-	GL_ID_MVP = glGetUniformLocation(programID, "MVP");
-	GL_ID_viewPos = glGetUniformLocation(programID, "viewPos");
-	// set the light uniform
-	light.set(programID, "light");
+	//shaderID = LoadShaders("../src/shaderVertex.glsl", "../src/shaderFragment.glsl"); 
+	//shaderID = LoadShaders("shaderVertex.glsl", "shaderFragment.glsl");
+	shader = Shader("shaderVertex.glsl", "shaderFragment.glsl");
+	//shader.use();
 
 
 	computeMVP(); // compute perspective projection matrix
@@ -881,16 +875,15 @@ void Simulation::update_graphics() {
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
-			glUniformMatrix4fv(GL_ID_MVP, 1, GL_FALSE, &MVP[0][0]);// update transformation "MVP" uniform
-			glUniform3f(GL_ID_viewPos, // update shader viewDir
-				(float)camera_pos.x,(float)camera_pos.y,(float)camera_pos.z);
-
+			shader.use(); // use the shader
+			light.set(shader.ID, "light"); // set the light uniform
+			shader.setMat4("MVP", MVP); // set MVP
+			shader.setVec3("viewPos", // set view position
+				(float)camera_pos.x, (float)camera_pos.y, (float)camera_pos.z);
 
 			draw();
 
-			for (Constraint* c : constraints) {
-				c->draw();
-			}
+
 
 			// Swap buffers, render screen
 			glfwPollEvents();
@@ -914,7 +907,7 @@ void Simulation::update_graphics() {
 
 	// end the graphics
 	deleteBuffers(); // delete the buffer objects
-	glDeleteProgram(programID);
+	glDeleteProgram(shader.ID);
 	glDeleteVertexArrays(1, &VertexArrayID);
 	glfwTerminate(); // Close OpenGL window and terminate GLFW
 	printf("\nwindow closed\n");
@@ -1298,7 +1291,11 @@ void Simulation::updateVertexBuffers() {
 }
 
 inline void Simulation::draw() {
-	
+	// draw constraints
+	for (Constraint* c : constraints) {
+		c->draw();
+	}
+
 	// ref: https://stackoverflow.com/questions/16380005/opengl-3-4-glvertexattribpointer-stride-and-offset-miscalculation
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
 	//glCheckError(); // check opengl error code
