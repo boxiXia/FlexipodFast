@@ -20,7 +20,7 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 /* directional light*/
 class DirectionLight { 
 public:
-	glm::vec3 direction = glm::vec3(0.f, 0.f, -1.f);// light direction, pointing from light
+	glm::vec3 direction = glm::vec3(0.f, 0.f, 1.f);// light direction, pointing towards light
 	glm::vec3 color = glm::vec3(1.f, 1.f, 1.f); // light color
 	float ambient = 0.4f; // ambient intensity
 	float diffuse = 0.6f; // diffuse intensity

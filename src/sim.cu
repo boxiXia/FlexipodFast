@@ -779,12 +779,35 @@ void Simulation::update_graphics() {
 
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
+
 	// Create and compile our GLSL program from the shaders
-	//shaderID = LoadShaders("../src/shaderVertex.glsl", "../src/shaderFragment.glsl"); 
-	//shaderID = LoadShaders("shaderVertex.glsl", "shaderFragment.glsl");
 	shader = Shader("shaderVertex.glsl", "shaderFragment.glsl");
 	//shader.use();
 
+	//https://learnopengl.com/Advanced-Lighting/Shadows/Point-Shadows
+	//https://github.com/JoeyDeVries/LearnOpenGL/tree/master/src/5.advanced_lighting/3.1.3.shadow_mapping
+	simpleDepthShader = Shader("shadow_mapping_depth_vertex.glsl", "shadow_mapping_depth_fragment.glsl");
+	//simpleDepthShader.use();
+
+	/*------------------- configure depth map FBO ----------------------------*/
+	glGenFramebuffers(1, &depthMapFBO);
+	// create depth texture
+	glGenTextures(1, &depthMap);
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+	// attach depth texture as FBO's depth buffer
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	/*-------------------------------------------------------------------------*/
 
 	computeMVP(); // compute perspective projection matrix
 
@@ -818,8 +841,6 @@ void Simulation::update_graphics() {
 			}
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 			//T_previous_update = T;
-
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
 			// copy only the position
 			//mass.CopyPosFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
@@ -875,15 +896,57 @@ void Simulation::update_graphics() {
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
+
+			/*---------------------------------------------------------------*/
+			// lighting info
+			// -------------
+			//glm::vec3 lightPos(0.f, 0.f, 10.f);
+
+			// 1. render depth of scene to texture (from light's perspective)
+			// --------------------------------------------------------------
+			float near_plane = -5.0, far_plane = 10.f;
+			//lightProjection = glm::perspective(glm::radians(45.0f), (GLfloat)SHADOW_WIDTH / (GLfloat)SHADOW_HEIGHT, near_plane, far_plane); // note that if you use a perspective projection matrix you'll have to change the light position as the current light position isn't enough to reflect the whole scene
+			glm::mat4 lightProjection = glm::ortho(-2.0f, 2.0f, -2.0f, 2.0f, near_plane, far_plane);
+
+			//lightView = glm::lookAt(light.direction, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+			glm::vec3 light_pos = glm::vec3 (
+				com_pos.x + light.direction.x,
+				com_pos.y + light.direction.y,
+				com_pos.z + light.direction.z);
+
+			glm::mat4 lightView = glm::lookAt(
+				light_pos, // camera position in World Space
+				glm::vec3(com_pos.x,com_pos.y,com_pos.z),// look at position
+				glm::vec3(0., 1.0, 0.0));  // camera up vector (set to 0,-1,0 to look upside-down)
+
+			glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+			// render scene from light's point of view
+			simpleDepthShader.use();
+			simpleDepthShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+
+			glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+			glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+			glClear(GL_DEPTH_BUFFER_BIT);
+			draw();
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+			// reset viewport
+			glViewport(0, 0, framebuffer_width, framebuffer_height);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
+			/*---- 2. render scene as normal using the generated depth/shadow map--*/
 			shader.use(); // use the shader
 			light.set(shader.ID, "light"); // set the light uniform
 			shader.setMat4("MVP", MVP); // set MVP
 			shader.setVec3("viewPos", // set view position
 				(float)camera_pos.x, (float)camera_pos.y, (float)camera_pos.z);
-
+			shader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, depthMap);
 			draw();
-
-
+			/*--------------------------------------------------------------------*/
 
 			// Swap buffers, render screen
 			glfwPollEvents();
@@ -1291,10 +1354,7 @@ void Simulation::updateVertexBuffers() {
 }
 
 inline void Simulation::draw() {
-	// draw constraints
-	for (Constraint* c : constraints) {
-		c->draw();
-	}
+
 
 	// ref: https://stackoverflow.com/questions/16380005/opengl-3-4-glvertexattribpointer-stride-and-offset-miscalculation
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
@@ -1343,6 +1403,11 @@ inline void Simulation::draw() {
 	glDisableVertexAttribArray(0);
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(2);
+
+	// draw constraints
+	for (Constraint* c : constraints) {
+		c->draw();
+	}
 }
 
 

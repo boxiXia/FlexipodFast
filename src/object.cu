@@ -322,6 +322,7 @@ void ContactPlane::generateBuffers() {
         normal_data[3 * i] = (GLfloat)_normal.x;
         normal_data[3 * i+1] = (GLfloat)_normal.y;
         normal_data[3 * i+2] = (GLfloat)_normal.z;
+
     }
 
     glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
@@ -342,9 +343,8 @@ void ContactPlane::generateBuffers() {
 
 void ContactPlane::draw() {
     // 1st attribute buffer : vertices
-    glEnableVertexAttribArray(0);
+   
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-
     glVertexAttribPointer(
             0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
             3,                  // size
@@ -353,8 +353,8 @@ void ContactPlane::draw() {
             0,                  // stride
             (void*)0            // array buffer offset
     );
-
-    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(0);
+   
     glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
     glVertexAttribPointer(
             1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
@@ -364,8 +364,8 @@ void ContactPlane::draw() {
             0,                                // stride
             (void*)0                          // array buffer offset
     );
+    glEnableVertexAttribArray(1);
 
-    glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
     glVertexAttribPointer(
         2,                                // attribute. No particular reason for 1, but must match the layout in the shader.
@@ -375,6 +375,7 @@ void ContactPlane::draw() {
         0,                                // stride
         (void*)0                          // array buffer offset
     );
+    glEnableVertexAttribArray(2);
 
     // Draw the triangle !
     glDrawArrays(GL_TRIANGLES, 0, CONTACT_PLANE_GL_DRAW_SIZE); // number of vertices

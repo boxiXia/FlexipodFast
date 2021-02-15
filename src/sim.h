@@ -775,6 +775,14 @@ public:
 
 	Shader shader; // shader object, its handel is shader.ID, call shader.use() to use
 	GLuint VertexArrayID; // handle for the vertex array object
+	
+	/*--------------shadow----------------------------*/
+	Shader simpleDepthShader;
+	GLuint depthMapFBO; // depth map frame buffer object
+	GLuint depthMap; // handle for the depthmap texture
+	const GLuint SHADOW_WIDTH = 2048;
+	const GLuint SHADOW_HEIGHT = 2048;
+	/*------------------------------------------------*/
 
 	DirectionLight light; // directional light
 
