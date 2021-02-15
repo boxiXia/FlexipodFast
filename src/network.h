@@ -23,10 +23,14 @@
 
 enum UDP_HEADER :int {
 	TERMINATE = -1,// close the program
+	PAUSE = 17,
+	RESUME = 16,
 	RESET = 15,
 	ROBOT_STATE_REPORT = 14,
 	MOTOR_SPEED_COMMEND = 13,
-	MOTOR_POS_COMMEND = 12
+	STEP_MOTOR_SPEED_COMMEND =12,
+	MOTOR_POS_COMMEND = 11,
+	STEP_MOTOR_POS_COMMEND=10,
 };
 MSGPACK_ADD_ENUM(UDP_HEADER); // msgpack macro,refer to https://github.com/msgpack/msgpack-c/blob/cpp_master/example/cpp03/enum.cpp
 
@@ -262,7 +266,7 @@ public:
 				//printf("timed out\n");
 				//printf( __FILE__, __LINE__);
 			}
-			std::this_thread::sleep_for(std::chrono::microseconds(1));
+			std::this_thread::sleep_for(std::chrono::nanoseconds(50));
 		}
 
 		std::lock_guard<std::mutex> lck(mutex_running); // could just use lock_guard
@@ -285,7 +289,7 @@ public:
 					//TODO use condition variable
 					flag_should_send = false;//reset flag_should_send
 				}
-				std::this_thread::sleep_for(std::chrono::microseconds(1));
+				std::this_thread::sleep_for(std::chrono::nanoseconds(50));
 			}
 		}
 		catch (std::exception& e) {

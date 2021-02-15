@@ -70,8 +70,10 @@ add_definitions(-DROTATION) # enable this to support rotation in dynamics update
 #add_definitions(-DDEBUG_ENERGY) # enable this to debug energy
 #add_subdirectory(src/Titan)
 
-
-
+# macro to create a symbolic link
+macro(makeLink src dest target)
+  add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink ${src} ${dest}  DEPENDS  ${dest} COMMENT "mklink ${src} -> ${dest}")
+endmacro()
 
 add_executable(flexipod 
     src/main.cu 
@@ -104,17 +106,16 @@ target_link_libraries(flexipod PRIVATE
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
 
-# copy shaders to binary directory
-add_custom_command(
-        TARGET flexipod POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-                ${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl
-                ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl)
-add_custom_command(
-        TARGET flexipod POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-                ${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl
-                ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl)
+# create symbolic link for *.glsl
+file(GLOB shaders "${CMAKE_SOURCE_DIR}/src/*.glsl")
+foreach(shader ${shaders})
+    get_filename_component(shader_name "${shader}" NAME)
+    makeLink(${shader} ${CMAKE_CURRENT_BINARY_DIR}/${shader_name} flexipod)
+endforeach()
+#makeLink(${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl flexipod)
+#makeLink(${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl flexipod)
+   
+
 
 add_executable(testNetwork
     "src/testNetwork.cu"
@@ -138,14 +139,14 @@ target_link_libraries(mathTest PRIVATE msgpackc-cxx)
 target_link_libraries(mathTest PRIVATE cuda)
 target_include_directories(mathTest PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
-add_executable(
-    testMsgpack
-    "src/msgpackTest.cu"
-    src/vec.h src/vec.cu)
-set_property(TARGET testMsgpack PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
-target_link_libraries(testMsgpack PRIVATE msgpackc-cxx)
-target_link_libraries(testMsgpack PRIVATE cuda)
-target_include_directories(testMsgpack PUBLIC ${CUDA_INCLUDE_DIRS} src)
+#add_executable(
+#    testMsgpack
+#    "src/msgpackTest.cu"
+#    src/vec.h src/vec.cu)
+#set_property(TARGET testMsgpack PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
+#target_link_libraries(testMsgpack PRIVATE msgpackc-cxx)
+#target_link_libraries(testMsgpack PRIVATE cuda)
+#target_include_directories(testMsgpack PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
 
 

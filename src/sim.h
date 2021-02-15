@@ -59,7 +59,7 @@ constexpr const int CUDA_GRAPHICS_STREAM = 2; // steam to run graphics update
 
 constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
-constexpr int NUM_UDP_MULTIPLIER = 3;// udp update is decreased by this factor
+constexpr int NUM_UDP_MULTIPLIER = 4;// udp update is decreased by this factor
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -202,7 +202,14 @@ struct MASS {
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
-		gpuErrchk(cudaPeekAtLastError());
+		//gpuErrchk(cudaPeekAtLastError());
+	}
+	void CopyPosFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
+		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	}
+	void CopyPosFrom(MASS& other,const int& index,const int& range = 1, cudaStream_t stream = (cudaStream_t)0) {
+		assert(index+range<=num,"index out of range");
+		cudaMemcpyAsync(pos+index*sizeof(Vec3d), other.pos + index * sizeof(Vec3d), sizeof(Vec3d)*range, cudaMemcpyDefault, stream);
 	}
 
 };
@@ -625,7 +632,7 @@ struct BreakPoint {
 	double t;
 	bool should_end;
 	BreakPoint(double t = 0, bool should_end=false):t(t), should_end(should_end){}
-	bool operator() (BreakPoint const& p1, BreakPoint const& p2) {
+	constexpr bool operator() (BreakPoint const& p1, BreakPoint const& p2) const{
 		return p1.t < p2.t;
 	}
 };
@@ -697,12 +704,12 @@ public:
 	void createBall(const Vec3d& center, const double r); // creates ball with radius r at position center
 	void clearConstraints(); // clears global constraints only
 
-	void setBreakpoint(const double time); // tell the program to stop at a fixed time (doesn't hang).
+	void setBreakpoint(const double time,const bool should_end=false); // tell the program to stop at a fixed time (doesn't hang).
 
 	void start();
 
 
-	void pause(const double t);//pause the simulation at (simulation) time t [s]
+	void pause(const double t=0);//pause the simulation at (simulation) time t [s]
 
 
 	void resume();
@@ -726,6 +733,9 @@ public:
 	int port_local = 32001;
 
 	UdpServer udp_server;
+
+	void SendUdpMessage(const UDP_HEADER & header = UDP_HEADER::ROBOT_STATE_REPORT);// update udp_server.msg_send and send
+	bool ReceiveUdpMessage();
 #endif //UDP
 
 private:
@@ -738,7 +748,7 @@ private:
 #ifdef GRAPHICS
 	std::thread thread_graphics_update;
 #endif //GRAPHICS
-	std::set<double> bpts; // list of breakpoints
+	std::set<BreakPoint, BreakPoint> bpts; // list of breakpoints
 
 
 	int massBlocksPerGrid; // blocksPergrid for mass update

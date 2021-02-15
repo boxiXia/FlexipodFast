@@ -332,15 +332,15 @@ inline void Simulation::updateCudaParameters() {
 }
 
 void Simulation::setBreakpoint(const double time, const bool should_end) {
-	if (ENDED) { throw std::runtime_error("Simulation has ended. Can't modify simulation after simulation end."); }
+	//assert(!ENDED, "Simulation has ended. Cannot setBreakpoint.");
 	bpts.insert(BreakPoint(time,should_end)); // TODO mutex breakpoints
 }
 
 /*pause the simulation at (simulation) time t [s] */
 void Simulation::pause(const double t) {
-	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
+	assert(!ENDED, "Simulation has ended. can't call pause");
 	setBreakpoint(t,false);
-	//// Wait until main() sends data
+	//// Wait until simulation is actually paused
 	std::unique_lock<std::mutex> lck(mutex_running);
 	SHOULD_RUN = false;
 	cv_running.notify_all();
@@ -349,18 +349,18 @@ void Simulation::pause(const double t) {
 
 
 void Simulation::resume() {
-	if (ENDED) { throw std::runtime_error("Simulation has ended. Cannot resume simulation."); }
-	if (!STARTED) { throw std::runtime_error("Simulation has not started. Cannot resume before calling sim.start()."); }
-	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Add masses before simulation starts."); }
-	updateCudaParameters();
-	cudaDeviceSynchronize();
+	assert(!ENDED, "Simulation has ended. Cannot resume simulation.");
+	assert(STARTED, "Simulation has not started. Cannot resume before calling sim.start().");
+	assert(mass.num > 0, "No masses have been added. Add masses before simulation starts.");
+	//updateCudaParameters();
+	//cudaDeviceSynchronize();
 	std::unique_lock<std::mutex> lck(mutex_running);
 	SHOULD_RUN = true;
 	cv_running.notify_all();
 }
 
 void Simulation::waitForEvent() {
-	if (ENDED) { throw std::runtime_error("Simulation has ended. can't call control functions."); }
+	assert(!ENDED, "Simulation has ended. can't call waitForEvent()");
 	//while (RUNNING) {
 	//	std::this_thread::sleep_for(std::chrono::nanoseconds(100));
 	//}
@@ -377,7 +377,7 @@ void Simulation::backupState() {
 }
 /*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
 void Simulation::resetState() {//TODO...fix bug
-
+	cudaDeviceSynchronize();
 	d_mass.copyFrom(backup_mass, stream[NUM_CUDA_STREAM - 1]);
 	d_spring.copyFrom(backup_spring, stream[NUM_CUDA_STREAM - 1]);
 	d_joint.copyFrom(backup_joint, stream[NUM_CUDA_STREAM - 1]);
@@ -389,17 +389,10 @@ void Simulation::resetState() {//TODO...fix bug
 	//memset(joint_vel_error, 0, nbytes);
 	//memset(joint_pos_error, 0, nbytes);
 
-	//for (int i = 0; i < joint.size(); i++) {
-	//	joint_vel_cmd[i] = 0.;
-	//	joint_vel[i] = 0.;
-	//	joint_pos[i] = 0.;
-	//	joint_vel_desired[i] = 0.;
-	//	joint_vel_error[i] = 0.;
-	//	joint_pos_error[i] = 0.;
-	//}
 	joint_control.reset(backup_mass, backup_joint);
 	body.init(backup_mass, id_oxyz_start); // init body frame
-
+	cudaDeviceSynchronize();
+	RESET = false; // set reset to false 
 }
 
 //void Simulation::setMaxJointSpeed(double max_joint_vel) {
@@ -485,18 +478,39 @@ void Simulation::update_physics() { // repeatedly start next
 		if (!bpts.empty() && (*bpts.begin()).t <= T) {// paused when a break p
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 		//            std::cout << "Breakpoint set for time " << *bpts.begin() << " reached at simulation time " << T << "!" << std::endl;
-			SHOULD_END = (*bpts.begin()).should_end;
-			bpts.erase(bpts.begin());
+
+			do {
+				SHOULD_END = (*bpts.begin()).should_end;
+				bpts.erase(bpts.begin());// remove all breakpoints <= T
+			} while (!bpts.empty() && (*bpts.begin()).t <= T);
+
 
 			{	// condition variable 
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
 				RUNNING = false;
 				SHOULD_RUN = false;
-				cv_running.notify_all(); //notify others RUNNING = false
-				cv_running.wait(lck, [this] {return SHOULD_RUN||SHOULD_END; }); // wait unitl SHOULD_RUN is signaled
-				RUNNING = true;
 				lck.unlock();// Manual unlocking before notifying, to avoid waking up the waiting thread only to block again
+				cv_running.notify_all(); //notify others RUNNING = false
+
+				std::chrono::steady_clock::time_point ct_begin = std::chrono::steady_clock::now();
+				while (!(SHOULD_RUN || SHOULD_END)) { // paused
+#ifdef UDP
+					bool msg_received = ReceiveUdpMessage();
+					// send message every 5 ms or received new message
+					std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
+					float diff = std::chrono::duration_cast<std::chrono::microseconds>(ct_end - ct_begin).count();
+					if (diff >= 5 || msg_received) {
+						SendUdpMessage();
+						ct_begin = ct_end;
+					}
+					std::this_thread::sleep_for(std::chrono::nanoseconds(50));
+#endif // UDP
+				}
+				lck.lock();
+				//cv_running.wait(lck, [this] {return SHOULD_RUN||SHOULD_END; }); // wait unitl SHOULD_RUN is signaled
+				RUNNING = true;
 				cv_running.notify_all(); // notifiy others RUNNING = true;
+				lck.unlock();
 			}
 			if (SHOULD_END) {
 				auto end = std::chrono::steady_clock::now();
@@ -629,65 +643,18 @@ void Simulation::update_physics() { // repeatedly start next
 			body.update(mass, id_oxyz_start, NUM_UDP_MULTIPLIER*NUM_QUEUED_KERNELS* dt);
 
 #ifdef UDP
-			//msg_send.T_prev = msg_send.T;//update previous time
-			udp_server.msg_send.T = T;//update time
+			
+			SendUdpMessage(UDP_HEADER::ROBOT_STATE_REPORT);// send udp message
+			ReceiveUdpMessage();			// receive udp message
 
-			for (auto i = 0; i < joint.size(); i++)
-			{
-				udp_server.msg_send.joint_pos[i] = joint_control.joint_pos[i];
-				udp_server.msg_send.joint_vel[i] = joint_control.joint_vel[i];
-				udp_server.msg_send.actuation[i] = joint_control.joint_vel_cmd[i] / joint_control.max_joint_vel[i];
-				//msg_send.joint_vel_desired[i] = joint_control.joint_vel_desired[i];//desired joint velocity at last command
-			}
-
-			udp_server.msg_send.com_acc = body.acc;
-			udp_server.msg_send.com_vel = body.vel;
-			udp_server.msg_send.com_pos = body.pos;
-
-			udp_server.msg_send.orientation[0] = body.rot.m00;
-			udp_server.msg_send.orientation[1] = body.rot.m10;
-			udp_server.msg_send.orientation[2] = body.rot.m20;
-			udp_server.msg_send.orientation[3] = body.rot.m01;
-			udp_server.msg_send.orientation[4] = body.rot.m11;
-			udp_server.msg_send.orientation[5] = body.rot.m21;
-
-			udp_server.msg_send.ang_vel = body.ang_vel;
-
-			udp_server.flag_should_send = true;
-			// receiving message
-			if (udp_server.flag_new_received) {
-				udp_server.flag_new_received = false;
-
-				switch (udp_server.msg_rec.header)
-				{
-				case UDP_HEADER::TERMINATE://close the program
-					bpts.insert(BreakPoint(T,true));
-					//SHOULD_END = true;
-					break;
-				case UDP_HEADER::RESET: // reset
-					// set the reset flag to true, resetState() will be called 
-					// to restore the robot mass/spring/joint state to the backedup state
-					RESET = true;
-					break;
-				case UDP_HEADER::MOTOR_SPEED_COMMEND:
-					for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-						joint_control.joint_vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
-					}
-					break;
-				default:
-					break;
-				}
-				if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
-					printf("%3.3f \t", T); // alternative lagged: udp_server.msg_rec.T
-					for (int i = 0; i < joint.size(); i++)
-					{
-						printf("%3.3f ", joint_control.joint_vel_desired[i]);
-					}
-					printf("\r\r"); // TODO: improve speed, maybe create string and print at once
-				}
-			}
-
-
+			//if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
+			//	printf("%3.3f \t", T); // alternative lagged: udp_server.msg_rec.T
+			//	for (int i = 0; i < joint.size(); i++)
+			//	{
+			//		printf("%3.3f ", joint_control.joint_vel_desired[i]);
+			//	}
+			//	printf("\r\r"); // TODO: improve speed, maybe create string and print at once
+			//}
 
 			//if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
 			//	//printf("% 6.1f",T); // time
@@ -719,13 +686,86 @@ void Simulation::update_physics() { // repeatedly start next
 		k_udp += 1;
 
 		if (RESET) {
-			cudaDeviceSynchronize();
-			RESET = false;
 			resetState();// restore the robot mass/spring/joint state to the backedup state
-			cudaDeviceSynchronize();
+#ifdef UDP
+
+#endif // UDP
+
 		}
 	}
 }
+
+
+#ifdef UDP
+void Simulation::SendUdpMessage(const UDP_HEADER& header) {
+	auto& msg_send = udp_server.msg_send;
+	msg_send.header = header;
+	msg_send.T = T;//update time
+	for (auto i = 0; i < joint.size(); i++)
+	{
+		msg_send.joint_pos[i] = joint_control.joint_pos[i];
+		msg_send.joint_vel[i] = joint_control.joint_vel[i];
+		msg_send.actuation[i] = joint_control.joint_vel_cmd[i] / joint_control.max_joint_vel[i];
+	}
+	// body com
+	msg_send.com_acc = body.acc;
+	msg_send.com_vel = body.vel;
+	msg_send.com_pos = body.pos;
+	// body orientation
+	msg_send.orientation[0] = body.rot.m00;
+	msg_send.orientation[1] = body.rot.m10;
+	msg_send.orientation[2] = body.rot.m20;
+	msg_send.orientation[3] = body.rot.m01;
+	msg_send.orientation[4] = body.rot.m11;
+	msg_send.orientation[5] = body.rot.m21;
+	// angular velocity
+	msg_send.ang_vel = body.ang_vel;
+	// tell udp_server to send message
+	udp_server.flag_should_send = true;
+	}
+
+bool Simulation::ReceiveUdpMessage() {
+	// receiving message
+	if (udp_server.flag_new_received) {
+		udp_server.flag_new_received = false;
+		switch (udp_server.msg_rec.header){
+		case UDP_HEADER::TERMINATE://close the program
+			bpts.insert(BreakPoint(0, true));//SHOULD_END = true;
+			break;
+		case UDP_HEADER::RESET: // reset
+			// set the reset flag to true, resetState() will be called 
+			//RESET = true;// to restore mass/spring/joint state to the backedup state
+			SHOULD_RUN = true;
+			resetState();// restore the robot mass/spring/joint state to the backedup state
+			break;
+		case UDP_HEADER::MOTOR_SPEED_COMMEND:
+			for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
+				joint_control.joint_vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
+			}
+			break;
+		case UDP_HEADER::PAUSE:
+			bpts.insert(BreakPoint(0, false));//SHOULD_END = true;
+			break;
+		case UDP_HEADER::RESUME:
+			SHOULD_RUN = true;
+			break;
+		case UDP_HEADER::STEP_MOTOR_SPEED_COMMEND:
+			for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
+				joint_control.joint_vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
+			}
+			if (!RUNNING) { SHOULD_RUN = true; }
+			setBreakpoint(T + NUM_QUEUED_KERNELS * dt* NUM_UDP_MULTIPLIER);
+			break;
+		default:
+			break;
+		}
+		return true;
+	}
+	else { return false; }
+}
+#endif //UDP
+
+
 
 #ifdef GRAPHICS
 void Simulation::update_graphics() {
@@ -748,15 +788,7 @@ void Simulation::update_graphics() {
 	// get handles for the gl unifrom variables
 	GL_ID_MVP = glGetUniformLocation(programID, "MVP");
 	GL_ID_viewPos = glGetUniformLocation(programID, "viewPos");
-
-	//GL_ID_lightDir = glGetUniformLocation(programID, "lightDir");
-	//GL_ID_lightColor = glGetUniformLocation(programID, "lightColor");
-
-	//glUniform3f(GL_ID_lightDir, // update shader lightDir
-	//	light_dir.x, light_dir.y, light_dir.z);
-	//glUniform3f(GL_ID_lightColor, // update shader lightDir
-	//	light_color.x, light_color.y, light_color.z);
-
+	// set the light uniform
 	light.set(programID, "light");
 
 
@@ -795,6 +827,9 @@ void Simulation::update_graphics() {
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
+			// copy only the position
+			//mass.CopyPosFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
+			mass.CopyPosFrom(d_mass, id_oxyz_start);
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
 			double t_lerp = 0.01;
@@ -1321,7 +1356,7 @@ void Simulation::framebuffer_size_callback(GLFWwindow* window, int width, int he
 
 void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 { // ref: https://www.glfw.org/docs/latest/input_guide.html#input_key
-	Simulation* sim = (Simulation*)glfwGetWindowUserPointer(window);
+	Simulation& sim = *(Simulation*)glfwGetWindowUserPointer(window);
 	if (action == GLFW_PRESS) {
 		if (key == GLFW_KEY_F) {
 			const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
@@ -1339,27 +1374,26 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 			}
 		}
 		else if (key == GLFW_KEY_T) {//enable/disable showing triangle faces
-			sim->show_triangle = !sim->show_triangle;
+			sim.show_triangle = !sim.show_triangle;
 		}
 		else if (key == GLFW_KEY_R) {// reset
-			sim->RESET = true;
+			sim.RESET = true;
 		}
-		else if (key == GLFW_KEY_P) {
-			if (sim->RUNNING) {
-				sim->pause(0);
-			}
-			else {
-				sim->resume();
-			}
-			
+		else if (key == GLFW_KEY_P) {//pause
+			if (sim.RUNNING) {sim.pause(0);}
+			else {sim.resume();}
+		}
+		else if (key == GLFW_KEY_O) {//step
+			if (!sim.RUNNING) { sim.resume(); }
+			sim.setBreakpoint(sim.T + NUM_QUEUED_KERNELS * sim.dt);
 		}
 	}
-	if (key == GLFW_KEY_W) { sim->camera_h_offset -= 0.05; }//camera moves closer
-	else if(key == GLFW_KEY_S) { sim->camera_h_offset += 0.05; }//camera moves away
-	else if(key == GLFW_KEY_A) { sim->camera_yaw -= 0.05; } //camera moves left
-	else if(key == GLFW_KEY_D) { sim->camera_yaw += 0.05; }//camera moves right
-	else if(key == GLFW_KEY_Q) { sim->camera_up_offset -= 0.05; } // camera moves down
-	else if(key == GLFW_KEY_E) { sim->camera_up_offset += 0.05; }// camera moves up
+	if (key == GLFW_KEY_W) { sim.camera_h_offset -= 0.05; }//camera moves closer
+	else if(key == GLFW_KEY_S) { sim.camera_h_offset += 0.05; }//camera moves away
+	else if(key == GLFW_KEY_A) { sim.camera_yaw -= 0.05; } //camera moves left
+	else if(key == GLFW_KEY_D) { sim.camera_yaw += 0.05; }//camera moves right
+	else if(key == GLFW_KEY_Q) { sim.camera_up_offset -= 0.05; } // camera moves down
+	else if(key == GLFW_KEY_E) { sim.camera_up_offset += 0.05; }// camera moves up
 }
 void Simulation::createGLFWWindow() {
 	// Initialise GLFW
