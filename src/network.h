@@ -266,7 +266,7 @@ public:
 				//printf("timed out\n");
 				//printf( __FILE__, __LINE__);
 			}
-			std::this_thread::sleep_for(std::chrono::nanoseconds(50));
+			std::this_thread::sleep_for(std::chrono::nanoseconds(10));
 		}
 
 		std::lock_guard<std::mutex> lck(mutex_running); // could just use lock_guard
@@ -289,7 +289,7 @@ public:
 					//TODO use condition variable
 					flag_should_send = false;//reset flag_should_send
 				}
-				std::this_thread::sleep_for(std::chrono::nanoseconds(50));
+				std::this_thread::sleep_for(std::chrono::nanoseconds(10));
 			}
 		}
 		catch (std::exception& e) {

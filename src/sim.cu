@@ -20,9 +20,36 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 
 
 constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
-constexpr int THREADS_PER_BLOCK = 128;
-constexpr int MASS_THREADS_PER_BLOCK = 64;
 
+// https://www.tutorialspoint.com/find-out-the-current-working-directory-in-c-cplusplus
+std::string getWorkingDir() {
+#ifdef WIN32 // windows
+	char buffer[MAX_PATH]; //create string buffer to hold path
+	_getcwd(buffer, MAX_PATH);
+#else // linux
+	char buffer[PATH_MAX];
+	getcwd(buffer, PATH_MAX);
+#endif
+	std::string current_working_dir(buffer);
+	return current_working_dir;
+}
+
+/* return the directory of this program
+* http://www.cplusplus.com/forum/general/11104/
+* https://stackoverflow.com/questions/875249/how-to-get-current-directory
+*/
+std::string getProgramDir()
+{
+#ifdef WIN32
+	char buffer[MAX_PATH] = { 0 };
+	GetModuleFileName(NULL, buffer, MAX_PATH);
+#else
+	char buffer[PATH_MAX];
+	ssize_t count = readlink("/proc/self/exe", buffer, PATH_MAX);
+#endif
+	std::string::size_type pos = std::string(buffer).find_last_of("\\/");
+	return std::string(buffer).substr(0, pos);
+}
 
 GLenum glCheckError_(const char* file, int line)
 {
@@ -46,7 +73,7 @@ GLenum glCheckError_(const char* file, int line)
 }
 #define glCheckError() glCheckError_(__FILE__, __LINE__) 
 
-__global__ void SpringUpate(
+__global__ void updateSpring(
 	const MASS mass,
 	const SPRING spring
 ) {
@@ -73,7 +100,7 @@ __global__ void SpringUpate(
 
 }
 
-__global__ void SpringUpateReset(
+__global__ void updateSpringAndReset(
 	const MASS mass,
 	const SPRING spring
 ) {
@@ -100,7 +127,7 @@ __global__ void SpringUpateReset(
 }
 
 
-__global__ void MassUpate(
+__global__ void updateMass(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
 	const Vec3d global_acc,
@@ -138,86 +165,9 @@ __global__ void MassUpate(
 }
 
 #ifdef ROTATION
-__global__ void massUpdateAndRotate(
-	const MASS mass,
-	const CUDA_GLOBAL_CONSTRAINTS c,
-	const JOINT joint,
-	const Vec3d global_acc,
-	const double dt) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < mass.num) {
-		if (mass.fixed[i] == false) {
-			double m = mass.m[i];
-			Vec3d pos = mass.pos[i];
-			Vec3d vel = mass.vel[i];
 
-			Vec3d force = mass.force[i];
-			force += mass.force_extern[i];// add spring force and external force [N]
-
-			/*if (mass.constrain)*/ {
-				for (int j = 0; j < c.num_planes; j++) { // global constraints
-					c.d_planes[j].applyForce(force, pos, vel); // todo fix this 
-				}
-				for (int j = 0; j < c.num_balls; j++) {
-					c.d_balls[j].applyForce(force, pos);
-				}
-			}
-
-			// euler integration
-			force /= m;// force is now acceleration
-			force += global_acc;// add global accleration
-			vel += force * dt; // vel += acc*dt
-			mass.acc[i] = force; // update acceleration
-			mass.vel[i] = vel; // update velocity
-			mass.pos[i] += vel * dt; // update position
-			mass.force[i].setZero(); // reset force
-		}
-	}
-	else if ((i -= mass.num) < joint.points.num) {// this part is same as rotateJoint
-		if (i < joint.anchors.num) {
-			Vec2i e = joint.anchors.edge[i];
-			joint.anchors.dir[i] = (mass.pos[e.y] - mass.pos[e.x]).normalize();
-		}
-		__threadfence();
-		__syncthreads();
-
-		int anchor_id = joint.points.anchorId[i];
-		int mass_id = joint.points.massId[i];
-
-		mass.pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass.pos[mass_id],
-			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass.pos[joint.anchors.edge[anchor_id].x]);
-	}
-}
-
-
-//__global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
-//	int i = blockIdx.x * blockDim.x + threadIdx.x;
-//	if (i < joint.points.num) {
-//		if (i < joint.anchors.num) {
-//			Vec2i e = joint.anchors.edge[i];
-//			joint.anchors.dir[i] = (mass_pos[e.y] - mass_pos[e.x]).normalize();
-//		}
-//		__threadfence();
-//		__syncthreads();
-//
-//		int anchor_id = joint.points.anchorId[i];
-//		int mass_id = joint.points.massId[i];
-//
-//		mass_pos[mass_id] = AxisAngleRotaion(joint.anchors.dir[anchor_id], mass_pos[mass_id],
-//			joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.edge[anchor_id].x]);
-//
-//		//Vec3d anchor_left = mass_pos[joint.anchors.left[anchor_id]];
-//		//Vec3d anchor_right = mass_pos[joint.anchors.right[anchor_id]];
-//		////Vec3d dir = 
-//		///*double3*/
-//		//Vec3d dir = (mass_pos[joint.anchors.right[anchor_id]] - mass_pos[joint.anchors.left[anchor_id]]).normalize();
-//
-//		//mass_pos[mass_id] = AxisAngleRotaion(dir, mass_pos[mass_id],
-//		//	joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
-//	}
-//}
-
-__global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
+// roate the mass of the joint directly
+__global__ void updateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
 
@@ -240,31 +190,112 @@ __global__ void rotateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	}
 }
 
-
-//__global__ void controlUpdate(Vec3d* __restrict__ mass_pos, const JOINT joint) {
-//	int i = blockIdx.x * blockDim.x + threadIdx.x;
-//	if (i < joint.anchors.num) {
-//		Vec2i anchor_edge = joint.anchors.edge[i];
-//		Vec3d rotation_axis = (mass_pos[anchor_edge.y] - mass_pos[anchor_edge.x]).normalize();
-//		Vec3d x_left = mass_pos[joint.anchors.leftCoord[i] + 1] - mass_pos[joint.anchors.leftCoord[i]];//oxyz
-//		Vec3d x_right = mass_pos[joint.anchors.rightCoord[i] + 1] - mass_pos[joint.anchors.rightCoord[i]];//oxyz
-//		double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
-//
-//		double delta_angle = angle - joint_pos[i];
-//		if (delta_angle > M_PI) {
-//			joint_vel[i] = (delta_angle - 2 * M_PI) / (NUM_QUEUED_KERNELS * dt);
-//		}
-//		else if (delta_angle > -M_PI) {
-//			joint_vel[i] = delta_angle / (NUM_QUEUED_KERNELS * dt);
-//		}
-//		else {
-//			joint_vel[i] = (delta_angle + 2 * M_PI) / (NUM_QUEUED_KERNELS * dt);
-//		}
-//		joint_pos[i] = angle;
-//		}
-//}
-
 #endif // ROTATION
+
+
+#ifdef GRAPHICS
+constexpr int NUM_PER_VERTEX = 9; // number of float per vertex;
+constexpr int VERTEX_COLOR_OFFSET = 3; // offset for the vertex color
+constexpr int VERTEX_NORMAL_OFFSET = 6; // offset for the vertex normal
+// vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
+
+// update vertex positions
+__global__ void updateVertices(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
+	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
+	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
+		Vec3d pos_i = pos[i];
+		int k = NUM_PER_VERTEX * i; //x,y,z
+		// update positions
+		gl_ptr[k] = (GLfloat)pos_i.x;
+		gl_ptr[k + 1] = (GLfloat)pos_i.y;
+		gl_ptr[k + 2] = (GLfloat)pos_i.z;
+		// zero vertex normals, must run before update normals
+		k += VERTEX_NORMAL_OFFSET;
+		gl_ptr[k] = 0.f;
+		gl_ptr[k + 1] = 0.f;
+		gl_ptr[k + 2] = 0.f;
+	}
+}
+
+// update color rgb
+__global__ void updateColors(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
+		Vec3d color_i = color[i];
+		int k = NUM_PER_VERTEX * i + 3; // x,y,z, r,g,b
+		gl_ptr[k] = (GLfloat)color_i.x;
+		gl_ptr[k + 1] = (GLfloat)color_i.y;
+		gl_ptr[k + 2] = (GLfloat)color_i.z;
+	}
+}
+
+// update vertex normals from triangles, should run after updateVertices
+__global__ void updateTriangleVertexNormal(
+	GLfloat* __restrict__ gl_ptr,
+	const Vec3d* __restrict__  pos, // vertex positions
+	const Vec3i* __restrict__ triangle, // triangle indices
+	const int num_triangles
+) { // https://www.iquilezles.org/www/articles/normals/normals.htm
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_triangles; i += blockDim.x * gridDim.x) {
+		Vec3i t = triangle[i]; // triangle indices i
+		//TODO check if direction is correct
+		Vec3d pos_ty = pos[t.y];
+		Vec3d e1 = pos_ty - pos[t.x];
+		Vec3d e2 = pos[t.z] - pos_ty;
+		Vec3d no = cross(e1, e2); // triangle normals
+
+		float nx = (float)no.x;
+		float ny = (float)no.y;
+		float nz = (float)no.z;
+
+		int k = NUM_PER_VERTEX * t.x + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
+		atomicAdd(&gl_ptr[k], nx);
+		atomicAdd(&gl_ptr[k + 1], ny);
+		atomicAdd(&gl_ptr[k + 2], nz);
+		//gl_ptr[k] += nx;
+		//gl_ptr[k + 1] += ny;
+		//gl_ptr[k + 2] += nz;
+
+		k = NUM_PER_VERTEX * t.y + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
+		atomicAdd(&gl_ptr[k], nx);
+		atomicAdd(&gl_ptr[k + 1], ny);
+		atomicAdd(&gl_ptr[k + 2], nz);
+		//gl_ptr[k] += nx;
+		//gl_ptr[k + 1] += ny;
+		//gl_ptr[k + 2] += nz;
+
+		k = NUM_PER_VERTEX * t.z + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
+		atomicAdd(&gl_ptr[k], nx);
+		atomicAdd(&gl_ptr[k + 1], ny);
+		atomicAdd(&gl_ptr[k + 2], nz);
+		//gl_ptr[k] += nx;
+		//gl_ptr[k + 1] += ny;
+		//gl_ptr[k + 2] += nz;
+	}
+}
+
+
+
+// update line indices
+__global__ void updateLines(uint2* __restrict__ gl_ptr, const Vec2i* __restrict__ edge, const int num_spring) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
+		Vec2i e = edge[i];
+		gl_ptr[i].x = (unsigned int)e.x; // todo check if this is needed
+		gl_ptr[i].y = (unsigned int)e.y;
+	}
+}
+
+//update triangle indices
+__global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restrict__ triangle, const int num_triangle) {
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_triangle; i += blockDim.x * gridDim.x) {
+		Vec3i triangle_i = triangle[i];
+		gl_ptr[i].x = (unsigned int)triangle_i.x;
+		gl_ptr[i].y = (unsigned int)triangle_i.y;
+		gl_ptr[i].z = (unsigned int)triangle_i.z;
+	}
+}
+
+#endif
 
 
 //Simulation::Simulation() {
@@ -315,18 +346,39 @@ void Simulation::setMass() {
 	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
 }
 
-inline int Simulation::computeBlocksPerGrid(const int threadsPerBlock, const int num) {
-	int blocksPerGrid = (num - 1 + threadsPerBlock) / threadsPerBlock;
-	assert(blocksPerGrid <= MAX_BLOCKS);//TODO: kernel has a hard limit on MAX_BLOCKS
-	return blocksPerGrid;
+//int Simulation::computeBlocksPerGrid(const int threadsPerBlock, const int num) {
+//	int blocksPerGrid = (num - 1 + threadsPerBlock) / threadsPerBlock;
+//	assert(blocksPerGrid <= MAX_BLOCKS);//TODO: kernel has a hard limit on MAX_BLOCKS
+//	return blocksPerGrid;
+//}
+
+/* compute the block size (threads per block) and grid size （blocks per grid)
+*  
+*/
+int Simulation::computeGridSize(int block_size, int num) {
+	int grid_size = (num - 1 + block_size) / block_size;// Round up according to array size 
+	assert(grid_size <= MAX_BLOCKS);//TODO: kernel has a hard limit on MAX_BLOCKS
+	return grid_size;
 }
 
-inline void Simulation::updateCudaParameters() {
-	massBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, mass.size());
-	springBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, spring.size());
-	jointBlocksPerGrid = computeBlocksPerGrid(MASS_THREADS_PER_BLOCK, joint.points.size());
+void Simulation::updateCudaParameters() {
+	// ref: https://developer.nvidia.com/blog/cuda-pro-tip-occupancy-api-simplifies-launch-configuration/
+	int minGridSize;
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &spring_block_size, updateSpring, 0, 0);
+	spring_grid_size = computeGridSize(spring_block_size, spring.size());
+
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &mass_block_size, updateMass, 0, 0);
+	mass_grid_size = computeGridSize(mass_block_size, mass.size());
+
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &joint_block_size, updateJoint, 0, 0);
+	joint_grid_size = computeGridSize(joint_block_size, joint.points.size());
+
 #ifdef GRAPHICS
-	triangleBlocksPerGrid = computeBlocksPerGrid(THREADS_PER_BLOCK, triangle.size());
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &triangle_block_size, updateTriangleVertexNormal, 0, 0);
+	triangle_grid_size = computeGridSize(triangle_block_size, triangle.size());
+
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &vertex_block_size, updateVertices, 0, 0);
+	vertex_grid_size = computeGridSize(vertex_block_size, mass.size());
 #endif //GRAPHICS
 
 }
@@ -563,29 +615,23 @@ void Simulation::update_physics() { // repeatedly start next
 		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
 			if (k_dynamics % NUM_UPDATE_PER_ROTATION==0) {
 #ifdef ROTATION
-				rotateJoint << <jointBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
-				SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-
-				//SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-				//massUpdateAndRotate << <massBlocksPerGrid + jointBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, d_joint, global_acc, dt);
-				//SpringUpateReset << <springBlocksPerGrid, THREADS_PER_BLOCK >> > (d_mass, d_spring);
-				//MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK >> > (d_mass, d_constraints, global_acc, dt);
-
+				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 				//gpuErrchk(cudaPeekAtLastError());
 			}
 			else {
-				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-				//gpuErrchk(cudaPeekAtLastError());
+				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+			//gpuErrchk(cudaPeekAtLastError());
 //			//cudaEventRecord(event, 0);
 //			//cudaStreamWaitEvent(stream[0], event, 0);
 //			//cudaEventRecord(event_rotation, stream[0]);
 //			//cudaStreamWaitEvent(NULL, event_rotation, 0);
 			}
 #else
-				SpringUpate << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				MassUpate << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 #endif // ROTATION
 			k_dynamics++;
 		}
@@ -602,16 +648,6 @@ void Simulation::update_physics() { // repeatedly start next
 		//cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
 		//cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
 		cudaDeviceSynchronize();
-
-		//Vec3d com_pos = mass.pos[id_oxyz_start];//body center of mass position
-		//Vec3d com_vel = mass.vel[id_oxyz_start];
-		//Vec3d com_acc = mass.acc[id_oxyz_start];//body center of mass acceleration
-		////Vec3d com_acc = mass.acc[id_oxyz_start];
-		////for (size_t i = id_oxyz_start+1; i < id_oxyz_start + 7; i++)
-		////{
-		////	com_acc += mass.acc[i];//average over o,x,y,z,-x,-y,-z
-		////}
-		////com_acc /= 7;
 
 		//std::chrono::steady_clock::time_point ct_begin = std::chrono::steady_clock::now();
 		////std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
@@ -780,13 +816,19 @@ void Simulation::update_graphics() {
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
 	glBindVertexArray(VertexArrayID);
 
+	// get the directory of this program
+	std::string program_dir = getProgramDir();
 	// Create and compile our GLSL program from the shaders
-	shader = Shader("shaderVertex.glsl", "shaderFragment.glsl");
+	shader = Shader(
+		program_dir + "\\shaderVertex.glsl",
+		program_dir + "\\shaderFragment.glsl");
 	//shader.use();
 
 	//https://learnopengl.com/Advanced-Lighting/Shadows/Point-Shadows
 	//https://github.com/JoeyDeVries/LearnOpenGL/tree/master/src/5.advanced_lighting/3.1.3.shadow_mapping
-	simpleDepthShader = Shader("shadow_mapping_depth_vertex.glsl", "shadow_mapping_depth_fragment.glsl");
+	simpleDepthShader = Shader(
+		program_dir + "\\shadow_mapping_depth_vertex.glsl", 
+		program_dir + "\\shadow_mapping_depth_fragment.glsl");
 	//simpleDepthShader.use();
 
 	/*------------------- configure depth map FBO ----------------------------*/
@@ -847,7 +889,7 @@ void Simulation::update_graphics() {
 			mass.CopyPosFrom(d_mass, id_oxyz_start);
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
-			double t_lerp = 0.01;
+			double t_lerp = 0.02;
 			double speed_multiplier = 0.02;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
@@ -887,7 +929,7 @@ void Simulation::update_graphics() {
 
 			Vec3d camera_pos_desired = AxisAngleRotaion(camera_up, camera_href_dir * camera_h_offset, camera_yaw, Vec3d()) + camera_rotation_anchor;
 
-			camera_pos = lerp(camera_pos, camera_pos_desired, 2*t_lerp);
+			camera_pos = lerp(camera_pos, camera_pos_desired, t_lerp);
 
 			Vec3d camera_dir_desired = (com_pos - camera_pos).normalize();
 
@@ -898,16 +940,12 @@ void Simulation::update_graphics() {
 
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear screen
 
-			/*---------------------------------------------------------------*/
-			// lighting info
-			// -------------
-			//glm::vec3 lightPos(0.f, 0.f, 10.f);
 
 			// 1. render depth of scene to texture (from light's perspective)
 			// --------------------------------------------------------------
 			float near_plane = -5.0, far_plane = 10.f;
 			//lightProjection = glm::perspective(glm::radians(45.0f), (GLfloat)SHADOW_WIDTH / (GLfloat)SHADOW_HEIGHT, near_plane, far_plane); // note that if you use a perspective projection matrix you'll have to change the light position as the current light position isn't enough to reflect the whole scene
-			glm::mat4 lightProjection = glm::ortho(-2.0f, 2.0f, -2.0f, 2.0f, near_plane, far_plane);
+			glm::mat4 lightProjection = glm::ortho(-1.5f, 1.5f, -1.5f, 1.5f, near_plane, far_plane);
 
 			//lightView = glm::lookAt(light.direction, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
 			glm::vec3 light_pos = glm::vec3 (
@@ -1194,10 +1232,7 @@ void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GL
 	glCheckError();// check opengl error code
 }
 
-constexpr int NUM_PER_VERTEX = 9; // number of float per vertex;
-constexpr int VERTEX_COLOR_OFFSET = 3; // offset for the vertex color
-constexpr int VERTEX_NORMAL_OFFSET = 6; // offset for the vertex normal
-// vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
+
 
 inline void Simulation::generateBuffers() {
 	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat)* NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
@@ -1219,110 +1254,14 @@ inline void Simulation::deleteBuffers() {
 }
 
 
-// update vertex positions
-__global__ void updateVertices(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
-	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
-	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		Vec3d pos_i = pos[i];
-		int k = NUM_PER_VERTEX * i; //x,y,z
-		// update positions
-		gl_ptr[k] = (GLfloat)pos_i.x;
-		gl_ptr[k+1] = (GLfloat)pos_i.y;
-		gl_ptr[k+2] = (GLfloat)pos_i.z;
-		// zero vertex normals, must run before update normals
-		k += VERTEX_NORMAL_OFFSET;
-		gl_ptr[k] = 0.f;
-		gl_ptr[k+1] = 0.f;
-		gl_ptr[k + 2] = 0.f;
-	}
-}
-
-// update color rgb
-__global__ void updateColors(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
-		Vec3d color_i = color[i];
-		int k = NUM_PER_VERTEX * i+3; // x,y,z, r,g,b
-		gl_ptr[k] = (GLfloat)color_i.x;
-		gl_ptr[k+1] = (GLfloat)color_i.y;
-		gl_ptr[k+2] = (GLfloat)color_i.z;
-	}
-}
-
-// update vertex normals from triangles, should run after updateVertices
-__global__ void updateNormals(
-	GLfloat* __restrict__ gl_ptr, 
-	const Vec3d* __restrict__  pos, // vertex positions
-	const Vec3i* __restrict__ triangle, // triangle indices
-	const int num_triangles
-) { // https://www.iquilezles.org/www/articles/normals/normals.htm
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_triangles; i += blockDim.x * gridDim.x) {
-		Vec3i t = triangle[i]; // triangle indices i
-		//TODO check if direction is correct
-		Vec3d pos_ty = pos[t.y];
-		Vec3d e1 = pos_ty - pos[t.x];
-		Vec3d e2 = pos[t.z] - pos_ty;
-		Vec3d no = cross(e1, e2); // triangle normals
-
-		float nx = (float)no.x;
-		float ny = (float)no.y;
-		float nz = (float)no.z;
-
-		int k = NUM_PER_VERTEX * t.x + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
-		atomicAdd(&gl_ptr[k], nx);
-		atomicAdd(&gl_ptr[k + 1], ny);
-		atomicAdd(&gl_ptr[k + 2], nz);
-		//gl_ptr[k] += nx;
-		//gl_ptr[k + 1] += ny;
-		//gl_ptr[k + 2] += nz;
-
-		k = NUM_PER_VERTEX * t.y + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
-		atomicAdd(&gl_ptr[k], nx);
-		atomicAdd(&gl_ptr[k + 1], ny);
-		atomicAdd(&gl_ptr[k + 2], nz);
-		//gl_ptr[k] += nx;
-		//gl_ptr[k + 1] += ny;
-		//gl_ptr[k + 2] += nz;
-
-		k = NUM_PER_VERTEX * t.z + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
-		atomicAdd(&gl_ptr[k], nx);
-		atomicAdd(&gl_ptr[k + 1], ny);
-		atomicAdd(&gl_ptr[k + 2], nz);
-		//gl_ptr[k] += nx;
-		//gl_ptr[k + 1] += ny;
-		//gl_ptr[k + 2] += nz;
-	}
-}
-
-
-
-// update line indices
-__global__ void updateLines(uint2* __restrict__ gl_ptr, const Vec2i* __restrict__ edge, const int num_spring) {
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_spring; i += blockDim.x * gridDim.x) {
-		Vec2i e = edge[i];
-		gl_ptr[i].x = (unsigned int)e.x; // todo check if this is needed
-		gl_ptr[i].y = (unsigned int)e.y;
-	}
-}
-
-//update triangle indices
-__global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restrict__ triangle, const int num_triangle) {
-	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_triangle; i += blockDim.x * gridDim.x) {
-		Vec3i triangle_i = triangle[i];
-		gl_ptr[i].x = (unsigned int)triangle_i.x;
-		gl_ptr[i].y = (unsigned int)triangle_i.y;
-		gl_ptr[i].z = (unsigned int)triangle_i.z;
-	}
-}
-
 void Simulation::updateBuffers() { // todo: check the kernel call
 	size_t num_bytes;
 	// vertex update, map OpenGL buffer object for writing from CUDA: update positions and colors
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));
 	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
-	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.size());
-	updateColors << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.color, mass.size());
-	updateNormals << <triangleBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos,d_triangle.triangle,triangle.size());
+	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.size());
+	updateColors << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.color, mass.size());
+	updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos,d_triangle.triangle,triangle.size());
 	
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
@@ -1330,13 +1269,13 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 	// line indices update
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));
 	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_edge, &num_bytes,cuda_resource_edge));
-	updateLines << <springBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_edge, d_spring.edge, spring.size());
+	updateLines << <spring_grid_size, spring_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_edge, d_spring.edge, spring.size());
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 
 	// triangle indices update
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));
 	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_triangle, &num_bytes, cuda_resource_triangle));
-	updateTriangles << <triangleBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_triangle, d_triangle.triangle, triangle.size());
+	updateTriangles << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_triangle, d_triangle.triangle, triangle.size());
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 
 }
@@ -1346,16 +1285,14 @@ void Simulation::updateVertexBuffers() {
 	cudaGraphicsMapResources(1, &cuda_resource_vertex, 0);
 	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-	updateVertices << <massBlocksPerGrid, MASS_THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
+	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
 	if (show_triangle) {
-		updateNormals << <triangleBlocksPerGrid, THREADS_PER_BLOCK, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
+		updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
 	}
 	cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0);// unmap buffer object
 }
 
 inline void Simulation::draw() {
-
-
 	// ref: https://stackoverflow.com/questions/16380005/opengl-3-4-glvertexattribpointer-stride-and-offset-miscalculation
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
 	//glCheckError(); // check opengl error code
@@ -1440,6 +1377,7 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 		}
 		else if (key == GLFW_KEY_R) {// reset
 			sim.RESET = true;
+			sim.SHOULD_RUN = true;
 		}
 		else if (key == GLFW_KEY_P) {//pause
 			if (sim.RUNNING) {sim.pause(0);}
@@ -1447,7 +1385,7 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 		}
 		else if (key == GLFW_KEY_O) {//step
 			if (!sim.RUNNING) { sim.resume(); }
-			sim.setBreakpoint(sim.T + NUM_QUEUED_KERNELS * sim.dt);
+			sim.setBreakpoint(sim.T + sim.NUM_QUEUED_KERNELS * sim.dt);
 		}
 	}
 	if (key == GLFW_KEY_W) { sim.camera_h_offset -= 0.05; }//camera moves closer

@@ -44,7 +44,6 @@
 //template<class T> // alias template for pinned allocator
 //using ThurstHostVec = std::vector<T, thrust::system::cuda::experimental::pinned_allocator<T>>;
 
-
 int main()
 {
 
@@ -53,8 +52,13 @@ int main()
 	// for time measurement
 	auto start = std::chrono::steady_clock::now();
 
+	std::cout << "current working dir: " << getWorkingDir() << "\n";
+	std::cout << "program dir: " << getProgramDir() << "\n";
 
-	Model bot("..\\src\\data.msgpack"); //defined in sim.h
+
+	//Model bot("..\\src\\data.msgpack"); //defined in sim.h
+	Model bot(getProgramDir()+"\\data.msgpack"); //defined in sim.h
+
 
 	const size_t num_body = bot.idVertices.size() - 3;//number of bodies
 	const size_t num_mass = bot.vertices.size(); // number of mass

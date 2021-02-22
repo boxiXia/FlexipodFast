@@ -40,7 +40,7 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #include <sstream>
 #include <fstream>
 #include<iostream>
-#include<string.h>
+#include<string>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -52,14 +52,25 @@ typedef WsaUdpServer UdpServer;
 #endif
 
 
+// header for getWorkingDir() and  getProgramDir()
+#include<string>
+#ifdef WIN32 // windows
+#include <direct.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <limits.h>
+#endif // linux
+std::string getWorkingDir();
+std::string getProgramDir();
+
+
 constexpr const int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
 constexpr const int CUDA_DYNAMICS_STREAM = 0;  // stream to run the dynamics update
 constexpr const int CUDA_MEMORY_STREAM = 1;  // stream to run the memory operations
 constexpr const int CUDA_GRAPHICS_STREAM = 2; // steam to run graphics update
 
-constexpr int  NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
-constexpr int NUM_UPDATE_PER_ROTATION = 4; //number of update per rotation
-constexpr int NUM_UDP_MULTIPLIER = 4;// udp update is decreased by this factor
+
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -71,9 +82,6 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 		exit(code);
 	}
 }
-
-
-
 
 
 /*  helper function to free device/host memory given host_or_device_ptr */
@@ -124,7 +132,7 @@ public:
 	std::vector<StdJoint> Joints;// the joints
 	MSGPACK_DEFINE(radius_poisson, vertices, edges,triangles, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
 		Model() {}
-	Model(const char* file_path) {
+	Model(const std::string& file_path) {
 		// get the msgpack robot model
 		// Deserialize the serialized data
 		std::ifstream ifs(file_path, std::ifstream::in | std::ifstream::binary);
@@ -649,6 +657,12 @@ public:
 	int id_oxyz_start = 0;// coordinate oxyz start index (inclusive)
 	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
 
+	// cuda and udp update parameters (should be constant during the simualtion)
+	int NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+	int NUM_UPDATE_PER_ROTATION = 4; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
+#ifdef UDP
+	int NUM_UDP_MULTIPLIER = 4;// udp update is decreased by this factor
+#endif
 
 
 	// host
@@ -741,8 +755,10 @@ public:
 private:
 	void waitForEvent();
 	void freeGPU();
-	inline void updateCudaParameters();
-	inline int computeBlocksPerGrid(const int threadsPerBlock, const int num);//helper function to compute blocksPerGrid
+	void updateCudaParameters();
+
+
+	int computeGridSize(int block_size, int num);//helper function to compute blocks per grid
 
 	std::thread thread_physics_update;
 #ifdef GRAPHICS
@@ -750,12 +766,21 @@ private:
 #endif //GRAPHICS
 	std::set<BreakPoint, BreakPoint> bpts; // list of breakpoints
 
+	int spring_block_size = 256; // spring update threads per block
+	int spring_grid_size;// spring update blocks per grid
 
-	int massBlocksPerGrid; // blocksPergrid for mass update
-	int springBlocksPerGrid; // blocksPergrid for spring update
-	int jointBlocksPerGrid;// blocksPergrid for joint rotation
+	int mass_block_size = 128; // mass update threads per block
+	int mass_grid_size; // mass update blocks per grid
+
+	int joint_block_size = 128; // joint rotate threads per blcok
+	int joint_grid_size;// joint rotate blocks per grid
 #ifdef GRAPHICS
-	int triangleBlocksPerGrid; // blocksPergrid for viewing triangles
+	int triangle_block_size = 128; // triangle update threads per block
+	int triangle_grid_size; // triangle update blocks per grid
+
+	int vertex_block_size = 128;// vertex update threads per block
+	int vertex_grid_size; // vertex update blocks per grid
+
 #endif //GRAPHICS
 
 	std::vector<Constraint*> constraints;
@@ -780,8 +805,8 @@ public:
 	Shader simpleDepthShader;
 	GLuint depthMapFBO; // depth map frame buffer object
 	GLuint depthMap; // handle for the depthmap texture
-	const GLuint SHADOW_WIDTH = 2048;
-	const GLuint SHADOW_HEIGHT = 2048;
+	const GLuint SHADOW_WIDTH = 2160;
+	const GLuint SHADOW_HEIGHT = 2160;
 	/*------------------------------------------------*/
 
 	DirectionLight light; // directional light

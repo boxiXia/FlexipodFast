@@ -112,6 +112,7 @@ foreach(shader ${shaders})
     get_filename_component(shader_name "${shader}" NAME)
     makeLink(${shader} ${CMAKE_CURRENT_BINARY_DIR}/${shader_name} flexipod)
 endforeach()
+makeLink(${CMAKE_SOURCE_DIR}/src/data.msgpack ${CMAKE_CURRENT_BINARY_DIR}/data.msgpack flexipod)
 #makeLink(${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl flexipod)
 #makeLink(${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl flexipod)
    
