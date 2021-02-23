@@ -65,12 +65,10 @@ std::string getWorkingDir();
 std::string getProgramDir();
 
 
-constexpr const int NUM_CUDA_STREAM = 5; // number of cuda stream excluding the default stream
+constexpr const int NUM_CUDA_STREAM = 3; // number of cuda stream excluding the default stream
 constexpr const int CUDA_DYNAMICS_STREAM = 0;  // stream to run the dynamics update
 constexpr const int CUDA_MEMORY_STREAM = 1;  // stream to run the memory operations
 constexpr const int CUDA_GRAPHICS_STREAM = 2; // steam to run graphics update
-
-
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -510,14 +508,19 @@ struct JointControl {
 
 	}
 	void reset(MASS& mass, JOINT& joint) {
-		for (int i = 0; i < num; i++) {//TODO change this...
-			joint_vel_cmd[i] = 0.;
-			joint_vel[i] = 0.;
-			/*joint_pos[i] = 0.;*/
-			joint_vel_desired[i] = 0.;
-			joint_vel_error[i] = 0.;
-			joint_pos_error[i] = 0.;
 
+		size_t nbytes = joint.size() * sizeof(double);
+		memset(joint_vel_cmd, 0, nbytes);
+		memset(joint_vel, 0, nbytes);
+		memset(joint_vel_desired, 0, nbytes);
+		memset(joint_vel_error, 0, nbytes);
+		memset(joint_pos_error, 0, nbytes);
+		for (int i = 0; i < num; i++) {//TODO change this...
+			//joint_vel_cmd[i] = 0.;
+			//joint_vel[i] = 0.;
+			//joint_vel_desired[i] = 0.;
+			//joint_vel_error[i] = 0.;
+			//joint_pos_error[i] = 0.;
 			Vec2i anchor_edge = joint.anchors.edge[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
 			//Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
@@ -661,7 +664,7 @@ public:
 	int NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 	int NUM_UPDATE_PER_ROTATION = 4; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
-	int NUM_UDP_MULTIPLIER = 4;// udp update is decreased by this factor
+	int NUM_UDP_MULTIPLIER = 2;// udp update is decreased by this factor
 #endif
 
 
@@ -756,8 +759,6 @@ private:
 	void waitForEvent();
 	void freeGPU();
 	void updateCudaParameters();
-
-
 	int computeGridSize(int block_size, int num);//helper function to compute blocks per grid
 
 	std::thread thread_physics_update;
@@ -780,7 +781,6 @@ private:
 
 	int vertex_block_size = 128;// vertex update threads per block
 	int vertex_grid_size; // vertex update blocks per grid
-
 #endif //GRAPHICS
 
 	std::vector<Constraint*> constraints;

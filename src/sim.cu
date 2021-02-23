@@ -413,9 +413,6 @@ void Simulation::resume() {
 
 void Simulation::waitForEvent() {
 	assert(!ENDED, "Simulation has ended. can't call waitForEvent()");
-	//while (RUNNING) {
-	//	std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-	//}
 	std::unique_lock<std::mutex> lck(mutex_running);
 	cv_running.wait(lck, [this] {return !RUNNING; });
 }
@@ -433,25 +430,12 @@ void Simulation::resetState() {//TODO...fix bug
 	d_mass.copyFrom(backup_mass, stream[NUM_CUDA_STREAM - 1]);
 	d_spring.copyFrom(backup_spring, stream[NUM_CUDA_STREAM - 1]);
 	d_joint.copyFrom(backup_joint, stream[NUM_CUDA_STREAM - 1]);
-	//size_t nbytes = joint.size() * sizeof(double);
-	//memset(joint_vel_cmd, 0, nbytes);
-	//memset(joint_vel, 0, nbytes);
-	//memset(joint_pos, 0, nbytes);
-	//memset(joint_vel_desired, 0, nbytes);
-	//memset(joint_vel_error, 0, nbytes);
-	//memset(joint_pos_error, 0, nbytes);
 
 	joint_control.reset(backup_mass, backup_joint);
 	body.init(backup_mass, id_oxyz_start); // init body frame
 	cudaDeviceSynchronize();
 	RESET = false; // set reset to false 
 }
-
-//void Simulation::setMaxJointSpeed(double max_joint_vel) {
-//	this->max_joint_vel = max_joint_vel;
-//	max_joint_vel_error = max_joint_vel / k_vel;
-//	max_joint_pos_error = max_joint_vel / k_pos;
-//}
 
 
 void Simulation::start() {
@@ -463,7 +447,6 @@ void Simulation::start() {
 	STARTED = true;
 
 	T = 0;
-
 	
 	if (dt == 0.0) { // if dt hasn't been set by the user.
 		dt = 0.01; // min delta
@@ -476,13 +459,6 @@ void Simulation::start() {
 	d_constraints.num_planes = d_planes.size();
 
 	SHOULD_UPDATE_CONSTRAINT = false;
-
-	//cudaMallocHost((void**)&joint_pos_error, joint.size() * sizeof(double));//initialize joint speed error integral array 
-	//cudaMallocHost((void**)&joint_vel_error, joint.size() * sizeof(double));//initialize joint speed error array 
-	//cudaMallocHost((void**)&joint_vel_cmd, joint.size() * sizeof(double));//initialize joint speed (commended) array 
-	//cudaMallocHost((void**)&joint_vel_desired, joint.size() * sizeof(double));//initialize joint speed (desired) array 
-	//cudaMallocHost((void**)&joint_vel, joint.size() * sizeof(double));//initialize joint speed (measured) array 
-	//cudaMallocHost((void**)&joint_pos, joint.size() * sizeof(double));//initialize joint angle (measured) array 
 
 	setAll();// copy mass and spring to gpu
 
@@ -516,8 +492,8 @@ void Simulation::update_physics() { // repeatedly start next
 
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
-	int k_udp = 0;
-	int k_dynamics = 0;
+	int k_udp = 0; // udp counter
+	int k_rot = 0; // rotation counter
 
 #ifdef DEBUG_ENERGY
 	energy_start = energy(); // compute the total energy of the system at T=0
@@ -548,14 +524,13 @@ void Simulation::update_physics() { // repeatedly start next
 				while (!(SHOULD_RUN || SHOULD_END)) { // paused
 #ifdef UDP
 					bool msg_received = ReceiveUdpMessage();
-					// send message every 5 ms or received new message
+					// send message every 2 ms or received new message (500Hz)
 					std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
-					float diff = std::chrono::duration_cast<std::chrono::microseconds>(ct_end - ct_begin).count();
-					if (diff >= 5 || msg_received) {
+					float diff = std::chrono::duration_cast<std::chrono::milliseconds>(ct_end - ct_begin).count();
+					if (diff >= 2 || msg_received) {
 						SendUdpMessage();
 						ct_begin = ct_end;
 					}
-					std::this_thread::sleep_for(std::chrono::nanoseconds(50));
 #endif // UDP
 				}
 				lck.lock();
@@ -607,59 +582,50 @@ void Simulation::update_physics() { // repeatedly start next
 			continue;
 		}
 
-		////cudaDeviceSynchronize();
-		//cudaEvent_t event; // an event that tel
-		//cudaEventCreateWithFlags(&event, cudaEventDisableTiming); // create event,disable timing for faster speed:https://developer.download.nvidia.com/CUDA/training/StreamsAndConcurrencyWebinar.pdf
-		//cudaEvent_t event_rotation;
-		//cudaEventCreateWithFlags(&event_rotation, cudaEventDisableTiming);
-		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-			if (k_dynamics % NUM_UPDATE_PER_ROTATION==0) {
-#ifdef ROTATION
-				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
-				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-				//gpuErrchk(cudaPeekAtLastError());
-			}
-			else {
-				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-			//gpuErrchk(cudaPeekAtLastError());
-//			//cudaEventRecord(event, 0);
-//			//cudaStreamWaitEvent(stream[0], event, 0);
-//			//cudaEventRecord(event_rotation, stream[0]);
-//			//cudaStreamWaitEvent(NULL, event_rotation, 0);
-			}
-#else
-				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-#endif // ROTATION
-			k_dynamics++;
+
+#ifdef UDP
+		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
+			ReceiveUdpMessage();			// receive udp message
 		}
-
-
-		//cudaEventDestroy(event);//destroy the event, necessary to prevent memory leak
-		//cudaEventDestroy(event_rotation);//destroy the event, necessary to prevent memory leak
-
-		T += NUM_QUEUED_KERNELS * dt;
-
-		//if (fmod(T, 1. / 100.0) < NUM_QUEUED_KERNELS * dt) {
-		mass.CopyPosVelAccFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
-
-		//cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
-		//cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
-		cudaDeviceSynchronize();
-
-		//std::chrono::steady_clock::time_point ct_begin = std::chrono::steady_clock::now();
-		////std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
-		////std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(ct_end - ct_begin).count() << "[micro s]" << std::endl;
-		////std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::nanoseconds> (ct_end - ct_begin).count() << "[ns]" << std::endl;
-
+#endif // UDP
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
 		// update joint speed
 		for (int i = 0; i < joint.anchors.num; i++) { // compute joint angles and angular velocity
 			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.joint_vel_cmd[i] * dt;// update joint speed
 		}
-		d_joint.anchors.copyThetaFrom(joint.anchors, stream[CUDA_MEMORY_STREAM]);
+		d_joint.anchors.copyThetaFrom(joint.anchors, stream[CUDA_DYNAMICS_STREAM]);
+
+		// invoke cuda kernel for dynamics update
+		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+#ifdef ROTATION
+			if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
+				k_rot = 0; // reset counter
+				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+			}
+			else {
+				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+			}
+#else
+			updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+#endif // ROTATION
+			updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+			//gpuErrchk(cudaPeekAtLastError());
+			k_rot++;
+		}
+
+		T += NUM_QUEUED_KERNELS * dt;
+
+		//mass.CopyPosVelAccFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]);
+		mass.CopyPosFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]);
+		cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
+
+		//cudaDeviceSynchronize();
+
+		//std::chrono::steady_clock::time_point ct_begin = std::chrono::steady_clock::now();
+		////std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
+		////std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::nanoseconds> (ct_end - ct_begin).count() << "[ns]" << std::endl;
+
 
 #ifdef DEBUG_ENERGY
 		if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
@@ -673,61 +639,17 @@ void Simulation::update_physics() { // repeatedly start next
 		}
 
 #endif // DEBUG_ENERGY
-
-		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
-
-			body.update(mass, id_oxyz_start, NUM_UDP_MULTIPLIER*NUM_QUEUED_KERNELS* dt);
-
 #ifdef UDP
-			
+		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
+			k_udp = 0;
+			body.update(mass, id_oxyz_start, NUM_UDP_MULTIPLIER*NUM_QUEUED_KERNELS* dt);
 			SendUdpMessage(UDP_HEADER::ROBOT_STATE_REPORT);// send udp message
-			ReceiveUdpMessage();			// receive udp message
-
-			//if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {// print only once in a while
-			//	printf("%3.3f \t", T); // alternative lagged: udp_server.msg_rec.T
-			//	for (int i = 0; i < joint.size(); i++)
-			//	{
-			//		printf("%3.3f ", joint_control.joint_vel_desired[i]);
-			//	}
-			//	printf("\r\r"); // TODO: improve speed, maybe create string and print at once
-			//}
-
-			//if (fmod(T, 1. / 10.0) < NUM_QUEUED_KERNELS * dt) {
-			//	//printf("% 6.1f",T); // time
-			//	//printf("|t");
-			//	//for (int i = 0; i < joint.anchors.num; i++) {
-			//	//	printf("% 4.0f", joint_pos[i] * M_1_PI * 180.0); // display joint angle in deg
-			//	//}
-			//	//printf("|w");
-			//	//for (int i = 0; i < joint.anchors.num; i++) {
-			//	//	printf("% 4.0f", joint_vel[i] * M_1_PI * 30.0); // display joint speed in RPM
-			//	//}
-
-			//	//printf("|wc");
-			//	//for (int i = 0; i < joint.anchors.num; i++) {
-			//	//	printf("% 4.0f", joint_vel_cmd[i] * M_1_PI * 30.0); // display joint speed in RPM
-			//	//}
-
-			//	////printf("|xy%+ 2.2f %+ 2.2f %+ 2.2f ", ox.x, ox.y, ox.z);
-			//	////printf("%+ 2.2f %+ 2.2f %+ 2.2f", oy.x, oy.y, oy.z);
-
-			//	//printf("|x%+ 6.2f %+ 6.2f %+ 6.2f", com_pos.x, com_pos.y, com_pos.z);
-			//	//printf("|a%+ 6.1f %+ 6.1f %+ 6.1f", com_acc.x, com_acc.y, com_acc.z);
-			//	//printf("\r\r");
-			//}
-			////printf("\n");
-		//}
-#endif // UDP
 	}
 		k_udp += 1;
-
-		if (RESET) {
-			resetState();// restore the robot mass/spring/joint state to the backedup state
-#ifdef UDP
-
 #endif // UDP
 
-		}
+		// restore the robot mass/spring/joint state to the backedup state
+		if (RESET) {resetState();}
 	}
 }
 
@@ -858,6 +780,7 @@ void Simulation::update_graphics() {
 	for (Constraint* c : constraints) { // generate buffers for constraint objects
 		c->generateBuffers();
 	}
+
 	//updateBuffers();//Todo might not need?
 	cudaDeviceSynchronize();//sync before while loop
 
@@ -886,7 +809,7 @@ void Simulation::update_graphics() {
 
 			// copy only the position
 			//mass.CopyPosFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
-			mass.CopyPosFrom(d_mass, id_oxyz_start);
+			//mass.CopyPosFrom(d_mass, id_oxyz_start,1,stream[CUDA_MEMORY_STREAM]);
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
 			double t_lerp = 0.02;
@@ -1043,9 +966,6 @@ Simulation::~Simulation() {
 			cv_running.wait(lck, [this] {return ENDED; });
 		}
 
-		//while (!GPU_DONE) {
-		//	std::this_thread::sleep_for(std::chrono::milliseconds(1));// TODO fix race condition
-		//}
 		if (thread_physics_update.joinable()) {
 
 			thread_physics_update.join();
