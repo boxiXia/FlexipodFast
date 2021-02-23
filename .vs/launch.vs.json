@@ -1,0 +1,15 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "flexipod.exe",
+      "name": "flexipod.exe",
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0"
+      }
+    }
+  ]
+}

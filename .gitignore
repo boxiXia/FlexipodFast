@@ -1,15 +1,12 @@
 build/
 
-.vs/
-
-src/.ipynb_checkpoints/
-
-src/python/.ipynb_checkpoints/
+.vs/*
+!.vs/launch.vs.json
+.ipynb_checkpoints
+.OldVersions
+*.pyc
 
 data/
 
-src/python/__pycache__/
-
 *.lck
 
-src/python/ddpg/__pycache__/
