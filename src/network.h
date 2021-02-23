@@ -2,22 +2,26 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
-//#define ASIO_DISABLE_THREADS
+// copied from: https://adaickalavan.github.io/programming/udp-socket-programming-in-cpp-and-python/
+#if defined(_WIN32)
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#include<winsock2.h>
+#include <Ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#endif
 
 #include <string>
 #include <iostream>
-#include <asio.hpp>//TODO this is required for winsock to work, need fix
+//#define ASIO_DISABLE_THREADS
+//#include <asio.hpp>//TODO this is required for winsock to work, need fix
 #include <msgpack.hpp>
 #include <sstream>
 #include <time.h> // for timeout setup
 #include <atomic> // for atomic data sharing
+#include <system_error>
+
 
 #include <vector>
-// copied from: https://adaickalavan.github.io/programming/udp-socket-programming-in-cpp-and-python/
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#include <system_error>
-#include <WS2tcpip.h>
-#pragma comment (lib, "ws2_32")
 
 #include <thread>
 #include <mutex>
@@ -103,6 +107,7 @@ public:
 	//int port_remote;
 	//int port_local;
 	sockaddr_in remote_address;
+	WSASession Session;
 
 	WsaUdpSocket()
 	{
@@ -223,7 +228,7 @@ public:
 
 	WsaUdpSocket socket;
 
-	WSASession Session;
+	//WSASession Session;
 
 	WsaUdpServer(
 		int port_local, // e.g.: 32001

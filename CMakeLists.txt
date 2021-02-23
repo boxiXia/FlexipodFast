@@ -56,9 +56,9 @@ find_package(glad CONFIG REQUIRED)
 # set ALL_GL_LIBS as a placeholder for all opengl library
 set(ALL_GL_LIBS GLEW::GLEW glm glfw glad::glad)
 
-find_package(msgpack CONFIG CONFIG)
+find_package(msgpack CONFIG REQUIRED)
 
-find_package(asio CONFIG REQUIRED)
+#find_package(asio CONFIG REQUIRED)
 
 # include directories
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -90,7 +90,7 @@ option(USE_UDP "Enter UDP mode" ON)
 if(USE_UDP)
     message(STATUS "UDP ON")
     add_definitions(-DUDP) # enable this definition to send info via DUP
-    target_link_libraries(flexipod PRIVATE asio asio::asio)
+    #target_link_libraries(flexipod PRIVATE asio asio::asio)
     target_sources(flexipod PRIVATE src/network.h src/network.cpp)
 endif()
 
@@ -117,15 +117,26 @@ makeLink(${CMAKE_SOURCE_DIR}/src/data.msgpack ${CMAKE_CURRENT_BINARY_DIR}/data.m
 #makeLink(${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl flexipod)
    
 
+add_executable(simpleSocketTest
+    "src/simple_cpp_sockets_test.cpp"
+    "src/simple_cpp_sockets.h"
+)
+
 
 add_executable(testNetwork
     "src/testNetwork.cu"
     src/network.h
     src/network.cpp
 )
+
 set_property(TARGET testNetwork PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
 target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
-target_link_libraries(testNetwork PRIVATE asio asio::asio)
+#target_link_libraries(testNetwork PRIVATE asio asio::asio)
+#if(WIN32)
+#    find_library(WSOCK32_LIBRARY wsock32)
+#    find_library(WS2_32_LIBRARY ws2_32)
+#    target_link_libraries(testNetwork PRIVATE wsock32 ws2_32)
+#endif()
 target_link_libraries(testNetwork PRIVATE cuda)
 target_include_directories(testNetwork PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
