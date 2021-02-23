@@ -58,7 +58,7 @@ set(ALL_GL_LIBS GLEW::GLEW glm glfw glad::glad)
 
 find_package(msgpack CONFIG CONFIG)
 
-#find_package(asio CONFIG REQUIRED)
+find_package(asio CONFIG REQUIRED)
 
 # include directories
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -90,7 +90,7 @@ option(USE_UDP "Enter UDP mode" ON)
 if(USE_UDP)
     message(STATUS "UDP ON")
     add_definitions(-DUDP) # enable this definition to send info via DUP
-    #target_link_libraries(flexipod PRIVATE asio asio::asio)
+    target_link_libraries(flexipod PRIVATE asio asio::asio)
     target_sources(flexipod PRIVATE src/network.h src/network.cpp)
 endif()
 
@@ -125,7 +125,7 @@ add_executable(testNetwork
 )
 set_property(TARGET testNetwork PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
 target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
-#target_link_libraries(testNetwork PRIVATE asio asio::asio)
+target_link_libraries(testNetwork PRIVATE asio asio::asio)
 target_link_libraries(testNetwork PRIVATE cuda)
 target_include_directories(testNetwork PUBLIC ${CUDA_INCLUDE_DIRS} src)
 

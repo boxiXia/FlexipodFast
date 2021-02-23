@@ -6,18 +6,22 @@
 
 #include <string>
 #include <iostream>
-//#include <asio.hpp>
+#include <asio.hpp>//TODO this is required for winsock to work, need fix
 #include <msgpack.hpp>
 #include <sstream>
-#include <thread>
 #include <time.h> // for timeout setup
 #include <atomic> // for atomic data sharing
+
 #include <vector>
 // copied from: https://adaickalavan.github.io/programming/udp-socket-programming-in-cpp-and-python/
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <system_error>
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32")
+
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 #include "vec.h"
 
@@ -113,7 +117,7 @@ public:
 
 	}
 
-	/*set the remote_address give an address (e.g. "127.0.0.1"),and the prot (e.g. 5000) (by Boxi)*/
+	/*set the remote_address give an address (e.g. "127.0.0.1"),and the prot (e.g. 5000) */
 	void SetRemoteAddress(const std::string& address, unsigned short port)
 	{
 		remote_address.sin_family = AF_INET;
