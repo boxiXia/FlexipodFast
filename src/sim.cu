@@ -314,9 +314,10 @@ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, siz
 	d_triangle(num_triangle, false),//allocate device
 	joint_control(num_joint,true) // joint controller, must also call reset, see update_physics()
 #ifdef UDP
-	,udp_server(port_local, port_remote, ip_remote, num_joint)// port_local,port_remote,ip_remote,num_joint
+	,udp_server(port_local, port_remote, ip_remote)// port_local,port_remote,ip_remote,num_joint
 #endif //UDP
 {
+
 	//cudaDeviceSynchronize();
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
 		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
@@ -590,6 +591,8 @@ void Simulation::update_physics() { // repeatedly start next
 #endif // UDP
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
 		// update joint speed
+
+
 		for (int i = 0; i < joint.anchors.num; i++) { // compute joint angles and angular velocity
 			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.joint_vel_cmd[i] * dt;// update joint speed
 		}
@@ -656,28 +659,9 @@ void Simulation::update_physics() { // repeatedly start next
 
 #ifdef UDP
 void Simulation::SendUdpMessage(const UDP_HEADER& header) {
-	auto& msg_send = udp_server.msg_send;
-	msg_send.header = header;
-	msg_send.T = T;//update time
-	for (auto i = 0; i < joint.size(); i++)
-	{
-		msg_send.joint_pos[i] = joint_control.joint_pos[i];
-		msg_send.joint_vel[i] = joint_control.joint_vel[i];
-		msg_send.actuation[i] = joint_control.joint_vel_cmd[i] / joint_control.max_joint_vel[i];
-	}
-	// body com
-	msg_send.com_acc = body.acc;
-	msg_send.com_vel = body.vel;
-	msg_send.com_pos = body.pos;
-	// body orientation
-	msg_send.orientation[0] = body.rot.m00;
-	msg_send.orientation[1] = body.rot.m10;
-	msg_send.orientation[2] = body.rot.m20;
-	msg_send.orientation[3] = body.rot.m01;
-	msg_send.orientation[4] = body.rot.m11;
-	msg_send.orientation[5] = body.rot.m21;
-	// angular velocity
-	msg_send.ang_vel = body.ang_vel;
+
+	udp_server.msg_send.update(header, T, joint_control, body);
+
 	// tell udp_server to send message
 	udp_server.flag_should_send = true;
 	}

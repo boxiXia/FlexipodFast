@@ -148,6 +148,13 @@ struct MY_ALIGN(8) Vec3d {
 		return *this;
 	}
 
+	// fill a float array arr with the vector value
+	inline void fillArray(float(&arr)[3]) const {
+		arr[0] = x;
+		arr[1] = y;
+		arr[2] = z;
+	}
+
 	Vec3d(const std::vector<double> & v) {
 		x = v[0];
 		y = v[1];
@@ -931,5 +938,4 @@ struct MY_ALIGN(8) Mat3d {
 
 
 };
-
 #endif

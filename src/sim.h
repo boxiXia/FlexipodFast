@@ -47,8 +47,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 
 #ifdef UDP
 #include "Network.h"
-typedef WsaUdpServer UdpServer;
-
 #endif
 
 
@@ -156,7 +154,7 @@ struct MASS {
 	bool* fixed = nullptr;
 	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
 	int num = 0;
-	inline int size() { return num; }
+	inline int size() const { return num; }
 
 	MASS() { }
 	MASS(int num, bool on_host) {
@@ -434,7 +432,7 @@ struct JOINT {
 		points.init(std_joints, on_host);
 	}
 	// return num of joints
-	inline int size() { return anchors.num; }
+	inline int size() const { return anchors.num; }
 };
 
 
@@ -454,7 +452,7 @@ struct JointControl {
 	double k_pos = 0.2; // coefficient for position control
 
 	int num = 0;
-	inline int size() { return num; }
+	inline int size() const { return num; }
 	JointControl() {}
 	JointControl(int num, bool on_host) {
 		init(num, on_host);
@@ -593,6 +591,7 @@ struct RigidBody {
 	Mat3d rot;// rotation matrix = [ux,uy,uz] of the frame
 	Vec3d ang_vel;//angular velocity in body space
 
+	MSGPACK_DEFINE_ARRAY(pos, vel, acc,rot,ang_vel);
 	/// <summary>
 	/// initialize the rigidbody, assuming the coordinate frame is at index id_start
 	/// </summary>
@@ -647,6 +646,117 @@ struct BreakPoint {
 		return p1.t < p2.t;
 	}
 };
+
+
+
+#ifdef UDP
+
+enum UDP_HEADER :int {
+	TERMINATE = -1,// close the program
+	PAUSE = 17,
+	RESUME = 16,
+	RESET = 15,
+	ROBOT_STATE_REPORT = 14,
+	MOTOR_SPEED_COMMEND = 13,
+	STEP_MOTOR_SPEED_COMMEND = 12,
+	MOTOR_POS_COMMEND = 11,
+	STEP_MOTOR_POS_COMMEND = 10,
+};
+MSGPACK_ADD_ENUM(UDP_HEADER); // msgpack macro,refer to https://github.com/msgpack/msgpack-c/blob/cpp_master/example/cpp03/enum.cpp
+
+
+class DataSend {/*the info to be sent to the high level controller*/
+public:
+	UDP_HEADER header = UDP_HEADER::ROBOT_STATE_REPORT;
+	float T = 0; // time at the sending of this udp packet
+	// using float to make data smaller
+	std::vector<float> joint_pos; // joint position (angles)
+	std::vector<float> joint_vel; // joint angular velocity
+	std::vector<float> actuation; // acutation of the joint
+
+	//RigidBody body;
+
+	float orientation[6] = { 0 }; // orientation of the body
+	float ang_vel [3];
+	float com_acc[3];
+	float com_vel[3];
+	float com_pos[3];
+	//Vec3d ang_vel = Vec3d(); // angular velocity of the body
+	//Vec3d com_acc = Vec3d();// COM (body) acceleration
+	//Vec3d com_vel = Vec3d(); // COM (body) velocity
+	//Vec3d com_pos = Vec3d(); // COM (body) position
+
+	//double joint_vel_desired[4] = { 0 };// desired joint velocity at last command
+	//double T_prev = 0; // time at last command
+	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel, com_pos);
+	//MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, body);
+
+	DataSend() {}// defualt constructor
+	DataSend(int num_joint) {
+		init(num_joint);
+	}
+
+	inline void init(int num_joint) {
+		joint_pos = std::vector<float>(num_joint, 0);
+		joint_vel = std::vector<float>(num_joint, 0);
+		actuation = std::vector<float>(num_joint, 0);
+	}
+	void update(const UDP_HEADER& header, const double& T,
+		const JointControl& joint_control, const RigidBody& body) {
+		this->header = header;
+		this->T = T;
+		if (joint_pos.empty()) {init(joint_control.size());}
+		for (auto i = 0; i < joint_control.size(); i++)
+		{
+			joint_pos[i] = joint_control.joint_pos[i];
+			joint_vel[i] = joint_control.joint_vel[i];
+			actuation[i] = joint_control.joint_vel_cmd[i] / joint_control.max_joint_vel[i];
+		}
+		//// body com
+		//com_acc = body.acc;
+		//com_vel = body.vel;
+		//com_pos = body.pos;
+		//ang_vel = body.ang_vel;// angular velocity
+
+		body.acc.fillArray(com_acc);
+		body.vel.fillArray(com_vel);
+		body.pos.fillArray(com_pos);
+		body.ang_vel.fillArray(ang_vel);
+		// body orientation
+		orientation[0] = body.rot.m00;
+		orientation[1] = body.rot.m10;
+		orientation[2] = body.rot.m20;
+		orientation[3] = body.rot.m01;
+		orientation[4] = body.rot.m11;
+		orientation[5] = body.rot.m21;
+	}
+
+	DataSend(
+		const UDP_HEADER& header, const double& T,
+		const JointControl& joint_control, const RigidBody& body) {
+		update(header, T, joint_control, body);
+	}
+};
+
+class DataReceive {/*the high level command to be received */
+public:
+	UDP_HEADER header = UDP_HEADER::MOTOR_SPEED_COMMEND;
+	double T;
+	std::vector<double> joint_vel_desired;// desired joint velocity
+	MSGPACK_DEFINE_ARRAY(header, T, joint_vel_desired);
+
+	DataReceive(int num_joint) {
+		init(num_joint);
+	}
+	DataReceive() {}// defualt constructor
+	void init(int num_joint) {
+		joint_vel_desired = std::vector<double>(num_joint, 0);
+	}
+};
+
+typedef WsaUdpServer< DataReceive, DataSend> UdpServer;
+
+#endif // UDP
 
 class Simulation {
 public:
