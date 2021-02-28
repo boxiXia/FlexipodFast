@@ -19,7 +19,7 @@
 #include <time.h> // for timeout setup
 #include <atomic> // for atomic data sharing
 #include <system_error>
-
+#include <queue>
 
 #include <vector>
 
@@ -152,9 +152,13 @@ template<class DataReceive, class DataSend>
 class WsaUdpServer {
 private:
 	DataReceive _msg_rec; // struct to be received, private
-	DataSend _msg_send; // struct to be sent, private
+	//DataSend _msg_send; // struct to be sent, private
+	std::queue<DataSend> msg_send_queue; // deque of data to be sent, public
 	std::mutex mutex_running;
 	std::condition_variable cv_running;
+
+	enum { max_length = 1024 };
+	char recv_buffer_[max_length];// data received from the remote endponit
 public:
 	DataReceive msg_rec; // struct to be received, public
 	DataSend msg_send; // struct to be sent, public
@@ -163,7 +167,7 @@ public:
 	int port_remote; // remote port
 	std::string ip_remote; // remote ip
 
-	bool flag_should_send = false;// flag indicating whether to send udp packet
+	//bool flag_should_send = false;// flag indicating whether to send udp packet
 	bool flag_should_close = false; // flag indicating whether to stop sending/receiving
 	bool flag_new_received = false; // flag indicating a new message has received
 
@@ -190,7 +194,38 @@ public:
 		socket.SetTimeout();
 	}
 
-	/* loop for receiving the udp packet */
+	void send(){
+		msg_send_queue.push(msg_send);
+	}
+
+
+
+	/*run this to start receiving and sending udp*/
+	void run() {
+		thread_udp_receive = std::thread{ &WsaUdpServer::do_receive, this };
+		thread_udp_send = std::thread(&WsaUdpServer::do_send, this);
+	}
+	void close() {
+		flag_should_close = true;//just to be sure
+
+		std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
+		cv_running.wait(lck, [this] {return flag_sender_thread_closed & flag_receiver_thread_closed; });
+
+		if (thread_udp_send.joinable()) {
+			thread_udp_send.join();
+			//printf("thread_udp_send joined\n");
+		}
+		if (thread_udp_receive.joinable()) {
+			thread_udp_receive.join();
+			//printf("thread_udp_receive joined\n");
+		}
+		printf("UDP server closed\n");
+	}
+
+private:
+	//~WsaUdpServer() { //TODO automatically close it...
+	//}
+		/* loop for receiving the udp packet */
 	void do_receive()
 	{
 		while (!flag_should_close) {
@@ -232,15 +267,18 @@ public:
 	{
 		try {
 			while (!flag_should_close) {
-				if (flag_should_send) {
+				if (!msg_send_queue.empty()) { // assuming sending speed is faster than data creation
+					while (msg_send_queue.size() > 1) {
+						msg_send_queue.pop(); // remove any second old message
+						//printf("send() drop old message %s:line %d\n", __FILE__, __LINE__);
+					}
 					// Pack data into msgpack
-					_msg_send = msg_send; // copy to private value to prevent modification during pack
+					auto& _msg_send = msg_send_queue.front(); // oldest message
 					std::stringstream send_stream;
 					msgpack::pack(send_stream, _msg_send);
 					std::string const& data = send_stream.str();
 					socket.SendTo(ip_remote, port_remote, data.c_str(), data.size());
-					//TODO use condition variable
-					flag_should_send = false;//reset flag_should_send
+					msg_send_queue.pop();// remove the oldes message
 				}
 				//std::this_thread::sleep_for(std::chrono::nanoseconds(10));
 			}
@@ -254,35 +292,7 @@ public:
 		cv_running.notify_one();
 	}
 
-	/*run this to start receiving and sending udp*/
-	void run() {
-		thread_udp_receive = std::thread{ &WsaUdpServer::do_receive, this };
-		thread_udp_send = std::thread(&WsaUdpServer::do_send, this);
-	}
-	void close() {
-		flag_should_close = true;//just to be sure
 
-		std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
-		cv_running.wait(lck, [this] {return flag_sender_thread_closed & flag_receiver_thread_closed; });
-
-		if (thread_udp_send.joinable()) {
-			thread_udp_send.join();
-			//printf("thread_udp_send joined\n");
-		}
-		if (thread_udp_receive.joinable()) {
-			thread_udp_receive.join();
-			//printf("thread_udp_receive joined\n");
-		}
-		printf("UDP server closed\n");
-	}
-
-	//~WsaUdpServer() { //TODO automatically close it...
-	//}
-
-
-private:
-	enum { max_length = 1024 };
-	char recv_buffer_[max_length];// data received from the remote endponit
 };
 
 

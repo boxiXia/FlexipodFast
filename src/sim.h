@@ -63,10 +63,11 @@ std::string getWorkingDir();
 std::string getProgramDir();
 
 
-constexpr const int NUM_CUDA_STREAM = 3; // number of cuda stream excluding the default stream
+constexpr const int NUM_CUDA_STREAM = 4; // number of cuda stream excluding the default stream
 constexpr const int CUDA_DYNAMICS_STREAM = 0;  // stream to run the dynamics update
 constexpr const int CUDA_MEMORY_STREAM = 1;  // stream to run the memory operations
-constexpr const int CUDA_GRAPHICS_STREAM = 2; // steam to run graphics update
+constexpr const int CUDA_MEMORY_STREAM_ALT = 2;  // additional stream to run the memory operations
+constexpr const int CUDA_GRAPHICS_STREAM = 3; // steam to run graphics update
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -296,7 +297,7 @@ struct RotAnchors { // the anchors that belongs to the rotational joints
 
 	int num; // num of joint, num_anchor=num*2
 	/*return number of joint*/
-	inline int size() { return num; }
+	inline int size() const { return num; }
 
 	RotAnchors() {}
 	RotAnchors(std::vector<StdJoint> std_joints, bool on_host = true) { init(std_joints, on_host); }
@@ -505,8 +506,7 @@ struct JointControl {
 		}
 
 	}
-	void reset(MASS& mass, JOINT& joint) {
-
+	void reset(const MASS& mass, const JOINT& joint) {
 		size_t nbytes = joint.size() * sizeof(double);
 		memset(joint_vel_cmd, 0, nbytes);
 		memset(joint_vel, 0, nbytes);
@@ -531,7 +531,7 @@ struct JointControl {
 		}
 	}
 	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
-	void update(MASS& mass, JOINT& joint, double ndt) {
+	void update(const MASS& mass, const JOINT& joint, double ndt) {
 		////#pragma omp parallel for simd
 		for (int i = 0; i < joint.anchors.size(); i++) // compute joint angles and angular velocity
 		{
@@ -717,7 +717,6 @@ public:
 		//com_vel = body.vel;
 		//com_pos = body.pos;
 		//ang_vel = body.ang_vel;// angular velocity
-
 		body.acc.fillArray(com_acc);
 		body.vel.fillArray(com_vel);
 		body.pos.fillArray(com_pos);
@@ -754,7 +753,7 @@ public:
 	}
 };
 
-typedef WsaUdpServer< DataReceive, DataSend> UdpServer;
+typedef WsaUdpServer< DataReceive, std::deque<DataSend>> UdpServer;
 
 #endif // UDP
 
@@ -774,7 +773,7 @@ public:
 	int NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 	int NUM_UPDATE_PER_ROTATION = 4; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
-	int NUM_UDP_MULTIPLIER = 2;// udp update is decreased by this factor
+	int NUM_UDP_MULTIPLIER = 4;// udp update is decreased by this factor
 #endif
 
 

@@ -43,7 +43,7 @@ class FlexipodEnv(gym.Env):
     UDP_MOTOR_POS_COMMEND = 11
     UDP_STEP_MOTOR_POS_COMMEND = 10
     
-    def __init__(self, dof = 12,
+    def __init__(self, dof = 12, num_observation=4,normalize = True,
            ip_local = "127.0.0.1", port_local = 32000,
            ip_remote = "127.0.0.1",port_remote = 32001):
         
@@ -54,15 +54,16 @@ class FlexipodEnv(gym.Env):
         
         self.dof = dof # num joints
         
+        self.num_observation = num_observation
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
-        state_size = self.dof * 3 + 6 + 3*3+1
+        state_size = (self.dof * 3 + 6 + 3*3+1)*num_observation
         # state = np.empty(state_size,dtype=np.float32)
         action_size = self.dof
         
-#         action_size = 6
-        # 1,1,0,0,1,1,1,1,0,0,0,0
+        self.normalize = normalize
         
         self.max_action = 1.
+        
         self.action_space = gym.spaces.Box(
             low= -self.max_action*np.ones(action_size,dtype=np.float32),
             high = self.max_action*np.ones(action_size,dtype=np.float32),
@@ -78,10 +79,11 @@ class FlexipodEnv(gym.Env):
             np.ones(3)*2,       # com_vel
             np.ones(1),         # com_pos_z
         ]).astype(np.float32)
+        self.max_observation = np.tile(self.max_observation,num_observation)
+        
         self.observation_space = gym.spaces.Box(
             low =-self.max_observation,
             high=self.max_observation,
-#             shape = state_size,
             dtype = np.float32)
 
         # reset data packed # https://msgpack-python.readthedocs.io/en/latest/api.html#msgpack.Packer
@@ -89,7 +91,7 @@ class FlexipodEnv(gym.Env):
         self.pause_cmd_b = self.packer.pack([self.UDP_PAUSE,0,[0,0,0,0]])
         self.resume_cmd_b = self.packer.pack([self.UDP_RESUME,0,[0,0,0,0]])
         self.close_cmd_b = self.packer.pack([self.UDP_TERMINATE,0,[0,0,0,0]])
-        self.BUFFER_LEN = 512  # in bytes
+        self.BUFFER_LEN = 4096  # in bytes
         self.TIMEOUT = 0.1 #timeout duration
         
 #         self.startSimulation()
@@ -105,47 +107,42 @@ class FlexipodEnv(gym.Env):
     def step(self,action = None):
 #         step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),action])
         if action is not None:
-            # 1,1,0,0,1,1,1,1,0,0,0,0
-#             alpha = np.pi*0.14
-#             beta = np.pi*0.1
-#             cmd_action = [
-#                 action[0],  # 0
-#                 action[1],  # 1
-#                 0,          # 2 
-#                 0,          # 3
-#                 action[2],  # 4  
-#                 action[3],  # 5 
-#                 action[4],  # 6 
-#                 action[5],  # 7 
-#                 0,          # 8 
-#                 0,          # 9 
-#                 0,          # 10
-#                 0           # 11
-#             ]
-            cmd_action = action if type(action) is list else action.tolist()
+            
+            cmd_action = np.multiply(action,self.max_action).tolist()# map action -> action*max_acton
+        
             step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
 #             step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
             num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
         for k in range(3): # try 3 times
             try:
                 msg_rec = self.receive()
-                return self._processRecMsg(msg_rec)
+                return self._processRecMsg(msg_rec,repeat_first = False)
             except Exception as e: # raise the exception at the last time
                 warnings.warn(f"step(): try #{k}:{e}")
                 if k==2: raise e 
 
-    def _processRecMsg(self,msg_rec):
+    def _processRecMsg(self,msg_rec,repeat_first = False):
         """processed received message to state action pair"""
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
-        observation = np.hstack(msg_rec[2:-1]+[msg_rec[-1][-1]]).astype(np.float32)
-        orientation_z = msg_rec[self.ID['orientation']][2]
-        com_vel = np.linalg.norm(msg_rec[self.ID['com_vel']])
-        com_z = msg_rec[self.ID['com_pos']][2]
+#         observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
+        if repeat_first:
+             observation = np.hstack(
+                [np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32) for 
+                msg_i in [msg_rec[0]]*self.num_observation] )
+        else: 
+            observation = np.hstack(
+                [np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32) for msg_i in msg_rec] )
+            
+        observation = observation/self.max_observation
+        msg_rec_i = msg_rec[0]
+        orientation_z = msg_rec_i[self.ID['orientation']][2]
+        com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
+        com_z = msg_rec_i[self.ID['com_pos']][2]
 #         print(orientation_z,com_z)
-        reward = orientation_z-0.8 + 2.*(msg_rec[self.ID['com_pos']][2]-0.3)-0.2*min(1.0,com_vel)
+        reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.8)or(com_z<0.3) else False
+        done = True if (orientation_z<0.7)or(com_z<0.2) else False
 #         if done:
 # #             reward = -10.0
 #             print(orientation_z,com_z)
@@ -155,9 +152,9 @@ class FlexipodEnv(gym.Env):
         for k in range(3):# try 3 times
             try:
                 self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
-                time.sleep(1e-5)
+                time.sleep(1/500)
                 msg_rec = self.receive()
-                return self._processRecMsg(msg_rec)[0]
+                return self._processRecMsg(msg_rec,repeat_first = True)[0]
             except Exception as e:
                 warnings.warn(f"reset(): try #{k}:{e}")
                 if k==2: # failed at last time
@@ -175,7 +172,7 @@ class FlexipodEnv(gym.Env):
     def endSimulation(self):
             self.send_sock.sendto(self.close_cmd_b,self.remote_address)
 
-    def receive(self):
+    def receive(self,reset=False):
         try:
             sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) # UDP
 #             sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1) #immediate reuse of IP address
@@ -184,7 +181,7 @@ class FlexipodEnv(gym.Env):
             
             data = sock.recv(self.BUFFER_LEN)
             msg_rec = msgpack.unpackb(data)
-            
+#             print(len(data))
              # closing connection
             sock.shutdown(socket.SHUT_RDWR)
             sock.close()
@@ -201,3 +198,15 @@ class FlexipodEnv(gym.Env):
             return f"{key:<12s}:{','.join(f'{k:>+6.2f}' for k in value)}\n"
         except:
             return f"{key:<12s}:{value:>+6.2f}\n"
+        
+    def pause(self):
+        self.send_sock.sendto(self.pause_cmd_b,self.remote_address)
+    def resume(self):
+        self.send_sock.sendto(self.resume_cmd_b,self.remote_address)
+
+
+            
+# env = FlexipodEnv(dof = 12)           
+# msg_rec = env.reset()
+# for k in range(20):
+#     assert(msg_rec[52+k] == msg_rec[k])

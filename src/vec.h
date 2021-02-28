@@ -149,6 +149,7 @@ struct MY_ALIGN(8) Vec3d {
 	}
 
 	// fill a float array arr with the vector value
+	// ref: https://stackoverflow.com/questions/5724171/passing-an-array-by-reference
 	inline void fillArray(float(&arr)[3]) const {
 		arr[0] = x;
 		arr[1] = y;

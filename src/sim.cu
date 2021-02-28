@@ -428,11 +428,17 @@ void Simulation::backupState() {
 /*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
 void Simulation::resetState() {//TODO...fix bug
 	cudaDeviceSynchronize();
-	d_mass.copyFrom(backup_mass, stream[NUM_CUDA_STREAM - 1]);
-	d_spring.copyFrom(backup_spring, stream[NUM_CUDA_STREAM - 1]);
-	d_joint.copyFrom(backup_joint, stream[NUM_CUDA_STREAM - 1]);
+ 	d_mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM]);
+	mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM_ALT]);
+
+	d_spring.copyFrom(backup_spring, stream[CUDA_MEMORY_STREAM]);
+	spring.copyFrom(backup_spring, stream[CUDA_MEMORY_STREAM_ALT]);
+
+	d_joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM]);
+	joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM_ALT]);
 
 	joint_control.reset(backup_mass, backup_joint);
+	//joint_control.update(backup_mass, backup_joint, dt);
 	body.init(backup_mass, id_oxyz_start); // init body frame
 	cudaDeviceSynchronize();
 	RESET = false; // set reset to false 
@@ -585,8 +591,8 @@ void Simulation::update_physics() { // repeatedly start next
 
 
 #ifdef UDP
+		ReceiveUdpMessage(); // receive udp message whenever there is new
 		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
-			ReceiveUdpMessage();			// receive udp message
 		}
 #endif // UDP
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
@@ -643,27 +649,32 @@ void Simulation::update_physics() { // repeatedly start next
 
 #endif // DEBUG_ENERGY
 #ifdef UDP
+
+		body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS* dt);
+		udp_server.msg_send.emplace_front(
+			DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body));
+		if (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
+			udp_server.msg_send.pop_back();
+		}
+		SendUdpMessage(UDP_HEADER::ROBOT_STATE_REPORT);// send udp message
+
 		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
 			k_udp = 0;
-			body.update(mass, id_oxyz_start, NUM_UDP_MULTIPLIER*NUM_QUEUED_KERNELS* dt);
-			SendUdpMessage(UDP_HEADER::ROBOT_STATE_REPORT);// send udp message
 	}
 		k_udp += 1;
 #endif // UDP
 
 		// restore the robot mass/spring/joint state to the backedup state
-		if (RESET) {resetState();}
+		if (RESET) { resetState();}
 	}
 }
 
 
 #ifdef UDP
 void Simulation::SendUdpMessage(const UDP_HEADER& header) {
-
-	udp_server.msg_send.update(header, T, joint_control, body);
-
 	// tell udp_server to send message
-	udp_server.flag_should_send = true;
+	//udp_server.flag_should_send = true;
+	udp_server.send();
 	}
 
 bool Simulation::ReceiveUdpMessage() {
