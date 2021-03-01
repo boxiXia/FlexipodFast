@@ -770,10 +770,10 @@ public:
 	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
 
 	// cuda and udp update parameters (should be constant during the simualtion)
-	int NUM_QUEUED_KERNELS = 40; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
-	int NUM_UPDATE_PER_ROTATION = 4; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
+	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+	int NUM_UPDATE_PER_ROTATION = 2; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
-	int NUM_UDP_MULTIPLIER = 4;// udp update is decreased by this factor
+	int NUM_UDP_MULTIPLIER = 5;// udp update is decreased by this factor
 #endif
 
 

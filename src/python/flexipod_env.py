@@ -43,7 +43,7 @@ class FlexipodEnv(gym.Env):
     UDP_MOTOR_POS_COMMEND = 11
     UDP_STEP_MOTOR_POS_COMMEND = 10
     
-    def __init__(self, dof = 12, num_observation=4,normalize = True,
+    def __init__(self, dof = 12, num_observation=5,normalize = True,
            ip_local = "127.0.0.1", port_local = 32000,
            ip_remote = "127.0.0.1",port_remote = 32001):
         
@@ -62,7 +62,10 @@ class FlexipodEnv(gym.Env):
         
         self.normalize = normalize
         
-        self.max_action = 1.
+        self.max_action = 1.5 # [rad/s]
+        self.opt_timestep = 250. # num of time step to pass the problem
+        
+        self.current_timestep = 0
         
         self.action_space = gym.spaces.Box(
             low= -self.max_action*np.ones(action_size,dtype=np.float32),
@@ -113,6 +116,8 @@ class FlexipodEnv(gym.Env):
             step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
 #             step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
             num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
+            
+        self.current_timestep = self.current_timestep+1.
         for k in range(3): # try 3 times
             try:
                 msg_rec = self.receive()
@@ -136,19 +141,26 @@ class FlexipodEnv(gym.Env):
         observation = observation/self.max_observation
         msg_rec_i = msg_rec[0]
         orientation_z = msg_rec_i[self.ID['orientation']][2]
-        com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
+        actuation = msg_rec_i[self.ID['actuation']][2]
+        # com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
         com_z = msg_rec_i[self.ID['com_pos']][2]
 #         print(orientation_z,com_z)
-        reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
+        # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
+        # uph_cost = (orientation_z+com_z)/self.opt_timestep*self.current_timestep
+        uph_cost = orientation_z+com_z - 1.1
+        quad_ctrl_cost  = 0.1 * np.square(actuation).sum() # quad control cost
+        reward =  uph_cost - quad_ctrl_cost + 1.0
         
 #         reward = orientation_z
         done = True if (orientation_z<0.7)or(com_z<0.2) else False
-#         if done:
+        if done:
+            self.current_timestep = 0. # reset current_timestep
 # #             reward = -10.0
 #             print(orientation_z,com_z)
         return observation,reward,done, None
     
     def reset(self):
+        self.current_timestep = 0 # reset time
         for k in range(3):# try 3 times
             try:
                 self.send_sock.sendto(self.reset_cmd_b,self.remote_address)

@@ -28,22 +28,22 @@ class ActorCritic(nn.Module):
         # action mean range -1 to 1
         self.actor =  nn.Sequential(
                 nn.Linear(state_dim, 512),
-                nn.SELU(),
+                nn.LeakyReLU(),#todo change to leaky relu
                 nn.Linear(512, 512),
-                nn.SELU(),
+                nn.LeakyReLU(),
                 nn.Linear(512, 512),
-                nn.SELU(),
+                nn.LeakyReLU(),
                 nn.Linear(512, action_dim),
-                nn.Tanh()
+                nn.LeakyReLU()
                 )
         # critic
         self.critic = nn.Sequential(
                 nn.Linear(state_dim, 512),
-                nn.SELU(),
+                nn.LeakyReLU(),
                 nn.Linear(512, 512),
-                nn.SELU(),
+                nn.LeakyReLU(),
                 nn.Linear(512, 512),
-                nn.SELU(),
+                nn.LeakyReLU(),
                 nn.Linear(512, 1)
                 )
         self.action_var = torch.full((action_dim,), action_std*action_std).to(device)

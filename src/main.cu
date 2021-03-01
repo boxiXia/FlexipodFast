@@ -82,7 +82,7 @@ int main()
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 1e-3;// mass per vertex
+	const double m = 0.06* radius_poisson;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
 	const double spring_constant = m*5e6; //spring constant for silicone leg
@@ -100,7 +100,7 @@ int main()
 	const double spring_constant_rigid = spring_constant * scale_high;//spring constant for rigid spring
 
 	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping * scale_high; // spring damping for resetable spring
+	const double spring_damping_restable = spring_damping * scale_high*2; // spring damping for resetable spring
 
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
@@ -158,11 +158,11 @@ int main()
 	{
 		for each (int j in bot.Joints[i].left)
 		{
-			mass.m[j] = m * 1.4;
+			mass.m[j] = m * scale_high;
 		}
 		for each (int j in bot.Joints[i].right)
 		{
-			mass.m[j] = m * 1.4;
+			mass.m[j] = m * scale_high;
 		}
 	}
 
@@ -263,7 +263,7 @@ int main()
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.6, 0.6);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.9, 0.8);
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 
