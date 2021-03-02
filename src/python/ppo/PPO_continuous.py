@@ -1,3 +1,4 @@
+# modified from: https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO_continuous.py
 import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
@@ -6,6 +7,57 @@ import numpy as np
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+
+
+####################################################################################################
+# reference: 
+# https://towardsdatascience.com/residual-network-implementing-resnet-a7da63c7b278
+# https://towardsdatascience.com/residual-blocks-building-blocks-of-resnet-fd90ca15d6ec
+
+def activation_func(activation):
+    return nn.ModuleDict([
+        ['relu', nn.ReLU()],
+        ['leaky_relu', nn.LeakyReLU()],
+        ['selu', nn.SELU()],
+        ['none', nn.Identity()]
+    ])[activation]
+
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.in_channels, self.out_channels = in_channels, out_channels
+        self.blocks = nn.Identity()
+        self.shortcut = nn.Identity()
+        self.should_apply_shortcut = (self.in_channels != self.out_channels)
+
+    def forward(self, x):
+        if self.should_apply_shortcut:
+            residual = self.shortcut(x)
+        else:
+            residual = x
+        x = self.blocks(x)
+        x += residual
+        return x
+
+    # @property
+    # def should_apply_shortcut(self):
+    #     return self.in_channels != self.out_channels
+
+# K. He, X. Zhang, S. Ren, and J. Sun. Identity Mappings in Deep Residual Networks. arXiv preprint arXiv:1603.05027v3,2016.
+class ResidualDenseBlock(ResidualBlock):
+    def __init__(self, in_channels, out_channels,seq_len=None, activation='leaky_relu'):
+        super().__init__(in_channels, out_channels)
+        self.blocks = nn.Sequential(
+            # nn.BatchNorm1d(in_channels if seq_len is None else seq_len),
+            # activation_func(activation),
+            nn.Linear(in_channels, out_channels),
+            # nn.BatchNorm1d(out_channels if seq_len is None else seq_len),
+            activation_func(activation),
+            nn.Linear(out_channels, out_channels),
+            activation_func(activation)
+        )
+        self.shortcut = nn.Linear(in_channels, out_channels)
+##########################################################################################################################
 
 class Memory:
     def __init__(self):
@@ -26,26 +78,47 @@ class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, action_std):
         super(ActorCritic, self).__init__()
         # action mean range -1 to 1
+        # self.actor =  nn.Sequential(
+        #         nn.Linear(state_dim, 256),
+        #         nn.LeakyReLU(),#todo change to leaky relu
+        #         nn.Linear(256, 256),
+        #         nn.LeakyReLU(),
+        #         nn.Linear(256, 256),
+        #         nn.LeakyReLU(),
+        #         nn.Linear(256, action_dim),
+        #         nn.Tanh()
+        #         )
         self.actor =  nn.Sequential(
-                nn.Linear(state_dim, 512),
-                nn.LeakyReLU(),#todo change to leaky relu
-                nn.Linear(512, 512),
-                nn.LeakyReLU(),
-                nn.Linear(512, 512),
-                nn.LeakyReLU(),
-                nn.Linear(512, action_dim),
-                nn.LeakyReLU()
+                ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                nn.Linear(256, action_dim),
+                nn.Tanh()
                 )
+        
         # critic
         self.critic = nn.Sequential(
-                nn.Linear(state_dim, 512),
-                nn.LeakyReLU(),
-                nn.Linear(512, 512),
-                nn.LeakyReLU(),
-                nn.Linear(512, 512),
-                nn.LeakyReLU(),
-                nn.Linear(512, 1)
+                ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                nn.Linear(256, 1)
                 )
+        # self.critic = nn.Sequential(
+        #         # nn.Linear(state_dim, 256),
+        #         # nn.LeakyReLU(),
+        #         ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
+        #         # nn.Linear(256, 256),
+        #         # nn.LeakyReLU(),
+        #         ResidualDenseBlock(256,256, activation="leaky_relu"),
+        #         ResidualDenseBlock(256,256, activation="leaky_relu"),
+        #         ResidualDenseBlock(256,256, activation="leaky_relu"),
+        #         # nn.Linear(256, 256),
+        #         # nn.LeakyReLU(),
+        #         nn.Linear(256, 1)
+        #         )
+                
         self.action_var = torch.full((action_dim,), action_std*action_std).to(device)
         
     def forward(self):

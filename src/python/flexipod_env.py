@@ -147,17 +147,17 @@ class FlexipodEnv(gym.Env):
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
         # uph_cost = (orientation_z+com_z)/self.opt_timestep*self.current_timestep
-        uph_cost = orientation_z+com_z - 1.1
+        uph_cost = orientation_z + com_z-0.15
         quad_ctrl_cost  = 0.1 * np.square(actuation).sum() # quad control cost
-        reward =  uph_cost - quad_ctrl_cost + 1.0
+        reward =  uph_cost - quad_ctrl_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.7)or(com_z<0.2) else False
+        done = True if (orientation_z<0.6)or(com_z<0.2) else False
         if done:
             self.current_timestep = 0. # reset current_timestep
 # #             reward = -10.0
 #             print(orientation_z,com_z)
-        return observation,reward,done, None
+        return observation,reward,done, {'t':msg_rec_i[self.ID['t']]}
     
     def reset(self):
         self.current_timestep = 0 # reset time
