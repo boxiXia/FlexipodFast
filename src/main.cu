@@ -267,8 +267,8 @@ int main()
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 
-	double runtime = 86400;//24 hours
-	sim.setBreakpoint(runtime,true);
+	//double runtime = 172800;//48 hours
+	//sim.setBreakpoint(runtime,true);
 
 	sim.start();
 	

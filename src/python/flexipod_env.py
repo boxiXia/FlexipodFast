@@ -153,11 +153,12 @@ class FlexipodEnv(gym.Env):
         
 #         reward = orientation_z
         done = True if (orientation_z<0.6)or(com_z<0.2) else False
+        info = {'t':msg_rec_i[self.ID['t']]}
         if done:
             self.current_timestep = 0. # reset current_timestep
-# #             reward = -10.0
+            info['episode_duration'] = info['t'] - self.episode_start_time
 #             print(orientation_z,com_z)
-        return observation,reward,done, {'t':msg_rec_i[self.ID['t']]}
+        return observation,reward,done,info
     
     def reset(self):
         self.current_timestep = 0 # reset time
@@ -166,7 +167,9 @@ class FlexipodEnv(gym.Env):
                 self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
                 time.sleep(1/500)
                 msg_rec = self.receive()
-                return self._processRecMsg(msg_rec,repeat_first = True)[0]
+                observation,reward,done,info =  self._processRecMsg(msg_rec,repeat_first = True)
+                self.episode_start_time = info['t']
+                return observation
             except Exception as e:
                 warnings.warn(f"reset(): try #{k}:{e}")
                 if k==2: # failed at last time

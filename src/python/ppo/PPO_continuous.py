@@ -212,6 +212,18 @@ class PPO:
             
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())
+    def save(self,path,**kwargs):
+        kwargs["policy"] = self.policy.state_dict()
+        kwargs["policy_old"] = self.policy_old.state_dict()
+        torch.save(kwargs,path)
+    def load(self,path):
+        checkpoint = torch.load(path)
+        self.policy.load_state_dict(checkpoint["policy"])
+        self.policy_old.load_state_dict(checkpoint["policy_old"])
+        return checkpoint
+
+
+        
         
 def main():
     ############## Hyperparameters ##############
