@@ -225,6 +225,10 @@ struct SPRING {
 	double* damping = nullptr; // damping on the masses.
 	Vec2i* edge = nullptr;// (left,right) mass indices of the spring
 	bool* resetable = nullptr; // a flag indicating whether to reset every dynamic update
+#ifdef STRESS_TEST
+	double* strain = nullptr;// spring deformation/rest length
+#endif //STRESS_TEST
+	
 	int num = 0;
 	inline int size() { return num; }
 
@@ -245,6 +249,9 @@ struct SPRING {
 		allocateMemory((void**)&damping, num * sizeof(double));
 		allocateMemory((void**)&edge, num * sizeof(Vec2i));
 		allocateMemory((void**)&resetable, num * sizeof(bool));
+#ifdef STRESS_TEST
+		allocateMemory((void**)&strain, num * sizeof(double));
+#endif //STRESS_TEST
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
@@ -254,9 +261,18 @@ struct SPRING {
 		cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream);
+#ifdef STRESS_TEST
+		cudaMemcpyAsync(strain, other.strain, num * sizeof(double), cudaMemcpyDefault, stream);
+#endif //STRESS_TEST
 		gpuErrchk(cudaPeekAtLastError());
 		//this->num = other.num;
 	}
+#ifdef STRESS_TEST
+	void copyStrainFrom(const SPRING& other, cudaStream_t stream = (cudaStream_t)0) {
+		cudaMemcpyAsync(strain, other.strain, num * sizeof(double), cudaMemcpyDefault, stream);
+	}
+#endif //STRESS_TEST
+
 };
 
 // for displaying triangle mesh
@@ -284,7 +300,7 @@ struct TRIANGLE {
 		cudaMemcpyAsync(triangle, other.triangle, num * sizeof(Vec3i), cudaMemcpyDefault, stream);
 		gpuErrchk(cudaPeekAtLastError());
 		//this->num = other.num;
-	}
+	} 
 };
 
 struct RotAnchors { // the anchors that belongs to the rotational joints
@@ -650,7 +666,6 @@ struct BreakPoint {
 
 
 #ifdef UDP
-
 enum UDP_HEADER :int {
 	TERMINATE = -1,// close the program
 	PAUSE = 17,
@@ -663,6 +678,12 @@ enum UDP_HEADER :int {
 	STEP_MOTOR_POS_COMMEND = 10,
 };
 MSGPACK_ADD_ENUM(UDP_HEADER); // msgpack macro,refer to https://github.com/msgpack/msgpack-c/blob/cpp_master/example/cpp03/enum.cpp
+
+
+
+#ifdef STRESS_TEST
+constexpr int NUM_SPRING_STRAIN = 128;
+#endif //STRESS_TEST
 
 
 class DataSend {/*the info to be sent to the high level controller*/
@@ -681,14 +702,12 @@ public:
 	float com_acc[3];
 	float com_vel[3];
 	float com_pos[3];
-	//Vec3d ang_vel = Vec3d(); // angular velocity of the body
-	//Vec3d com_acc = Vec3d();// COM (body) acceleration
-	//Vec3d com_vel = Vec3d(); // COM (body) velocity
-	//Vec3d com_pos = Vec3d(); // COM (body) position
-
-	//double joint_vel_desired[4] = { 0 };// desired joint velocity at last command
-	//double T_prev = 0; // time at last command
+#ifdef STRESS_TEST
+	float spring_strain[128];
+	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel,spring_strain, com_pos);
+#else
 	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel, com_pos);
+#endif //STRESS_TEST
 	//MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, body);
 
 	DataSend() {}// defualt constructor
@@ -775,8 +794,6 @@ public:
 #ifdef UDP
 	int NUM_UDP_MULTIPLIER = 5;// udp update is decreased by this factor
 #endif
-
-
 	// host
 	MASS mass; // a flat fiew of all masses
 	SPRING spring; // a flat fiew of all springs
@@ -794,6 +811,18 @@ public:
 	MASS backup_mass;
 	SPRING backup_spring;
 	JOINT backup_joint;
+
+
+//#ifdef STRESS_TEST
+//private:
+//	double* spring_strain;//host
+//	double* d_spring_strain;//device
+//	int num_spring_strain = 256; // number of samples for the spring_strain
+//	int step_spring_strain;
+//	int spring_strain_block_size = 32; // mass update threads per block
+//	int spring_strain_grid_size; // mass update blocks per grid
+//public:
+//#endif //STRESS_TEST
 
 	void backupState();//backup the robot mass/spring/joint state
 	void resetState();// restore the robot mass/spring/joint state to the backedup state

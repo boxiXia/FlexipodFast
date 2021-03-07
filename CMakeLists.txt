@@ -69,6 +69,7 @@ add_definitions(-DGRAPHICS) # enable this definition to display graphics
 add_definitions(-DROTATION) # enable this to support rotation in dynamics update
 #add_definitions(-DDEBUG_ENERGY) # enable this to debug energy
 #add_subdirectory(src/Titan)
+add_definitions(-DSTRESS_TEST) # enable stress testing
 
 # macro to create a symbolic link
 macro(makeLink src dest target)

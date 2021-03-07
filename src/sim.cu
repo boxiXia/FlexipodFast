@@ -73,6 +73,30 @@ GLenum glCheckError_(const char* file, int line)
 }
 #define glCheckError() glCheckError_(__FILE__, __LINE__) 
 
+
+
+#ifdef STRESS_TEST
+__global__ void updtateSpringStrain(
+	const MASS mass,
+	const SPRING spring,
+	double* strain,//selected strains (deformation/rest_length) of the spring
+	const int start,//start index (inclusive), must<spring.size()
+	const int end, // end index (exclusive), must<=spring.size()
+	const int step // step size
+	) {
+	int k = blockIdx.x * blockDim.x + threadIdx.x;
+	int i = start + k * step;
+	if (i< end) {
+		Vec2i e = spring.edge[i];
+		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
+		double length = s_vec.norm(); // current spring length
+		strain[i] = (length - spring.rest[i])/spring.rest[i];
+	}
+}
+#endif //STRESS_TEST
+
+
+
 __global__ void updateSpring(
 	const MASS mass,
 	const SPRING spring
@@ -497,6 +521,13 @@ void Simulation::update_physics() { // repeatedly start next
 	//	exit(-1);
 	//}
 
+
+#ifdef STRESS_TEST
+
+#endif //STRESS_TEST
+
+
+
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
 	int k_udp = 0; // udp counter
@@ -650,9 +681,25 @@ void Simulation::update_physics() { // repeatedly start next
 #endif // DEBUG_ENERGY
 #ifdef UDP
 
+
+
 		body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS* dt);
 		udp_server.msg_send.emplace_front(
 			DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body));
+
+#ifdef STRESS_TEST
+		auto& spring_strain = udp_server.msg_send.front().spring_strain;
+		int step_spring_strain = id_restable_spring_start / NUM_SPRING_STRAIN;
+		for (int k = 0; k < NUM_SPRING_STRAIN; k++)
+		{
+			int i = k * step_spring_strain;
+			Vec2i e = spring.edge[i];
+			Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
+			double length = s_vec.norm(); // current spring length
+			spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
+		}
+#endif //STRESS_TEST
+
 		if (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
 			udp_server.msg_send.pop_back();
 		}

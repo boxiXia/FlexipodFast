@@ -26,7 +26,8 @@ class FlexipodEnv(gym.Env):
                 "ang_vel",     # base link (body) angular velocity [rad/s]
                 "com_acc",     # base link (body) acceleration
                 "com_vel",     # base link (body) velocity
-                "com_pos"      # base link (body) position
+                "spring_strain",# selected spring strain
+                "com_pos",      # base link (body) position
                 )
 
     ID =defaultdict(None,{name: k  for k,name in enumerate(REC_NAME)})
@@ -56,7 +57,7 @@ class FlexipodEnv(gym.Env):
         
         self.num_observation = num_observation
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
-        state_size = (self.dof * 3 + 6 + 3*3+1)*num_observation
+        state_size = (self.dof * 3 + 6 + 3*3+   1 + 128)*num_observation
         # state = np.empty(state_size,dtype=np.float32)
         action_size = self.dof
         
@@ -80,6 +81,7 @@ class FlexipodEnv(gym.Env):
             np.ones(3)*30,      # ang_vel
             np.ones(3)*30,      # com_acc
             np.ones(3)*2,       # com_vel
+            np.ones(128)*0.1,   # spring strain
             np.ones(1),         # com_pos_z
         ]).astype(np.float32)
         self.max_observation = np.tile(self.max_observation,num_observation)
@@ -94,7 +96,7 @@ class FlexipodEnv(gym.Env):
         self.pause_cmd_b = self.packer.pack([self.UDP_PAUSE,0,[0,0,0,0]])
         self.resume_cmd_b = self.packer.pack([self.UDP_RESUME,0,[0,0,0,0]])
         self.close_cmd_b = self.packer.pack([self.UDP_TERMINATE,0,[0,0,0,0]])
-        self.BUFFER_LEN = 4096  # in bytes
+        self.BUFFER_LEN = 32768  # in bytes
         self.TIMEOUT = 0.1 #timeout duration
         
 #         self.startSimulation()
@@ -130,20 +132,22 @@ class FlexipodEnv(gym.Env):
         """processed received message to state action pair"""
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
 #         observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
-        if repeat_first:
-             observation = np.hstack(
-                [np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32) for 
-                msg_i in [msg_rec[0]]*self.num_observation] )
-        else: 
-            observation = np.hstack(
-                [np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32) for msg_i in msg_rec] )
-            
-        observation = observation/self.max_observation
         msg_rec_i = msg_rec[0]
         orientation_z = msg_rec_i[self.ID['orientation']][2]
         actuation = msg_rec_i[self.ID['actuation']][2]
         # com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
         com_z = msg_rec_i[self.ID['com_pos']][2]
+        
+        if repeat_first:
+             observation = np.hstack(
+                [np.hstack(msg_i[2:-1]+[com_z]).astype(np.float32) for 
+                msg_i in [msg_rec[0]]*self.num_observation] )
+        else: 
+            observation = np.hstack(
+                [np.hstack(msg_i[2:-1]+[com_z]).astype(np.float32) for msg_i in msg_rec] )
+            
+        observation = observation/self.max_observation
+
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
         # uph_cost = (orientation_z+com_z)/self.opt_timestep*self.current_timestep
