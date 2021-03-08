@@ -65,9 +65,7 @@ class FlexipodEnv(gym.Env):
         
         self.max_action = 1.5 # [rad/s]
         self.opt_timestep = 250. # num of time step to pass the problem
-        
-        self.current_timestep = 0
-        
+                
         self.action_space = gym.spaces.Box(
             low= -self.max_action*np.ones(action_size,dtype=np.float32),
             high = self.max_action*np.ones(action_size,dtype=np.float32),
@@ -119,7 +117,6 @@ class FlexipodEnv(gym.Env):
 #             step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
             num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
             
-        self.current_timestep = self.current_timestep+1.
         for k in range(3): # try 3 times
             try:
                 msg_rec = self.receive()
@@ -157,15 +154,13 @@ class FlexipodEnv(gym.Env):
         
 #         reward = orientation_z
         done = True if (orientation_z<0.6)or(com_z<0.2) else False
-        info = {'t':msg_rec_i[self.ID['t']]}
-        if done:
-            self.current_timestep = 0. # reset current_timestep
-            info['episode_duration'] = info['t'] - self.episode_start_time
+        t = msg_rec_i[self.ID['t']]
+        info = {'t':t}
+        # if done:
 #             print(orientation_z,com_z)
         return observation,reward,done,info
     
     def reset(self):
-        self.current_timestep = 0 # reset time
         for k in range(3):# try 3 times
             try:
                 self.send_sock.sendto(self.reset_cmd_b,self.remote_address)

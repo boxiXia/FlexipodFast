@@ -82,7 +82,7 @@ int main()
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 0.06* radius_poisson;// mass per vertex
+	const double m = 0.1* radius_poisson;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
 	const double spring_constant = m*5e6; //spring constant for silicone leg
