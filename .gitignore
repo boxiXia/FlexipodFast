@@ -14,3 +14,5 @@ data/
 mesh/v7.0/OldVersions/
 
 src/python/runs/
+
+src/python/tmp/
