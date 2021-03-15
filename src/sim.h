@@ -788,9 +788,11 @@ public:
 	int id_oxyz_start = 0;// coordinate oxyz start index (inclusive)
 	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
 
+	int id_part_end = 0;// parts mass end index
+
 	// cuda and udp update parameters (should be constant during the simualtion)
 	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
-	int NUM_UPDATE_PER_ROTATION = 2; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
+	int NUM_UPDATE_PER_ROTATION = 3; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
 	int NUM_UDP_MULTIPLIER = 5;// udp update is decreased by this factor
 #endif
@@ -832,14 +834,12 @@ public:
 	bool RUNNING = false;
 	bool STARTED = false;
 	bool ENDED = false; // flag is set true when ~Simulation() is called
-	bool GPU_DONE = false;
 
 	// control
 	bool RESET = false;// reset flag
 	bool SHOULD_RUN = true;
 	bool SHOULD_END = false;
-	bool GRAPHICS_SHOULD_END = false; // a flag to notifiy the graphics thread to end
-	bool GRAPHICS_ENDED = false; // a flag set by the graphics thread to notify its termination
+
 
 	std::mutex mutex_running;
 	std::condition_variable cv_running;
@@ -860,18 +860,12 @@ public:
 	void clearConstraints(); // clears global constraints only
 
 	void setBreakpoint(const double time,const bool should_end=false); // tell the program to stop at a fixed time (doesn't hang).
-
 	void start();
-
-
 	void pause(const double t=0);//pause the simulation at (simulation) time t [s]
-
-
 	void resume();
 
-	void update_physics();
-	void update_graphics();
-	void execute(); // same as above but w/out reset
+	void updatePhysics();
+	void updateGraphics();
 
 #ifdef DEBUG_ENERGY
 	double energy(); //compute the total energy of the system
@@ -889,7 +883,6 @@ public:
 
 	UdpServer udp_server;
 
-	void SendUdpMessage(const UDP_HEADER & header = UDP_HEADER::ROBOT_STATE_REPORT);// update udp_server.msg_send and send
 	bool ReceiveUdpMessage();
 #endif //UDP
 
@@ -902,22 +895,31 @@ private:
 	std::thread thread_physics_update;
 #ifdef GRAPHICS
 	std::thread thread_graphics_update;
+	bool GRAPHICS_ENDED = false; // a flag set by thread_graphics_update to notify its termination
 #endif //GRAPHICS
+
+#ifdef UDP
+	std::thread thread_msg_update; // update udp message;
+	void updateUdpMessage();
+	bool SHOULD_SEND_UDP = false; // update and send udp
+	bool UDP_ENDED = false; // a flag set by thread_msg_update to notify its termination
+#endif // UDP
+
 	std::set<BreakPoint, BreakPoint> bpts; // list of breakpoints
 
-	int spring_block_size = 256; // spring update threads per block
+	int spring_block_size = 128; // spring update threads per block
 	int spring_grid_size;// spring update blocks per grid
 
-	int mass_block_size = 128; // mass update threads per block
+	int mass_block_size = 64; // mass update threads per block
 	int mass_grid_size; // mass update blocks per grid
 
-	int joint_block_size = 128; // joint rotate threads per blcok
+	int joint_block_size = 64; // joint rotate threads per blcok
 	int joint_grid_size;// joint rotate blocks per grid
 #ifdef GRAPHICS
-	int triangle_block_size = 128; // triangle update threads per block
+	int triangle_block_size = 64; // triangle update threads per block
 	int triangle_grid_size; // triangle update blocks per grid
 
-	int vertex_block_size = 128;// vertex update threads per block
+	int vertex_block_size = 64;// vertex update threads per block
 	int vertex_grid_size; // vertex update blocks per grid
 #endif //GRAPHICS
 

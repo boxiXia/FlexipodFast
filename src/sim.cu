@@ -336,12 +336,11 @@ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, siz
 	d_spring(num_spring, false),// allocate device
 	triangle(num_triangle,true),//allocate host
 	d_triangle(num_triangle, false),//allocate device
-	joint_control(num_joint,true) // joint controller, must also call reset, see update_physics()
+	joint_control(num_joint,true) // joint controller, must also call reset, see updatePhysics()
 #ifdef UDP
 	,udp_server(port_local, port_remote, ip_remote)// port_local,port_remote,ip_remote,num_joint
 #endif //UDP
 {
-
 	//cudaDeviceSynchronize();
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
 		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
@@ -497,12 +496,13 @@ void Simulation::start() {
 
 #ifdef UDP
 	udp_server.run();
+	thread_msg_update = std::thread(&Simulation::updateUdpMessage, this); //TODO: thread
 #endif //UDP
 
 #ifdef GRAPHICS
-	thread_graphics_update = std::thread(&Simulation::update_graphics, this); //TODO: thread
+	thread_graphics_update = std::thread(&Simulation::updateGraphics, this);
 #endif// Graphics
-	thread_physics_update = std::thread(&Simulation::update_physics, this); //TODO: thread
+	thread_physics_update = std::thread(&Simulation::updatePhysics, this);
 
 	{
 		int device;
@@ -512,7 +512,7 @@ void Simulation::start() {
 
 }
 
-void Simulation::update_physics() { // repeatedly start next
+void Simulation::updatePhysics() { // repeatedly start next
 
 	//cudaDeviceProp deviceProp;
 	//cudaGetDeviceProperties(&deviceProp, 0);
@@ -530,7 +530,6 @@ void Simulation::update_physics() { // repeatedly start next
 
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
-	int k_udp = 0; // udp counter
 	int k_rot = 0; // rotation counter
 
 #ifdef DEBUG_ENERGY
@@ -550,7 +549,6 @@ void Simulation::update_physics() { // repeatedly start next
 				bpts.erase(bpts.begin());// remove all breakpoints <= T
 			} while (!bpts.empty() && (*bpts.begin()).t <= T);
 
-
 			{	// condition variable 
 				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
 				RUNNING = false;
@@ -566,7 +564,7 @@ void Simulation::update_physics() { // repeatedly start next
 					std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
 					float diff = std::chrono::duration_cast<std::chrono::milliseconds>(ct_end - ct_begin).count();
 					if (diff >= 2 || msg_received) {
-						SendUdpMessage();
+						udp_server.send();// send udp message
 						ct_begin = ct_end;
 					}
 #endif // UDP
@@ -574,8 +572,8 @@ void Simulation::update_physics() { // repeatedly start next
 				lck.lock();
 				//cv_running.wait(lck, [this] {return SHOULD_RUN||SHOULD_END; }); // wait unitl SHOULD_RUN is signaled
 				RUNNING = true;
-				cv_running.notify_all(); // notifiy others RUNNING = true;
 				lck.unlock();
+				cv_running.notify_all(); // notifiy others RUNNING = true;
 			}
 			if (SHOULD_END) {
 				auto end = std::chrono::steady_clock::now();
@@ -589,17 +587,21 @@ void Simulation::update_physics() { // repeatedly start next
 				//	delete c;
 				//}
 
-				std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
 #ifdef GRAPHICS
-				GRAPHICS_SHOULD_END = true;
-				cv_running.notify_all(); //notify others RUNNING = false
-				cv_running.wait(lck, [this] {return GRAPHICS_ENDED; });
-#endif
-				GPU_DONE = true;
+				{
+					std::unique_lock<std::mutex> lck(mutex_running); // refer to:https://en.cppreference.com/w/cpp/thread/condition_variable
+					cv_running.wait(lck, [this] {return GRAPHICS_ENDED; });
+				}
+#endif //GRAPHICS
+#ifdef UDP
+				{
+					std::unique_lock<std::mutex> lck(mutex_running); 
+					cv_running.wait(lck, [this] {return UDP_ENDED; });
+				}
+#endif //UDP
 				RUNNING = false;
 				ENDED = true; // TODO maybe race condition
 				cv_running.notify_all(); //notify others RUNNING = false
-				printf("GPU done\n");
 				return;
 			}
 			//			// TODO NOTIFY THE OTHER THREAD
@@ -623,12 +625,10 @@ void Simulation::update_physics() { // repeatedly start next
 
 #ifdef UDP
 		ReceiveUdpMessage(); // receive udp message whenever there is new
-		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
-		}
 #endif // UDP
+
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
 		// update joint speed
-
 
 		for (int i = 0; i < joint.anchors.num; i++) { // compute joint angles and angular velocity
 			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.joint_vel_cmd[i] * dt;// update joint speed
@@ -680,35 +680,7 @@ void Simulation::update_physics() { // repeatedly start next
 
 #endif // DEBUG_ENERGY
 #ifdef UDP
-
-
-
-		body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS* dt);
-		udp_server.msg_send.emplace_front(
-			DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body));
-
-#ifdef STRESS_TEST
-		auto& spring_strain = udp_server.msg_send.front().spring_strain;
-		int step_spring_strain = id_restable_spring_start / NUM_SPRING_STRAIN;
-		for (int k = 0; k < NUM_SPRING_STRAIN; k++)
-		{
-			int i = k * step_spring_strain;
-			Vec2i e = spring.edge[i];
-			Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
-			double length = s_vec.norm(); // current spring length
-			spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
-		}
-#endif //STRESS_TEST
-
-		if (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
-			udp_server.msg_send.pop_back();
-		}
-		SendUdpMessage(UDP_HEADER::ROBOT_STATE_REPORT);// send udp message
-
-		if (k_udp % NUM_UDP_MULTIPLIER == 0) {
-			k_udp = 0;
-	}
-		k_udp += 1;
+		SHOULD_SEND_UDP = true;
 #endif // UDP
 
 		// restore the robot mass/spring/joint state to the backedup state
@@ -718,12 +690,6 @@ void Simulation::update_physics() { // repeatedly start next
 
 
 #ifdef UDP
-void Simulation::SendUdpMessage(const UDP_HEADER& header) {
-	// tell udp_server to send message
-	//udp_server.flag_should_send = true;
-	udp_server.send();
-	}
-
 bool Simulation::ReceiveUdpMessage() {
 	// receiving message
 	if (udp_server.flag_new_received) {
@@ -763,12 +729,49 @@ bool Simulation::ReceiveUdpMessage() {
 	}
 	else { return false; }
 }
+
+void Simulation::updateUdpMessage() {
+	while (!SHOULD_END) {
+		if (SHOULD_SEND_UDP) {
+			SHOULD_SEND_UDP = false;
+
+			body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS * dt);
+			udp_server.msg_send.emplace_front(
+				DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body));
+
+#ifdef STRESS_TEST
+			auto& spring_strain = udp_server.msg_send.front().spring_strain;
+			int step_spring_strain = id_part_end / NUM_SPRING_STRAIN;
+			for (int k = 0; k < NUM_SPRING_STRAIN; k++)
+			{
+				int i = k * step_spring_strain;
+				Vec2i e = spring.edge[i];
+				Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
+				double length = s_vec.norm(); // current spring length
+				spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
+			}
+#endif //STRESS_TEST
+
+			if (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
+				udp_server.msg_send.pop_back();
+			}
+			udp_server.send();// send udp message
+		}
+		//ReceiveUdpMessage();// receiving message
+	}
+	{	// notify the physics thread // https://en.cppreference.com/w/cpp/thread/condition_variable
+		std::lock_guard<std::mutex> lk(mutex_running);
+		UDP_ENDED = true;
+	}
+	cv_running.notify_all();
+}
+
 #endif //UDP
 
 
 
 #ifdef GRAPHICS
-void Simulation::update_graphics() {
+void Simulation::updateGraphics() {
 
 	createGLFWWindow(); // create a window with  width and height
 
@@ -833,7 +836,7 @@ void Simulation::update_graphics() {
 	if (error != GL_NO_ERROR)
 		std::cerr << "OpenGL Error " << error << std::endl;
 
-	while (!GRAPHICS_SHOULD_END) {
+	while (!SHOULD_END) {
 
 		std::this_thread::sleep_for(std::chrono::microseconds(int(1e6 / 60.02)));// TODO fix race condition
 
@@ -981,8 +984,8 @@ void Simulation::update_graphics() {
 	{	// notify the physics thread // https://en.cppreference.com/w/cpp/thread/condition_variable
 		std::lock_guard<std::mutex> lk(mutex_running); 
 		GRAPHICS_ENDED = true;
-		cv_running.notify_all();
 	}
+	cv_running.notify_all();
 
 	
 	return;
@@ -990,11 +993,6 @@ void Simulation::update_graphics() {
 
 }
 #endif
-
-void Simulation::execute() {
-
-
-}
 
 
 
@@ -1007,43 +1005,28 @@ Simulation::~Simulation() {
 			std::unique_lock<std::mutex> lck(mutex_running);//https://en.cppreference.com/w/cpp/thread/condition_variable
 			cv_running.wait(lck, [this] {return ENDED; });
 		}
+		assert(thread_physics_update.joinable());
+		thread_physics_update.join();
+		//printf("thread_physics_update joined\n");
 
-		if (thread_physics_update.joinable()) {
-
-			thread_physics_update.join();
-			printf("thread_physics_update joined\n");
-		}
 #ifdef GRAPHICS
-		if (thread_graphics_update.joinable()) {
-			thread_graphics_update.join();
-			printf("thread_graphics_update joined\n");
-		}
+		assert(thread_graphics_update.joinable());
+		thread_graphics_update.join();
+		//printf("thread_graphics_update joined\n");
 #endif
-		else {
-			printf("could not join GPU thread.\n");
-			exit(1);
-		}
+
 #ifdef UDP
+		assert(thread_msg_update.joinable());
+		thread_msg_update.join();
 		udp_server.close();
 #endif // UDP
 	}
 	freeGPU();
+	printf("Simulation ended\n");
 }
 
 
 void Simulation::freeGPU() {
-	//Todo
-	//for (Spring* s : springs) {
-	//	s->_left = nullptr;
-	//	s->_right = nullptr;
-	//	delete s;
-	//}
-	//for (Mass* m : masses) {
-	//	if (m->arrayptr) {
-	//		gpuErrchk(cudaFree(m->arrayptr));
-	//	}
-	//	delete m;
-	//}
 	d_balls.clear();
 	d_balls.shrink_to_fit();
 
@@ -1244,14 +1227,14 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 
 void Simulation::updateVertexBuffers() {
 	size_t num_bytes;
-	cudaGraphicsMapResources(1, &cuda_resource_vertex, 0);
+	cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]);
 	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
 	if (show_triangle) {
 		updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
 	}
-	cudaGraphicsUnmapResources(1, &cuda_resource_vertex, 0);// unmap buffer object
+	cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]);// unmap buffer object
 }
 
 inline void Simulation::draw() {

@@ -72,8 +72,8 @@ int main()
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 	TRIANGLE triangle = sim.triangle;// reference variable for sim.triangle
 
-	//sim.dt = 4e-5; // timestep
-	sim.dt = 5e-5; // timestep
+	sim.dt = 4e-5; // timestep
+	//sim.dt = 5e-5; // timestep
 
 	//constexpr double radius_poisson = 12.5 * 1e-3;
 	const double  radius_poisson = bot.radius_poisson;
@@ -87,28 +87,36 @@ int main()
 
 	const double spring_constant = m*5e6; //spring constant for silicone leg
 	const double spring_damping = m*3e2; // damping for spring
-	//const double spring_damping = m * 1.5e2; // damping for spring
 
-	//const double spring_constant = m * 1.5e6; //spring constant for silicone leg
-	//const double spring_damping = m * 1.5e2; // damping for spring
+	//const double spring_constant = m * 22e6; //spring constant for silicone leg
+	//const double spring_damping = m * 3e2; // damping for spring
+	//constexpr double scale_rigid = 1;// scaling factor rigid
 
 
-	constexpr double scale_high = 2;// scaling factor high
+	constexpr double scale_rigid = 2;// scaling factor rigid
+	constexpr double scale_soft = 5; // scaling factor soft
+
+	constexpr double scale_joint_k = 3.2; // scaling factor for the joint spring constant
+	constexpr double scale_joint_m = 1.6; // scaling factor for the joint mass
+	constexpr double scale_joint_damping = 4; // scaling factor for the joint spring damping
+
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
 
-	const double spring_constant_rigid = spring_constant * scale_high;//spring constant for rigid spring
+	const double spring_constant_rigid = spring_constant * scale_rigid;//spring constant for rigid spring
+	const double spring_constant_soft = spring_constant * scale_soft;//spring constant for soft spring
 
-	const double spring_constant_restable = spring_constant * scale_high; // spring constant for resetable spring
-	const double spring_damping_restable = spring_damping * scale_high*2; // spring damping for resetable spring
+	const double spring_constant_restable = spring_constant * scale_joint_k; // spring constant for resetable spring
+	const double spring_damping_restable = spring_damping * scale_joint_damping; // spring damping for resetable spring
 
 	//const double spring_constant_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
 
 	// spring coefficient for the probing springs, e.g. coordinates
-	const double spring_constant_probe_anchor = spring_constant * scale_probe; // spring constant for coordiates anchor springs
-	const double spring_constant_probe_self = spring_constant * scale_probe * scale_high; // spring constant for coordiates self springs
-	const double spring_damping_probe = spring_damping * scale_probe * scale_high;
+	const double m_probe = m * scale_probe;//mass for the probe
+	const double spring_constant_probe_anchor = spring_constant * scale_probe* scale_rigid; // spring constant for coordiates anchor springs
+	const double spring_constant_probe_self = spring_constant * scale_probe* scale_rigid; // spring constant for coordiates self springs
+	const double spring_damping_probe = spring_damping * scale_probe* scale_rigid;
 
 #pragma omp parallel for simd
 	for (int i = 0; i < num_triangle; i++)
@@ -131,7 +139,7 @@ int main()
 		spring.damping[i] = spring_damping; // spring constant
 		spring.rest[i] = (mass.pos[spring.edge[i].x] - mass.pos[spring.edge[i].y]).norm(); // spring rest length
 		// longer spring will have a smalller influence, https://ccrma.stanford.edu/~jos/pasp/Young_s_Modulus_Spring_Constant.html
-		spring.k[i] = spring_constant * radius_knn / std::max(spring.rest[i], min_radius); // spring constant
+		spring.k[i] = spring_constant_soft * radius_knn / std::max(spring.rest[i], min_radius); // spring constant
 		//spring.k[i] = spring_constant; // spring constant
 		spring.resetable[i] = false; // set all spring as non-resetable
 	}
@@ -139,6 +147,7 @@ int main()
 
 	/*bot.idVertices: body,leg0,leg1,leg2,leg3,anchor,coord,the end
 	 bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end */
+
 
 	 //// set higher mass value for robot body
 	 //for (int i = bot.idVertices[0]; i < bot.idVertices[1]; i++)
@@ -158,11 +167,11 @@ int main()
 	{
 		for each (int j in bot.Joints[i].left)
 		{
-			mass.m[j] = m * scale_high;
+			mass.m[j] = m * scale_joint_m;
 		}
 		for each (int j in bot.Joints[i].right)
 		{
-			mass.m[j] = m * scale_high;
+			mass.m[j] = m * scale_joint_m;
 		}
 	}
 
@@ -170,19 +179,17 @@ int main()
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
-		//spring.k[i] = spring_constant_rigid;
-		spring.k[i] *= scale_high;
+		spring.k[i] = spring_constant_rigid;
 	}
+
 	// set higher spring constant for the rotational joints
 	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body + 1]; i++)
 	{
 		spring.k[i] = spring_constant_rigid; // joints anchors
-		//spring.k[i] *= scale_high;
 	}
 	for (int i = bot.idEdges[num_body + 1]; i < bot.idEdges[num_body + 2]; i++)
 	{
 		spring.k[i] = spring_constant_rigid; // joints rotation spring
-		//spring.k[i] *= scale_high;
 		//spring.damping[i] = spring_damping_restable;
 	}
 
@@ -195,13 +202,15 @@ int main()
 		spring.resetable[i] = true;
 	}
 
+	sim.id_part_end = bot.idVertices[num_body];// index where the parts m ends
 	sim.id_oxyz_start = bot.idVertices[num_body + 1];
 	sim.id_oxyz_end = bot.idVertices[num_body + 2];
+
 
 	// set lower mass for the anchored coordinate systems
 	for (int i = sim.id_oxyz_start; i < sim.id_oxyz_end; i++)
 	{
-		mass.m[i] = m * scale_probe; // mass [kg]
+		mass.m[i] = m_probe; // mass [kg]
 	}
 
 	for (int i = bot.idEdges[num_body + 3]; i < bot.idEdges[num_body + 4]; i++)
@@ -218,8 +227,6 @@ int main()
 	sim.joint.init(bot.Joints, true);
 	sim.d_joint.init(bot.Joints, false);
 	sim.d_joint.copyFrom(sim.joint);
-
-
 
 
 	// print out mass statistics
