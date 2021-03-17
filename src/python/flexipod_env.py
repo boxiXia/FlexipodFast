@@ -34,15 +34,15 @@ class FlexipodEnv(gym.Env):
     CMD_ID = defaultdict(None,{name: k  for k,name in enumerate(CMD_NAME)})
     COMBINED_NAME = tuple(list(REC_NAME)[1:]+["cmd"])
     
-    UDP_TERMINATE = -1
-    UDP_PAUSE = 17
-    UDP_RESUME = 16
-    UDP_RESET = 15
-    UDP_ROBOT_STATE_REPORT = 14
-    UDP_MOTOR_VEL_COMMEND = 13
-    UDP_STEP_MOTOR_VEL_COMMEND = 12
-    UDP_MOTOR_POS_COMMEND = 11
-    UDP_STEP_MOTOR_POS_COMMEND = 10
+    UDP_TERMINATE = int(-1)
+    UDP_PAUSE = int(17)
+    UDP_RESUME = int(16)
+    UDP_RESET = int(15)
+    UDP_ROBOT_STATE_REPORT = int(14)
+    UDP_MOTOR_VEL_COMMEND = int(13)
+    UDP_STEP_MOTOR_VEL_COMMEND = int(12)
+    UDP_MOTOR_POS_COMMEND = int(11)
+    UDP_STEP_MOTOR_POS_COMMEND = int(10)
     
     def __init__(self, dof = 12, num_observation=5,normalize = True,
            ip_local = "127.0.0.1", port_local = 32000,
@@ -111,13 +111,13 @@ class FlexipodEnv(gym.Env):
 #         step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),action])
         if action is not None:
             
-            cmd_action = np.multiply(action,self.max_action).tolist()# map action -> action*max_acton
+            cmd_action = np.multiply(action,self.max_action).astype(np.float32).tolist()# map action -> action*max_acton
         
             step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
 #             step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
             num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
             
-        for k in range(3): # try 3 times
+        for k in range(5): # try 5 times
             try:
                 msg_rec = self.receive()
                 return self._processRecMsg(msg_rec,repeat_first = False)
@@ -161,7 +161,7 @@ class FlexipodEnv(gym.Env):
         return observation,reward,done,info
     
     def reset(self):
-        for k in range(3):# try 3 times
+        for k in range(5):# try 5 times
             try:
                 self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
                 time.sleep(1/500)

@@ -89,21 +89,21 @@ class ActorCritic(nn.Module):
         #         nn.Tanh()
         #         )
         self.actor =  nn.Sequential(
-                ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
-                ResidualDenseBlock(256,256, activation="leaky_relu"),
-                ResidualDenseBlock(256,256, activation="leaky_relu"),
-                ResidualDenseBlock(256,256, activation="leaky_relu"),
-                nn.Linear(256, action_dim),
+                ResidualDenseBlock(state_dim,128, activation="leaky_relu"),
+                ResidualDenseBlock(128,128, activation="leaky_relu"),
+                ResidualDenseBlock(128,128, activation="leaky_relu"),
+                ResidualDenseBlock(128,128, activation="leaky_relu"),
+                nn.Linear(128, action_dim),
                 nn.Tanh()
                 )
         
         # critic
         self.critic = nn.Sequential(
-                ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
-                ResidualDenseBlock(256,256, activation="leaky_relu"),
-                ResidualDenseBlock(256,256, activation="leaky_relu"),
-                ResidualDenseBlock(256,256, activation="leaky_relu"),
-                nn.Linear(256, 1)
+                ResidualDenseBlock(state_dim,128, activation="leaky_relu"),
+                ResidualDenseBlock(128,128, activation="leaky_relu"),
+                ResidualDenseBlock(128,128, activation="leaky_relu"),
+                ResidualDenseBlock(128,128, activation="leaky_relu"),
+                nn.Linear(128, 1)
                 )
         # self.critic = nn.Sequential(
         #         # nn.Linear(state_dim, 256),

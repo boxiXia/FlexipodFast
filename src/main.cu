@@ -94,7 +94,7 @@ int main()
 
 
 	constexpr double scale_rigid = 2;// scaling factor rigid
-	constexpr double scale_soft = 5; // scaling factor soft
+	constexpr double scale_soft = 1; // scaling factor soft
 
 	constexpr double scale_joint_k = 3.2; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 1.6; // scaling factor for the joint mass

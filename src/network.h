@@ -243,7 +243,6 @@ private:
 					msgpack::object obj = oh.get();
 					obj.convert(_msg_rec);  // use private value to prevent modification during convert
 					msg_rec = _msg_rec;
-
 					//TODO notify the simulation thread
 					//TODO use condition variable
 					flag_new_received = true;
@@ -253,6 +252,10 @@ private:
 				//todo: ignore it
 				//printf("timed out\n");
 				//printf( __FILE__, __LINE__);
+				continue;
+			}
+			catch (const std::exception& e) {
+				printf("Caught exception %s,line %d: %s \n", __FILE__, __LINE__, e.what());
 			}
 			//std::this_thread::sleep_for(std::chrono::nanoseconds(10));
 		}
