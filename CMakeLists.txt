@@ -1,7 +1,11 @@
 message(STATUS "${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}") # print cmake version
 cmake_minimum_required(VERSION 3.14)
 project(Titan LANGUAGES C CXX CUDA) # use CXX, CUDA by default (since CUDA is a language, don't need cuda_add_executable)
-set(CMAKE_CXX_STANDARD 20) # set C++ standard to C++20
+set(CMAKE_CXX_STANDARD 17) # set C++ standard to C++20
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CXX_EXTENSIONS OFF) ## on g++ this ensures: -std=c++11 and not -std=gnu++11
+
+
 
 # https://github.com/microsoft/vcpkg/blob/master/docs/users/integration.md#using-an-environment-variable-instead-of-a-command-line-option
 # SET CMAKE_TOOLCHAIN_FILE
@@ -113,9 +117,16 @@ foreach(shader ${shaders})
     get_filename_component(shader_name "${shader}" NAME)
     makeLink(${shader} ${CMAKE_CURRENT_BINARY_DIR}/${shader_name} flexipod)
 endforeach()
-makeLink(${CMAKE_SOURCE_DIR}/src/data.msgpack ${CMAKE_CURRENT_BINARY_DIR}/data.msgpack flexipod)
-makeLink(${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl flexipod)
-makeLink(${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl flexipod)
+file(GLOB msgpack_list "${CMAKE_SOURCE_DIR}/src/*.msgpack" CONFIGURE_DEPENDS "*.msgpack")
+foreach(data ${msgpack_list})
+    message(STATUS ${data})
+    get_filename_component(data_name "${data}" NAME)
+    makeLink(${data} ${CMAKE_CURRENT_BINARY_DIR}/${data_name} flexipod)
+endforeach()
+
+# makeLink(${CMAKE_SOURCE_DIR}/src/data.msgpack ${CMAKE_CURRENT_BINARY_DIR}/data.msgpack flexipod)
+#makeLink(${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl flexipod)
+#makeLink(${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl flexipod)
    
 
 add_executable(simpleSocketTest

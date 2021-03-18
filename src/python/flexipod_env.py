@@ -164,7 +164,7 @@ class FlexipodEnv(gym.Env):
         for k in range(5):# try 5 times
             try:
                 self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
-                time.sleep(1/500)
+                time.sleep(1/400)
                 msg_rec = self.receive()
                 observation,reward,done,info =  self._processRecMsg(msg_rec,repeat_first = True)
                 self.episode_start_time = info['t']

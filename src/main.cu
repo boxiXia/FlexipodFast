@@ -57,7 +57,8 @@ int main()
 
 
 	//Model bot("..\\src\\data.msgpack"); //defined in sim.h
-	Model bot(getProgramDir()+"\\data.msgpack"); //defined in sim.h
+	Model bot(getProgramDir()+"\\flexipod_12dof.msgpack"); //defined in sim.h
+	//Model bot(getProgramDir() + "\\flexipod_4dof.msgpack"); //defined in sim.h
 
 
 	const size_t num_body = bot.idVertices.size() - 3;//number of bodies
@@ -98,7 +99,7 @@ int main()
 
 	constexpr double scale_joint_k = 3.2; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 1.6; // scaling factor for the joint mass
-	constexpr double scale_joint_damping = 4; // scaling factor for the joint spring damping
+	constexpr double scale_joint_damping = 3.2; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
@@ -179,7 +180,7 @@ int main()
 	// set higher spring constant for the robot body
 	for (int i = 0; i < bot.idEdges[1]; i++)
 	{
-		spring.k[i] = spring_constant_rigid;
+		spring.k[i] = spring.k[i] * scale_rigid;
 	}
 
 	// set higher spring constant for the rotational joints
@@ -190,6 +191,7 @@ int main()
 	for (int i = bot.idEdges[num_body + 1]; i < bot.idEdges[num_body + 2]; i++)
 	{
 		spring.k[i] = spring_constant_rigid; // joints rotation spring
+		//spring.k[i] = spring_constant; // joints rotation spring
 		//spring.damping[i] = spring_damping_restable;
 	}
 

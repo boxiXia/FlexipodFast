@@ -631,7 +631,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 		// update joint speed
 
 		for (int i = 0; i < joint.anchors.num; i++) { // compute joint angles and angular velocity
-			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.joint_vel_cmd[i] * dt;// update joint speed
+			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.cmd[i] * dt;// update joint speed
 		}
 		d_joint.anchors.copyThetaFrom(joint.anchors, stream[CUDA_DYNAMICS_STREAM]);
 
@@ -706,7 +706,7 @@ bool Simulation::ReceiveUdpMessage() {
 			break;
 		case UDP_HEADER::MOTOR_SPEED_COMMEND:
 			for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-				joint_control.joint_vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
+				joint_control.vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
 			}
 			break;
 		case UDP_HEADER::PAUSE:
@@ -717,7 +717,7 @@ bool Simulation::ReceiveUdpMessage() {
 			break;
 		case UDP_HEADER::STEP_MOTOR_SPEED_COMMEND:
 			for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-				joint_control.joint_vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
+				joint_control.vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
 			}
 			if (!RUNNING) { SHOULD_RUN = true; }
 			setBreakpoint(T + NUM_QUEUED_KERNELS * dt* NUM_UDP_MULTIPLIER);
@@ -861,31 +861,23 @@ void Simulation::updateGraphics() {
 			double speed_multiplier = 0.02;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
-				if (joint_control.joint_vel_desired[0] < joint_control.max_joint_vel[0]) { joint_control.joint_vel_desired[0] += speed_multiplier; }
-				if (joint_control.joint_vel_desired[1] < joint_control.max_joint_vel[1]) { joint_control.joint_vel_desired[1] += speed_multiplier; }
-				if (joint_control.joint_vel_desired[2] > -joint_control.max_joint_vel[2]) { joint_control.joint_vel_desired[2] -= speed_multiplier; }
-				if (joint_control.joint_vel_desired[3] > -joint_control.max_joint_vel[3]) { joint_control.joint_vel_desired[3] -= speed_multiplier; }
+				for (int i = 0; i < joint.size(); i++) { 
+					joint_control.vel_desired[i] += i<2? speed_multiplier:-speed_multiplier;
+				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
-				if (joint_control.joint_vel_desired[0] > -joint_control.max_joint_vel[0]) { joint_control.joint_vel_desired[0] -= speed_multiplier; }
-				if (joint_control.joint_vel_desired[1] > -joint_control.max_joint_vel[1]) { joint_control.joint_vel_desired[1] -= speed_multiplier; }
-				if (joint_control.joint_vel_desired[2] < joint_control.max_joint_vel[2]) { joint_control.joint_vel_desired[2] += speed_multiplier; }
-				if (joint_control.joint_vel_desired[3] < joint_control.max_joint_vel[3]) { joint_control.joint_vel_desired[3] += speed_multiplier; }
+				for (int i = 0; i < joint.size(); i++) {
+					joint_control.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
+				}
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-				for (int i = 0; i < joint.size(); i++)
-				{
-					if (joint_control.joint_vel_desired[i] > -joint_control.max_joint_vel[i]) { joint_control.joint_vel_desired[i] -= speed_multiplier; }
-				}
+				for (int i = 0; i < joint.size(); i++){ joint_control.vel_desired[i] -= speed_multiplier; }
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-				for (int i = 0; i < joint.size(); i++)
-				{
-					if (joint_control.joint_vel_desired[i] < joint_control.max_joint_vel[i]) { joint_control.joint_vel_desired[i] += speed_multiplier; }
-				}
+				for (int i = 0; i < joint.size(); i++) { joint_control.vel_desired[i] += speed_multiplier; }
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
-				for (int i = 0; i < joint.size(); i++) { joint_control.joint_vel_desired[i] = 0.; }
+				for (int i = 0; i < joint.size(); i++) { joint_control.vel_desired[i] = 0.; }
 			}
 
 
