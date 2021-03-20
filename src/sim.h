@@ -574,7 +574,7 @@ struct JointControl {
 			}
 			pos[i] = angle;
 
-			// update cmd with position PD control
+			// update cmd with position PD control: clamp to (-max_vel,max_vel)
 			if (vel_desired[i] > max_vel[i]) { vel_desired[i] = max_vel[i]; }
 			else if (vel_desired[i] < -max_vel[i]) { vel_desired[i] = -max_vel[i]; }
 

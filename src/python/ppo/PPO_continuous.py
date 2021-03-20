@@ -127,6 +127,7 @@ class ActorCritic(nn.Module):
     def act(self, state, memory):
         action_mean = self.actor(state)
         cov_mat = torch.diag(self.action_var).to(device)
+        # cov_mat = torch.diag(self.action_var)
         
         dist = MultivariateNormal(action_mean, cov_mat)
         action = dist.sample()
@@ -170,7 +171,7 @@ class PPO:
     
     def select_action(self, state, memory):
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-        return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
+        return self.policy_old.act(state, memory).cpu().numpy().ravel()
     
     def update(self, memory):
         # Monte Carlo estimate of rewards:

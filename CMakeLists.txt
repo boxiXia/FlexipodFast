@@ -124,7 +124,7 @@ foreach(data ${msgpack_list})
     makeLink(${data} ${CMAKE_CURRENT_BINARY_DIR}/${data_name} flexipod)
 endforeach()
 
-# makeLink(${CMAKE_SOURCE_DIR}/src/data.msgpack ${CMAKE_CURRENT_BINARY_DIR}/data.msgpack flexipod)
+#makeLink(${CMAKE_SOURCE_DIR}/src/data.msgpack ${CMAKE_CURRENT_BINARY_DIR}/data.msgpack flexipod)
 #makeLink(${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl flexipod)
 #makeLink(${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl flexipod)
    
