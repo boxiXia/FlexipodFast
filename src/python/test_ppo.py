@@ -27,14 +27,14 @@ env = FlexipodEnv(dof = 12)
 env_name = "flexipod"
 render = True
 solved_reward = 1500        # stop training if avg_reward > solved_reward
-log_interval = 80           # print avg reward in the interval
+log_interval = 20           # print avg reward in the interval
 # log_interval = 2           # print avg reward in the interval
 
 max_episodes = 20000        # max training episodes
 max_timesteps = 1500        # max timesteps in one episode
 
-# update_timestep = 4000      # update policy every n timesteps
-update_timestep = 300      # update policy every n timesteps
+update_timestep = 4000      # update policy every n timesteps
+# update_timestep = 300      # update policy every n timesteps
 
 
 # action_std = 1.0            # constant std for action distribution (Multivariate Normal)
@@ -75,9 +75,9 @@ avg_length = 0
 max_avg_length = 0
 time_step = 0
 
-# checkpoint = ppo.load(f'./PPO_continuous_{env_name}_best.pth')
-# checkpoint = ppo.load(f'./PPO_continuous_{env_name}.pth')
-# max_avg_length = checkpoint["avg_length"]
+checkpoint = ppo.load(f'./PPO_continuous_{env_name}_best.pth')
+checkpoint = ppo.load(f'./PPO_continuous_{env_name}.pth')
+max_avg_length = checkpoint["avg_length"]
 
 # training loop
 for i_episode in range(0, max_episodes+1):
@@ -94,9 +94,12 @@ for i_episode in range(0, max_episodes+1):
 
         # update if its time
         if time_step % update_timestep == 0:
+            print(f"update #{i_episode}")
+            env.pause()# pause the simulation
             ppo.update(memory)
             memory.clear_memory()
             time_step = 0
+            env.resume()# resume the simulation
         running_reward += reward
         # if render:
         #     env.render()

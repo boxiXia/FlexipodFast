@@ -78,16 +78,6 @@ class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, action_std):
         super(ActorCritic, self).__init__()
         # action mean range -1 to 1
-        # self.actor =  nn.Sequential(
-        #         nn.Linear(state_dim, 256),
-        #         nn.LeakyReLU(),#todo change to leaky relu
-        #         nn.Linear(256, 256),
-        #         nn.LeakyReLU(),
-        #         nn.Linear(256, 256),
-        #         nn.LeakyReLU(),
-        #         nn.Linear(256, action_dim),
-        #         nn.Tanh()
-        #         )
         self.actor =  nn.Sequential(
                 ResidualDenseBlock(state_dim,128, activation="leaky_relu"),
                 ResidualDenseBlock(128,128, activation="leaky_relu"),
@@ -105,19 +95,6 @@ class ActorCritic(nn.Module):
                 ResidualDenseBlock(128,128, activation="leaky_relu"),
                 nn.Linear(128, 1)
                 )
-        # self.critic = nn.Sequential(
-        #         # nn.Linear(state_dim, 256),
-        #         # nn.LeakyReLU(),
-        #         ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
-        #         # nn.Linear(256, 256),
-        #         # nn.LeakyReLU(),
-        #         ResidualDenseBlock(256,256, activation="leaky_relu"),
-        #         ResidualDenseBlock(256,256, activation="leaky_relu"),
-        #         ResidualDenseBlock(256,256, activation="leaky_relu"),
-        #         # nn.Linear(256, 256),
-        #         # nn.LeakyReLU(),
-        #         nn.Linear(256, 1)
-        #         )
                 
         self.action_var = torch.full((action_dim,), action_std*action_std).to(device)
         
@@ -143,7 +120,7 @@ class ActorCritic(nn.Module):
         
         action_var = self.action_var.expand_as(action_mean)
         cov_mat = torch.diag_embed(action_var).to(device)
-        
+        # there is a bug in pytorch 1.8 on AMD platform
         dist = MultivariateNormal(action_mean, cov_mat)
         
         action_logprobs = dist.log_prob(action)
@@ -170,8 +147,9 @@ class PPO:
     
     def select_action(self, state, memory):
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-        return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
-    
+        # return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
+        return self.policy_old.act(state, memory).cpu().numpy().ravel()
+
     def update(self, memory):
         # Monte Carlo estimate of rewards:
         rewards = []
@@ -193,7 +171,7 @@ class PPO:
         
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
-            print(_)
+            # print(_)
             # Evaluating old actions and values :
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
             
