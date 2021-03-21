@@ -56,7 +56,7 @@ action_dim = env.action_space.shape[0]
 ########################################################
 from torch.utils.tensorboard import SummaryWriter
 # default `log_dir` is "runs" - we'll be more specific here
-writer = SummaryWriter('runs/soft12dof_experiment_tmp')
+writer = SummaryWriter('runs/soft12dof_experiment_2')
 
 ##################################
 if random_seed:
@@ -75,9 +75,9 @@ avg_length = 0
 max_avg_length = 0
 time_step = 0
 
-checkpoint = ppo.load(f'./PPO_continuous_{env_name}_best.pth')
-checkpoint = ppo.load(f'./PPO_continuous_{env_name}.pth')
-max_avg_length = checkpoint["avg_length"]
+# checkpoint = ppo.load(f'./PPO_continuous_{env_name}_best.pth')
+# checkpoint = ppo.load(f'./PPO_continuous_{env_name}.pth')
+# max_avg_length = checkpoint["avg_length"]
 
 # training loop
 for i_episode in range(0, max_episodes+1):
