@@ -1,11 +1,11 @@
 # modified from: https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO_continuous.py
 import torch
 import torch.nn as nn
-from torch.distributions import MultivariateNormal
+from torch.distributions.multivariate_normal import MultivariateNormal
 import gym
 import numpy as np
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 
@@ -193,6 +193,7 @@ class PPO:
         
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
+            print(_)
             # Evaluating old actions and values :
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
             
