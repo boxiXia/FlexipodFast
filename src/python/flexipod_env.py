@@ -123,7 +123,7 @@ class FlexipodEnv(gym.Env):
                 return self._processRecMsg(msg_rec,repeat_first = False)
             except Exception as e: # raise the exception at the last time
                 warnings.warn(f"step(): try #{k}:{e}")
-                if k==2: raise e 
+        raise TimeoutError("step():tried too many times")
 
     def _processRecMsg(self,msg_rec,repeat_first = False):
         """processed received message to state action pair"""
@@ -171,8 +171,7 @@ class FlexipodEnv(gym.Env):
                 return observation
             except Exception as e:
                 warnings.warn(f"reset(): try #{k}:{e}")
-                if k==2: # failed at last time
-                    raise e
+        raise TimeoutError("step():tried too many times")
     
     def render(self,mode="human"):
         pass
