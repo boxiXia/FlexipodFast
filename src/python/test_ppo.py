@@ -30,7 +30,7 @@ solved_reward = 1500        # stop training if avg_reward > solved_reward
 log_interval = 20           # print avg reward in the interval
 # log_interval = 2           # print avg reward in the interval
 
-max_episodes = 20000        # max training episodes
+max_episodes = 4000        # max training episodes
 max_timesteps = 1500        # max timesteps in one episode
 
 update_timestep = 4000      # update policy every n timesteps
@@ -56,7 +56,7 @@ action_dim = env.action_space.shape[0]
 ########################################################
 from torch.utils.tensorboard import SummaryWriter
 # default `log_dir` is "runs" - we'll be more specific here
-writer = SummaryWriter('runs/soft12dof_experiment_2')
+writer = SummaryWriter('runs/soft_6.0_0')
 
 ##################################
 if random_seed:
