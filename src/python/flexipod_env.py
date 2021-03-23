@@ -72,7 +72,7 @@ class FlexipodEnv(gym.Env):
         state_size = np.sum([REC_NAME[self.ID[name]]["size"] for name in OBS_NAME])-2
         
         # self.max_action = 1.5 # [rad/s]
-        self.max_action = 0.05 # [rad], delta position control
+        self.max_action = 0.02 # [rad], delta position control
                 
         self.action_space = gym.spaces.Box(
             low= -self.max_action*np.ones(self.dof,dtype=np.float32),
