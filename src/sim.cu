@@ -83,14 +83,14 @@ __global__ void updtateSpringStrain(
 	const int start,//start index (inclusive), must<spring.size()
 	const int end, // end index (exclusive), must<=spring.size()
 	const int step // step size
-	) {
+) {
 	int k = blockIdx.x * blockDim.x + threadIdx.x;
 	int i = start + k * step;
-	if (i< end) {
+	if (i < end) {
 		Vec2i e = spring.edge[i];
 		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		strain[i] = (length - spring.rest[i])/spring.rest[i];
+		strain[i] = (length - spring.rest[i]) / spring.rest[i];
 	}
 }
 #endif //STRESS_TEST
@@ -329,16 +329,16 @@ __global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restr
 //	}
 //}
 
-Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle):
+Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle) :
 	mass(num_mass, true), // allocate host
 	d_mass(num_mass, false),// allocate device
 	spring(num_spring, true),// allocate host
 	d_spring(num_spring, false),// allocate device
-	triangle(num_triangle,true),//allocate host
+	triangle(num_triangle, true),//allocate host
 	d_triangle(num_triangle, false),//allocate device
-	joint_control(num_joint,true) // joint controller, must also call reset, see updatePhysics()
+	joint_control(num_joint, true) // joint controller, must also call reset, see updatePhysics()
 #ifdef UDP
-	,udp_server(port_local, port_remote, ip_remote)// port_local,port_remote,ip_remote,num_joint
+	, udp_server(port_local, port_remote, ip_remote)// port_local,port_remote,ip_remote,num_joint
 #endif //UDP
 {
 	//cudaDeviceSynchronize();
@@ -377,7 +377,7 @@ void Simulation::setMass() {
 //}
 
 /* compute the block size (threads per block) and grid size （blocks per grid)
-*  
+*
 */
 int Simulation::computeGridSize(int block_size, int num) {
 	int grid_size = (num - 1 + block_size) / block_size;// Round up according to array size 
@@ -409,13 +409,13 @@ void Simulation::updateCudaParameters() {
 
 void Simulation::setBreakpoint(const double time, const bool should_end) {
 	//assert(!ENDED, "Simulation has ended. Cannot setBreakpoint.");
-	bpts.insert(BreakPoint(time,should_end)); // TODO mutex breakpoints
+	bpts.insert(BreakPoint(time, should_end)); // TODO mutex breakpoints
 }
 
 /*pause the simulation at (simulation) time t [s] */
 void Simulation::pause(const double t) {
 	assert(!ENDED, "Simulation has ended. can't call pause");
-	setBreakpoint(t,false);
+	setBreakpoint(t, false);
 	//// Wait until simulation is actually paused
 	std::unique_lock<std::mutex> lck(mutex_running);
 	SHOULD_RUN = false;
@@ -451,7 +451,7 @@ void Simulation::backupState() {
 /*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
 void Simulation::resetState() {//TODO...fix bug
 	cudaDeviceSynchronize();
- 	d_mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM]);
+	d_mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM]);
 	mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM_ALT]);
 
 	d_spring.copyFrom(backup_spring, stream[CUDA_MEMORY_STREAM]);
@@ -477,7 +477,7 @@ void Simulation::start() {
 	STARTED = true;
 
 	T = 0;
-	
+
 	if (dt == 0.0) { // if dt hasn't been set by the user.
 		dt = 0.01; // min delta
 	}
@@ -595,7 +595,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 #endif //GRAPHICS
 #ifdef UDP
 				{
-					std::unique_lock<std::mutex> lck(mutex_running); 
+					std::unique_lock<std::mutex> lck(mutex_running);
 					cv_running.wait(lck, [this] {return UDP_ENDED; });
 				}
 #endif //UDP
@@ -684,7 +684,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 #endif // UDP
 
 		// restore the robot mass/spring/joint state to the backedup state
-		if (RESET) { resetState();}
+		if (RESET) { resetState(); }
 	}
 }
 
@@ -694,7 +694,7 @@ bool Simulation::ReceiveUdpMessage() {
 	// receiving message
 	if (udp_server.flag_new_received) {
 		udp_server.flag_new_received = false;
-		switch (udp_server.msg_rec.header){
+		switch (udp_server.msg_rec.header) {
 		case UDP_HEADER::TERMINATE://close the program
 			bpts.insert(BreakPoint(0, true));//SHOULD_END = true;
 			break;
@@ -705,8 +705,15 @@ bool Simulation::ReceiveUdpMessage() {
 			resetState();// restore the robot mass/spring/joint state to the backedup state
 			break;
 		case UDP_HEADER::MOTOR_SPEED_COMMEND:
-			for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-				joint_control.vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
+			joint_control.updateControlMode(JointControlMode::vel);
+			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
+				joint_control.vel_desired[i] = udp_server.msg_rec.joint_value_desired[i];
+			}
+			break;
+		case UDP_HEADER::MOTOR_POS_COMMEND:
+			joint_control.updateControlMode(JointControlMode::pos);
+			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
+				joint_control.pos_desired[i] = udp_server.msg_rec.joint_value_desired[i];
 			}
 			break;
 		case UDP_HEADER::PAUSE:
@@ -716,11 +723,12 @@ bool Simulation::ReceiveUdpMessage() {
 			SHOULD_RUN = true;
 			break;
 		case UDP_HEADER::STEP_MOTOR_SPEED_COMMEND:
-			for (int i = 0; i < joint.anchors.num; i++) {//update joint speed from received udp packet
-				joint_control.vel_desired[i] = udp_server.msg_rec.joint_vel_desired[i];
+			joint_control.updateControlMode(JointControlMode::vel);
+			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
+				joint_control.vel_desired[i] = udp_server.msg_rec.joint_value_desired[i];
 			}
 			if (!RUNNING) { SHOULD_RUN = true; }
-			setBreakpoint(T + NUM_QUEUED_KERNELS * dt* NUM_UDP_MULTIPLIER);
+			setBreakpoint(T + NUM_QUEUED_KERNELS * dt * NUM_UDP_MULTIPLIER);
 			break;
 		default:
 			break;
@@ -737,20 +745,11 @@ void Simulation::updateUdpMessage() {
 
 			body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS * dt);
 			udp_server.msg_send.emplace_front(
-				DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body));
-
-#ifdef STRESS_TEST
-			auto& spring_strain = udp_server.msg_send.front().spring_strain;
-			int step_spring_strain = id_part_end / NUM_SPRING_STRAIN;
-			for (int k = 0; k < NUM_SPRING_STRAIN; k++)
-			{
-				int i = k * step_spring_strain;
-				Vec2i e = spring.edge[i];
-				Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
-				double length = s_vec.norm(); // current spring length
-				spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
-			}
+				DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
+#ifdef STRESS_TEST	
+					, id_part_end, mass, spring
 #endif //STRESS_TEST
+				));
 
 			if (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
 				udp_server.msg_send.pop_back();
@@ -794,7 +793,7 @@ void Simulation::updateGraphics() {
 	//https://learnopengl.com/Advanced-Lighting/Shadows/Point-Shadows
 	//https://github.com/JoeyDeVries/LearnOpenGL/tree/master/src/5.advanced_lighting/3.1.3.shadow_mapping
 	simpleDepthShader = Shader(
-		program_dir + "\\shadow_mapping_depth_vertex.glsl", 
+		program_dir + "\\shadow_mapping_depth_vertex.glsl",
 		program_dir + "\\shadow_mapping_depth_fragment.glsl");
 	//simpleDepthShader.use();
 
@@ -858,32 +857,57 @@ void Simulation::updateGraphics() {
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
 			double t_lerp = 0.02;
-			double speed_multiplier = 0.02;
+			double speed_multiplier = 0.1;
+			double pos_multiplier = 0.05;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
-				for (int i = 0; i < joint.size(); i++) { 
-					joint_control.vel_desired[i] += i<2? speed_multiplier:-speed_multiplier;
+				for (int i = 0; i < joint.size(); i++) {
+					if (joint_control.mode == vel) {
+						joint_control.vel_desired[i] += i < 2 ? speed_multiplier : -speed_multiplier;
+					}
+					else if (joint_control.mode == pos) {
+						joint_control.pos_desired[i] += i < 2 ? pos_multiplier : -pos_multiplier;
+					}
 				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 				for (int i = 0; i < joint.size(); i++) {
-					joint_control.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
+					if (joint_control.mode == vel) {
+						joint_control.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
+					}
+					else if (joint_control.mode == pos) {
+						joint_control.pos_desired[i] -= i < 2 ? pos_multiplier : -pos_multiplier;
+					}
 				}
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-				for (int i = 0; i < joint.size(); i++){ joint_control.vel_desired[i] -= speed_multiplier; }
+				for (int i = 0; i < joint.size(); i++) {
+					if (joint_control.mode == vel) {
+						joint_control.vel_desired[i] -= speed_multiplier;
+					}
+					else if (joint_control.mode == pos) {
+						joint_control.pos_desired[i] -= pos_multiplier;
+					}
+				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-				for (int i = 0; i < joint.size(); i++) { joint_control.vel_desired[i] += speed_multiplier; }
+				for (int i = 0; i < joint.size(); i++) {
+					if (joint_control.mode == vel) {
+						joint_control.vel_desired[i] += speed_multiplier;
+					}
+					else if (joint_control.mode == pos) {
+						joint_control.pos_desired[i] += pos_multiplier;
+					}
+				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
-				for (int i = 0; i < joint.size(); i++) { joint_control.vel_desired[i] = 0.; }
+				joint_control.reset(mass, joint);
 			}
 
 
 			// https://en.wikipedia.org/wiki/Slerp
 			//mass.pos[id_oxyz_start].print();
-			
+
 
 			Vec3d camera_rotation_anchor = com_pos + (camera_up_offset - com_pos.dot(camera_up)) * camera_up;
 
@@ -908,14 +932,14 @@ void Simulation::updateGraphics() {
 			glm::mat4 lightProjection = glm::ortho(-1.5f, 1.5f, -1.5f, 1.5f, near_plane, far_plane);
 
 			//lightView = glm::lookAt(light.direction, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
-			glm::vec3 light_pos = glm::vec3 (
+			glm::vec3 light_pos = glm::vec3(
 				com_pos.x + light.direction.x,
 				com_pos.y + light.direction.y,
 				com_pos.z + light.direction.z);
 
 			glm::mat4 lightView = glm::lookAt(
 				light_pos, // camera position in World Space
-				glm::vec3(com_pos.x,com_pos.y,com_pos.z),// look at position
+				glm::vec3(com_pos.x, com_pos.y, com_pos.z),// look at position
 				glm::vec3(0., 1.0, 0.0));  // camera up vector (set to 0,-1,0 to look upside-down)
 
 			glm::mat4 lightSpaceMatrix = lightProjection * lightView;
@@ -974,12 +998,12 @@ void Simulation::updateGraphics() {
 	printf("\nwindow closed\n");
 
 	{	// notify the physics thread // https://en.cppreference.com/w/cpp/thread/condition_variable
-		std::lock_guard<std::mutex> lk(mutex_running); 
+		std::lock_guard<std::mutex> lk(mutex_running);
 		GRAPHICS_ENDED = true;
 	}
 	cv_running.notify_all();
 
-	
+
 	return;
 
 
@@ -993,7 +1017,7 @@ Simulation::~Simulation() {
 	std::cout << "Simulation destructor called." << std::endl;
 
 	if (STARTED) {
-		{		
+		{
 			std::unique_lock<std::mutex> lck(mutex_running);//https://en.cppreference.com/w/cpp/thread/condition_variable
 			cv_running.wait(lck, [this] {return ENDED; });
 		}
@@ -1100,15 +1124,15 @@ void Simulation::setViewport(const Vec3d& camera_position, const Vec3d& target_l
 	camera_href_dir = camera_href_dir.decompose(camera_up).normalize();
 
 	if (STARTED) { computeMVP(); }
-}
+	}
 void Simulation::moveViewport(const Vec3d& displacement) {
 	this->camera_pos += displacement;
 	if (STARTED) { computeMVP(); } // compute perspective projection matrix
 }
 void Simulation::computeMVP(bool update_view) {
 	// http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#cumulating-transformations--the-modelviewprojection-matrix
-	
-	
+
+
 	int iconified = glfwGetWindowAttrib(window, GLFW_ICONIFIED);// whether window is iconified
 	int width, height;
 	glfwGetFramebufferSize(window, &width, &height); // check if window is resized
@@ -1172,7 +1196,7 @@ void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GL
 
 
 inline void Simulation::generateBuffers() {
-	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat)* NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
 	createVBO(&vbo_edge, &cuda_resource_edge, spring.size() * sizeof(uint2), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 	createVBO(&vbo_triangle, &cuda_resource_triangle, triangle.size() * sizeof(uint3), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 }
@@ -1195,17 +1219,17 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 	size_t num_bytes;
 	// vertex update, map OpenGL buffer object for writing from CUDA: update positions and colors
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));
-	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
+	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes, cuda_resource_vertex);
 	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.size());
 	updateColors << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.color, mass.size());
-	updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos,d_triangle.triangle,triangle.size());
-	
+	updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
+
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 
 	// line indices update
 	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));
-	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_edge, &num_bytes,cuda_resource_edge));
+	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_edge, &num_bytes, cuda_resource_edge));
 	updateLines << <spring_grid_size, spring_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_edge, d_spring.edge, spring.size());
 	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
 
@@ -1220,7 +1244,7 @@ void Simulation::updateBuffers() { // todo: check the kernel call
 void Simulation::updateVertexBuffers() {
 	size_t num_bytes;
 	cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]);
-	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes,cuda_resource_vertex);
+	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes, cuda_resource_vertex);
 	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
 	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
 	if (show_triangle) {
@@ -1273,7 +1297,7 @@ inline void Simulation::draw() {
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_edge);
 		glDrawElements(GL_LINES, 2 * spring.num, GL_UNSIGNED_INT, (void*)0); // 2 indices for a line
 	}
-	
+
 	glDisableVertexAttribArray(0);
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(2);
@@ -1317,20 +1341,33 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 			sim.SHOULD_RUN = true;
 		}
 		else if (key == GLFW_KEY_P) {//pause
-			if (sim.RUNNING) {sim.pause(0);}
-			else {sim.resume();}
+			if (sim.RUNNING) { sim.pause(0); }
+			else { sim.resume(); }
 		}
 		else if (key == GLFW_KEY_O) {//step
 			if (!sim.RUNNING) { sim.resume(); }
 			sim.setBreakpoint(sim.T + sim.NUM_QUEUED_KERNELS * sim.dt);
 		}
+		else if (key == GLFW_KEY_C) {
+			switch (sim.joint_control.mode)
+			{
+			case JointControlMode::vel: // change to position control
+				sim.joint_control.updateControlMode(JointControlMode::pos);
+				printf("joint position control\n");
+				break;
+			case JointControlMode::pos: // change to velocity control
+				sim.joint_control.updateControlMode(JointControlMode::vel);
+				printf("joint speed control\n");
+				break;
+			}
+		}
 	}
 	if (key == GLFW_KEY_W) { sim.camera_h_offset -= 0.05; }//camera moves closer
-	else if(key == GLFW_KEY_S) { sim.camera_h_offset += 0.05; }//camera moves away
-	else if(key == GLFW_KEY_A) { sim.camera_yaw -= 0.05; } //camera moves left
-	else if(key == GLFW_KEY_D) { sim.camera_yaw += 0.05; }//camera moves right
-	else if(key == GLFW_KEY_Q) { sim.camera_up_offset -= 0.05; } // camera moves down
-	else if(key == GLFW_KEY_E) { sim.camera_up_offset += 0.05; }// camera moves up
+	else if (key == GLFW_KEY_S) { sim.camera_h_offset += 0.05; }//camera moves away
+	else if (key == GLFW_KEY_A) { sim.camera_yaw -= 0.05; } //camera moves left
+	else if (key == GLFW_KEY_D) { sim.camera_yaw += 0.05; }//camera moves right
+	else if (key == GLFW_KEY_Q) { sim.camera_up_offset -= 0.05; } // camera moves down
+	else if (key == GLFW_KEY_E) { sim.camera_up_offset += 0.05; }// camera moves up
 }
 void Simulation::createGLFWWindow() {
 	// Initialise GLFW

@@ -97,9 +97,9 @@ int main()
 	constexpr double scale_rigid = 2;// scaling factor rigid
 	constexpr double scale_soft = 1; // scaling factor soft
 
-	constexpr double scale_joint_k = 3.2; // scaling factor for the joint spring constant
+	constexpr double scale_joint_k = 2.0; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 1.6; // scaling factor for the joint mass
-	constexpr double scale_joint_damping = 3.2; // scaling factor for the joint spring damping
+	constexpr double scale_joint_damping = 3.6; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
@@ -259,8 +259,10 @@ int main()
 
 
 	// set max speed for each joint
-	double max_rpm = 500;//maximun revolution per minute
-	sim.joint_control.setMaxJointSpeed(max_rpm / 60. * 2 * M_PI);//max joint speed in rad/s
+	double max_rpm = 400;//maximun revolution per minute
+	sim.joint_control.max_vel = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
+	double settling_time = 0.2;// reaches max_rpm within this time
+	sim.joint_control.max_acc = sim.joint_control.max_vel / settling_time;
 
 #ifdef GRAPHICS
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));

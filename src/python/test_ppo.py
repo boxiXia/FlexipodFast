@@ -50,13 +50,14 @@ random_seed = None
 #############################################
 # creating environment
 # env = gym.make(env_name)
-state_dim = env.observation_space.shape[0]
+# state_dim = env.observation_space.shape[0]
+state_dim = np.prod(env.observation_space.shape)
 action_dim = env.action_space.shape[0]
 
 ########################################################
 from torch.utils.tensorboard import SummaryWriter
 # default `log_dir` is "runs" - we'll be more specific here
-writer = SummaryWriter('runs/soft_6.0_0')
+writer = SummaryWriter('runs/soft_1.0_1')
 
 ##################################
 if random_seed:

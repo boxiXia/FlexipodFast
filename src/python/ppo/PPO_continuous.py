@@ -79,6 +79,7 @@ class ActorCritic(nn.Module):
         super(ActorCritic, self).__init__()
         # action mean range -1 to 1
         self.actor =  nn.Sequential(
+                nn.Flatten(),
                 ResidualDenseBlock(state_dim,128, activation="leaky_relu"),
                 ResidualDenseBlock(128,128, activation="leaky_relu"),
                 ResidualDenseBlock(128,128, activation="leaky_relu"),
@@ -89,6 +90,7 @@ class ActorCritic(nn.Module):
         
         # critic
         self.critic = nn.Sequential(
+                nn.Flatten(),
                 ResidualDenseBlock(state_dim,128, activation="leaky_relu"),
                 ResidualDenseBlock(128,128, activation="leaky_relu"),
                 ResidualDenseBlock(128,128, activation="leaky_relu"),
@@ -146,7 +148,8 @@ class PPO:
         self.MseLoss = nn.MSELoss()
     
     def select_action(self, state, memory):
-        state = torch.FloatTensor(state.reshape(1, -1)).to(device)
+        # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
+        state = torch.FloatTensor(state[np.newaxis,:]).to(device)
         # return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
         return self.policy_old.act(state, memory).cpu().numpy().ravel()
 

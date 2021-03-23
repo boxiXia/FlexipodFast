@@ -452,21 +452,32 @@ struct JOINT {
 	inline int size() const { return anchors.num; }
 };
 
+// enum for the JointControl mode
+enum JointControlMode {
+	vel = 0, // velocity control mode
+	pos = 1, // position control mode
+};
+
 
 struct JointControl {
+	
+	JointControlMode mode = JointControlMode::vel;
 
 	double* pos; // (measured) joint angle array in rad
 	double* vel; // (measured) joint speed array in rad/s
+
+	double* pos_desired;// (desired) joint angle array in rad
 	double* vel_desired; // (desired) joint speed array in rad/s
+
 	double* vel_error; // difference between cmd and vel
-	double* vel_error_integral; // integral of the error between joint_vel_cm and vel
+	double* pos_error; // integral of the error between joint_vel_cm and vel
+
 	double* cmd; // (commended) joint speed array in rad/s
 
-	double* max_vel; // [rad/s] maximum joint speed
-	double* max_vel_error; // [rad/s] maximum joint speed error
-	double* max_vel_error_integral; // [rad/s] maximum joint position error
+	double max_vel; // [rad/s] maximum joint speed
+	double max_acc; // [rad/s^2] maximum joint acceleration
 	double k_vel = 0.5; // coefficient for speed control
-	double k_pos = 0.2; // coefficient for position control
+	double k_pos = 0.1; // coefficient for position control
 
 	int num = 0;
 	inline int size() const { return num; }
@@ -484,15 +495,11 @@ struct JointControl {
 		cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function
 		allocateMemory((void**)&pos, num * sizeof(double));//initialize joint angle (measured) array 
 		allocateMemory((void**)&vel, num * sizeof(double));//initialize joint speed (measured) array 
+		allocateMemory((void**)&pos_desired, num * sizeof(double));//initialize joint angle (desired) array 
 		allocateMemory((void**)&vel_desired, num * sizeof(double));//initialize joint speed (desired) array 
 		allocateMemory((void**)&vel_error, num * sizeof(double));//initialize joint speed error array 
-		allocateMemory((void**)&vel_error_integral, num * sizeof(double));//initialize joint speed error integral array 
+		allocateMemory((void**)&pos_error, num * sizeof(double));//initialize joint speed error integral array 
 		allocateMemory((void**)&cmd, num * sizeof(double));//initialize joint speed (commended) array 
-
-		allocateMemory((void**)&max_vel, num * sizeof(double));//initialize maximum joint speed array 
-		allocateMemory((void**)&max_vel_error, num * sizeof(double));//initialize maximum joint speed error array 
-		allocateMemory((void**)&max_vel_error_integral, num * sizeof(double));//initialize maximum joint position error array 
-
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
@@ -500,41 +507,27 @@ struct JointControl {
 	void copyFrom(const JointControl& other, cudaStream_t stream = (cudaStream_t)0) {
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel, other.vel, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(pos_desired, other.pos_desired, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel_desired, other.vel_desired, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel_error, other.vel_error, num * sizeof(double), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(vel_error_integral, other.vel_error_integral, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(pos_error, other.pos_error, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(cmd, other.cmd, num * sizeof(double), cudaMemcpyDefault, stream);
-
-		cudaMemcpyAsync(max_vel, other.max_vel, num * sizeof(double), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(max_vel_error, other.max_vel_error, num * sizeof(double), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(max_vel_error_integral, other.max_vel_error_integral, num * sizeof(double), cudaMemcpyDefault, stream);
-
 		gpuErrchk(cudaPeekAtLastError());
 		// todo make max_vel etc a vector
 	}
 
 	void setMaxJointSpeed(double max_joint_vel) {
-		for (size_t i = 0; i < num; i++)
-		{
-			this->max_vel[i] = max_joint_vel;
-			max_vel_error[i] = max_joint_vel / k_vel;
-			max_vel_error_integral[i] = max_joint_vel / k_pos;
-		}
-
+		max_vel = max_joint_vel;
 	}
 	void reset(const MASS& mass, const JOINT& joint) {
 		size_t nbytes = joint.size() * sizeof(double);
-		memset(cmd, 0, nbytes);
-		memset(vel, 0, nbytes);
-		memset(vel_desired, 0, nbytes);
-		memset(vel_error, 0, nbytes);
-		memset(vel_error_integral, 0, nbytes);
+		memset(cmd, 0, nbytes);//cmd[i] = 0.;
+		memset(vel, 0, nbytes);//vel[i] = 0.;
+		memset(vel_desired, 0, nbytes);//vel_desired[i] = 0.;
+		memset(vel_error, 0, nbytes);//vel_error[i] = 0.;
+		memset(pos_error, 0, nbytes);//pos_error[i] = 0.;
 		for (int i = 0; i < num; i++) {//TODO change this...
-			//cmd[i] = 0.;
-			//vel[i] = 0.;
-			//vel_desired[i] = 0.;
-			//vel_error[i] = 0.;
-			//vel_error_integral[i] = 0.;
+
 			Vec2i anchor_edge = joint.anchors.edge[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
 			//Vec3d x_left = mass.pos[joint.anchors.leftCoord[i] + 1] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
@@ -544,12 +537,14 @@ struct JointControl {
 			Vec3d y_left = mass.pos[joint.anchors.leftCoord[i] + 2] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
 			Vec3d y_right = mass.pos[joint.anchors.rightCoord[i] + 2] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
 			pos[i] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
+			pos_desired[i] = pos[i];//keep it still
 		}
 	}
+
 	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
 	void update(const MASS& mass, const JOINT& joint, double ndt) {
 		////#pragma omp parallel for simd
-		for (int i = 0; i < joint.anchors.size(); i++) // compute joint angles and angular velocity
+		for (int i = 0; i < num; i++) // compute joint angles and angular velocity
 		{
 			Vec2i anchor_edge = joint.anchors.edge[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
@@ -559,41 +554,70 @@ struct JointControl {
 			//
 			Vec3d y_left = mass.pos[joint.anchors.leftCoord[i] + 2] - mass.pos[joint.anchors.leftCoord[i]];//oxyz
 			Vec3d y_right = mass.pos[joint.anchors.rightCoord[i] + 2] - mass.pos[joint.anchors.rightCoord[i]];//oxyz
+			// angle is within (-pi,pi]
 			double angle = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
-
-			// assuming delta_angle is within (-pi,pi)
-			double delta_angle = angle - pos[i];
-			if (delta_angle > M_PI) {
-				vel[i] = (delta_angle - 2 * M_PI) / ndt;
-			}
-			else if (delta_angle > -M_PI) {
-				vel[i] = delta_angle / ndt;
-			}
-			else {// delta_angle <= M_PI
-				vel[i] = (delta_angle + 2 * M_PI) / ndt;
-			}
-			pos[i] = angle;
-
-			// update cmd with position PD control: clamp to (-max_vel,max_vel)
-			if (vel_desired[i] > max_vel[i]) { vel_desired[i] = max_vel[i]; }
-			else if (vel_desired[i] < -max_vel[i]) { vel_desired[i] = -max_vel[i]; }
-
-			//cmd[i] = vel_desired[i];//feed-forward control
-			vel_error[i] = vel_desired[i] - vel[i];
-			vel_error_integral[i] += vel_error[i]; // simple proportional control
-
-			if (vel_error_integral[i] > max_vel_error_integral[i]) { vel_error_integral[i] = max_vel_error_integral[i]; }
-			else if (vel_error_integral[i] < -max_vel_error_integral[i]) { vel_error_integral[i] = -max_vel_error_integral[i]; }
 			
-			cmd[i] = k_vel * vel_error[i] + k_pos * vel_error_integral[i];
-			//cmd[i] = k_vel * vel_error[i];
+			double delta_angle = angle - pos[i];
+			// assuming delta_angle is within (-pi,pi)
+			// there may be a huge chage from -pi to pi, but really it only moves a little bit
+			clampPeroidicInplace(delta_angle, -M_PI, M_PI);
+			vel[i] = delta_angle / ndt;
 
-			if (cmd[i] > max_vel[i]) { cmd[i] = max_vel[i]; }
-			else if (cmd[i] < -max_vel[i]) { cmd[i] = -max_vel[i]; }
+			pos[i] = angle;
+			
+			// update cmd with position PD control: clamp to (-max_vel,max_vel)
+			switch (mode)//switch controller mode
+			{
+			case JointControlMode::vel:
+				clampInplace(vel_desired[i], -max_vel, max_vel);
+				vel_error[i] = vel_desired[i] - vel[i];
+
+				pos_desired[i] += vel_desired[i] * ndt;
+				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
+				pos_error[i] = pos_desired[i] - pos[i];
+				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
+
+				cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
+				break;
+			case JointControlMode::pos:
+				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
+				pos_error[i] = pos_desired[i] - pos[i];
+				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
+
+				
+				double vel_desired_proxy = pos_error[i] / (ndt * 5); // reach the destination at 5 control step
+				double dv = max_acc * ndt;
+				clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
+				clampInplace(vel_desired_proxy, -max_vel, max_vel);
+				vel_desired[i] = vel_desired_proxy;
+
+				vel_error[i] = vel_desired[i] - vel[i];
+				cmd[i] = k_vel * vel_error[i] + k_pos / ndt * pos_error[i];
+				break;
+			}
+			clampInplace(cmd[i], -max_vel, max_vel);
 		}
-
 	}
 
+	void updateControlMode(const JointControlMode& control_mode) {
+		if (mode != control_mode) {
+			mode = control_mode; // update mode to control_mode
+			switch (mode)
+			{
+			case JointControlMode::vel: // changed to velocity control
+				for (int i = 0; i < num; i++) { 
+					vel_desired[i] = 0;
+					//vel_desired[i] = vel[i];
+				}
+				break;
+			case JointControlMode::pos:// changed to postion control
+				//for (int i = 0; i < num; i++) {
+				//	pos_desired[i] = pos[i];
+				//}
+				break;
+			}
+		}
+	}
 
 };
 
@@ -684,51 +708,48 @@ MSGPACK_ADD_ENUM(UDP_HEADER); // msgpack macro,refer to https://github.com/msgpa
 
 
 
-#ifdef STRESS_TEST
-constexpr int NUM_SPRING_STRAIN = 128;
-#endif //STRESS_TEST
-
-
 class DataSend {/*the info to be sent to the high level controller*/
 public:
 	UDP_HEADER header = UDP_HEADER::ROBOT_STATE_REPORT;
 	float T = 0; // time at the sending of this udp packet
 	// using float to make data smaller
-	std::vector<float> joint_pos; // joint position (angles)
-	std::vector<float> joint_vel; // joint angular velocity
-	std::vector<float> actuation; // acutation of the joint
-	float orientation[6] = { 0 }; // orientation of the body
+	std::vector<float> joint_pos; // joint position cos(angle),sin(angle) {-1,1}
+	std::vector<float> joint_vel; // joint angular velocity [rad/s],{-1,1}
+	std::vector<float> joint_act; // acutation of the joint,{-1,1}
+	float orientation[6] = { 0 }; // orientation of the body,{-1,1}
 	float ang_vel [3];
 	float com_acc[3];
 	float com_vel[3];
 	float com_pos[3];
 #ifdef STRESS_TEST
-	float spring_strain[128];
-	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel,spring_strain, com_pos);
+	std::vector<float> spring_strain;
+	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel,spring_strain, com_pos);
 #else
-	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel, com_pos);
+	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel, com_pos);
 #endif //STRESS_TEST
-
 	DataSend() {}// defualt constructor
-	DataSend(int num_joint) {
-		init(num_joint);
-	}
 
-	inline void init(int num_joint) {
-		joint_pos = std::vector<float>(num_joint, 0);
-		joint_vel = std::vector<float>(num_joint, 0);
-		actuation = std::vector<float>(num_joint, 0);
-	}
-	void update(const UDP_HEADER& header, const double& T,
-		const JointControl& joint_control, const RigidBody& body) {
+	DataSend(const UDP_HEADER& header, const double& T,
+		const JointControl& joint_control, const RigidBody& body
+#ifdef STRESS_TEST
+		, const int& id_part_end, // spring stress test id end
+		const MASS& mass, const SPRING& spring
+#endif //STRESS_TEST
+	) {
 		this->header = header;
 		this->T = T;
-		if (joint_pos.empty()) {init(joint_control.size());}
+
+		int num_joint = joint_control.size();
+		joint_pos = std::vector<float>(2 * num_joint, 0);
+		joint_vel = std::vector<float>(num_joint, 0);
+		joint_act = std::vector<float>(num_joint, 0);
+
 		for (auto i = 0; i < joint_control.size(); i++)
 		{
-			joint_pos[i] = joint_control.pos[i];
+			joint_pos[i * 2] = cosf(joint_control.pos[i]);
+			joint_pos[i * 2 +1] = sinf(joint_control.pos[i]);
 			joint_vel[i] = joint_control.vel[i];
-			actuation[i] = joint_control.cmd[i] / joint_control.max_vel[i];
+			joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize
 		}
 		body.acc.fillArray(com_acc);
 		body.vel.fillArray(com_vel);
@@ -741,28 +762,39 @@ public:
 		orientation[3] = body.rot.m01;
 		orientation[4] = body.rot.m11;
 		orientation[5] = body.rot.m21;
+
+#ifdef STRESS_TEST
+		constexpr int NUM_SPRING_STRAIN = 128;
+		int step_spring_strain = id_part_end / NUM_SPRING_STRAIN;
+		spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
+		for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
+		{
+			int i = k * step_spring_strain;
+			Vec2i e = spring.edge[i];
+			Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
+			double length = s_vec.norm(); // current spring length
+			spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
+		}
+
+#endif // STRESS_TEST
+
 	}
 
-	DataSend(
-		const UDP_HEADER& header, const double& T,
-		const JointControl& joint_control, const RigidBody& body) {
-		update(header, T, joint_control, body);
-	}
 };
 
 class DataReceive {/*the high level command to be received */
 public:
-	UDP_HEADER header = UDP_HEADER::MOTOR_SPEED_COMMEND;
+	UDP_HEADER header;
 	double T;
-	std::vector<double> joint_vel_desired;// desired joint velocity
-	MSGPACK_DEFINE_ARRAY(header, T, joint_vel_desired);
+	std::vector<double> joint_value_desired;// desired joint position or velocity
+	MSGPACK_DEFINE_ARRAY(header, T, joint_value_desired);
 
 	DataReceive(int num_joint) {
 		init(num_joint);
 	}
 	DataReceive() {}// defualt constructor
 	void init(int num_joint) {
-		joint_vel_desired = std::vector<double>(num_joint, 0);
+		joint_value_desired = std::vector<double>(num_joint, 0);
 	}
 };
 

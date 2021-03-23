@@ -31,7 +31,7 @@ public:
 	double T = 0; // time at the sending of this udp packet
 	std::vector<double> joint_pos; // joint position (angles)
 	std::vector<double> joint_vel; // joint angular velocity
-	std::vector<double> actuation; // acutation of the joint
+	std::vector<double> joint_act; // acutation of the joint
 
 	double orientation[6] = { 0 }; // orientation of the body
 	Vec3d ang_vel = Vec3d(); // angular velocity of the body
@@ -41,7 +41,7 @@ public:
 	Vec3d com_pos = Vec3d(); // COM (body) position
 	//double joint_vel_desired[4] = { 0 };// desired joint velocity at last command
 	//double T_prev = 0; // time at last command
-	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, actuation, orientation, ang_vel, com_acc, com_vel, com_pos);
+	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel, com_pos);
 
 	DataSend(){}// defualt constructor
 	DataSend(int num_joint) {
@@ -51,7 +51,7 @@ public:
 	void init(int num_joint) {
 		joint_pos = std::vector<double>(num_joint, 0);
 		joint_vel = std::vector<double>(num_joint, 0);
-		actuation = std::vector<double>(num_joint, 0);
+		joint_act = std::vector<double>(num_joint, 0);
 	}
 };
 
