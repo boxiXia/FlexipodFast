@@ -58,7 +58,7 @@ action_dim = env.action_space.shape[0]
 from torch.utils.tensorboard import SummaryWriter
 # default `log_dir` is "runs" - we'll be more specific here
 
-folder_name = "runs/pos_soft_0.5_1"
+folder_name = "runs/pos_soft_4.0_2"
 writer = SummaryWriter(folder_name)
 
 ##################################
