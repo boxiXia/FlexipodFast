@@ -59,6 +59,9 @@ from torch.utils.tensorboard import SummaryWriter
 # default `log_dir` is "runs" - we'll be more specific here
 writer = SummaryWriter('runs/d_pos_soft_1.0_0')
 
+folder_name = "runs/pos_soft_4.0_2"
+writer = SummaryWriter(folder_name)
+
 ##################################
 if random_seed:
     print("Random Seed: {}".format(random_seed))
@@ -112,7 +115,7 @@ for i_episode in range(0, max_episodes+1):
 
     # save every 500 episodes
     if i_episode % 500 == 0:
-        ppo.save(f'./PPO_continuous_{env_name}.pth',avg_length=avg_length)
+        ppo.save(f'{folder_name}/PPO_continuous_{env_name}.pth',avg_length=avg_length)
 
     # logging
     if i_episode % log_interval == 0:
@@ -124,14 +127,14 @@ for i_episode in range(0, max_episodes+1):
         # stop training if avg_reward > solved_reward
         if running_reward > (log_interval*solved_reward):
             print("########## Solved! ##########")
-            ppo.save(f'./PPO_continuous_solved_{env_name}.pth',avg_length=avg_length)
+            ppo.save(f'{folder_name}/PPO_continuous_solved_{env_name}.pth',avg_length=avg_length)
             break
             
         if avg_length>max_avg_length:
             max_avg_length = avg_length
-            ppo.save(f'./PPO_continuous_{env_name}_best.pth',avg_length=avg_length)
+            ppo.save(f'{folder_name}/PPO_continuous_{env_name}_best.pth',avg_length=avg_length)
         elif np.random.random()<0.1:# 50% chance 
-            checkpoint = ppo.load(f'./PPO_continuous_{env_name}_best.pth')
+            checkpoint = ppo.load(f'{folder_name}/PPO_continuous_{env_name}_best.pth')
             print(f"load old best,avg_length={checkpoint['avg_length']}")# restart
 
         print(f'Episode {i_episode} \t Avg length: {avg_length:.0f} \t Avg reward: {running_reward:.0f}')
