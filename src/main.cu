@@ -83,19 +83,19 @@ int main()
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 0.1* radius_poisson;// mass per vertex
+	const double m = 0.12* radius_poisson;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
-	const double spring_constant = m*5e6; //spring constant for silicone leg
-	const double spring_damping = m*4e2; // damping for spring
+	const double spring_constant = m*6e6; //spring constant for silicone leg
+	const double spring_damping = m*4.8e2; // damping for spring
 
 	//const double spring_constant = m * 22e6; //spring constant for silicone leg
 	//const double spring_damping = m * 3e2; // damping for spring
 	//constexpr double scale_rigid = 1;// scaling factor rigid
 
 
-	constexpr double scale_rigid = 2;// scaling factor rigid
-	constexpr double scale_soft = 1; // scaling factor soft
+	constexpr double scale_rigid = 2.5;// scaling factor rigid
+	constexpr double scale_soft = 2; // scaling factor soft
 
 	constexpr double scale_joint_k = 2.0; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 1.6; // scaling factor for the joint mass
@@ -279,6 +279,7 @@ int main()
 
 
 	//double runtime = 172800;//48 hours
+	//double runtime = 15;//48 hours
 	//sim.setBreakpoint(runtime,true);
 
 	sim.start();

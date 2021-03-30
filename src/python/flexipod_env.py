@@ -139,7 +139,7 @@ class FlexipodEnv(gym.Env):
 #         observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
         msg_rec_i = msg_rec[0]
         orientation_z = msg_rec_i[self.ID['orientation']][2]
-        actuation = msg_rec_i[self.ID['actuation']][2]
+        actuation = msg_rec_i[self.ID['actuation']] # actuation (size=dof) of the latest observation
         # com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
         com_z = msg_rec_i[self.ID['com_pos']][2]
         

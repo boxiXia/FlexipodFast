@@ -127,7 +127,8 @@ public:
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<Vec3d> colors;// the mass xyzs
 	std::vector<StdJoint> Joints;// the joints
-	MSGPACK_DEFINE(radius_poisson, vertices, edges,triangles, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
+
+	MSGPACK_DEFINE_ARRAY(radius_poisson, vertices, edges,triangles, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
 		Model() {}
 	Model(const std::string& file_path) {
 		// get the msgpack robot model

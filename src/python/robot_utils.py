@@ -283,6 +283,13 @@ def getUniqueEdges(edges: np.ndarray):
     edges = np.sort(edges, axis=1)  # sorted
     unique_edges, edge_counts = np.unique(
         edges, axis=0, return_index=False, return_counts=True)
+    
+    # shuffle to random order
+    ids = np.arange(unique_edges.shape[0])
+    np.random.shuffle(ids)
+    unique_edges = unique_edges[ids]
+    edge_counts = edge_counts[ids]
+    
     return unique_edges, edge_counts
 
 
@@ -378,8 +385,16 @@ def trimeshToO3dMesh(mesh):
 
 
 def o3dShow(geometry, **kwargs):
-    # The following code achieves the same effect as:
-    # o3d.visualization.draw_geometries([pcd])
+    """
+    the following code achieves the same effect as:
+    o3d.visualization.draw_geometries([pcd])
+    optional arguments:
+        background_color: tuple (r,g,b) [0-1]
+        mesh_show_wireframe: bool, 
+        point_show_normal: bool,
+        show_coordinate_frame: bool,
+    """
+
     vis = o3d.visualization.Visualizer()
     vis.create_window()
     opt = vis.get_render_option()
@@ -846,7 +861,7 @@ class VolumeMesh(dict):
             new_vertices, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
         return self
 ####################################################################################
-def descretize(msh_file, min_radius, max_radius, max_nn,transform=None):
+def discretize(msh_file, min_radius, max_radius, max_nn,transform=None):
     vmesh = meshio.read(msh_file)
     if (transform is not None) and ~np.array_equal(transform, np.eye(4)):# should transform the points
         vmesh.points = applyTransform(vmesh.points, transform)
@@ -946,7 +961,7 @@ def descretize(msh_file, min_radius, max_radius, max_nn,transform=None):
     vmd = VolumeMesh(vertices, edges, triangles)
     return vmd
 
-# vmesh_leg,mesh_leg,pcd_leg,lsd_leg,nsd_leg = descretize(msh_file="../../mesh/leg_simplified.msh")
+# vmesh_leg,mesh_leg,pcd_leg,lsd_leg,nsd_leg = discretize(msh_file="../../mesh/leg_simplified.msh")
 
 ########################################################################################
 def equidistantDisk(nr):
