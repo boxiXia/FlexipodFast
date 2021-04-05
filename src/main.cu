@@ -46,9 +46,6 @@
 
 int main()
 {
-
-
-	// m_total->3113g
 	// for time measurement
 	auto start = std::chrono::steady_clock::now();
 
@@ -56,7 +53,6 @@ int main()
 	std::cout << "program dir: " << getProgramDir() << "\n";
 
 
-	//Model bot("..\\src\\data.msgpack"); //defined in sim.h
 	Model bot(getProgramDir()+"\\flexipod_12dof.msgpack"); //defined in sim.h
 	//Model bot(getProgramDir() + "\\flexipod_4dof.msgpack"); //defined in sim.h
 
@@ -65,7 +61,7 @@ int main()
 	const size_t num_mass = bot.vertices.size(); // number of mass
 	const size_t num_spring = bot.edges.size(); // number of spring
 	const size_t num_triangle = bot.triangles.size();// number of triangle
-	const size_t num_joint = bot.Joints.size();//number of rotational joint
+	const size_t num_joint = bot.joints.size();//number of rotational joint
 
 	Simulation sim(num_mass, num_spring,num_joint,num_triangle); // Simulation object
 
@@ -78,16 +74,16 @@ int main()
 
 	//constexpr double radius_poisson = 12.5 * 1e-3;
 	const double  radius_poisson = bot.radius_poisson;
-	printf("radius_poisson=%.3e [m] \n",radius_poisson);
+	
 
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 0.12* radius_poisson;// mass per vertex
+	const double m = 0.10* radius_poisson;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
 	const double spring_constant = m*6e6; //spring constant for silicone leg
-	const double spring_damping = m*4.8e2; // damping for spring
+	const double spring_damping = m*5e2; // damping for spring
 
 	//const double spring_constant = m * 22e6; //spring constant for silicone leg
 	//const double spring_damping = m * 3e2; // damping for spring
@@ -97,9 +93,9 @@ int main()
 	constexpr double scale_rigid = 2.5;// scaling factor rigid
 	constexpr double scale_soft = 2; // scaling factor soft
 
-	constexpr double scale_joint_k = 2.0; // scaling factor for the joint spring constant
-	constexpr double scale_joint_m = 1.6; // scaling factor for the joint mass
-	constexpr double scale_joint_damping = 3.6; // scaling factor for the joint spring damping
+	constexpr double scale_joint_k = 4.0; // scaling factor for the joint spring constant
+	constexpr double scale_joint_m = 2.0; // scaling factor for the joint mass
+	constexpr double scale_joint_damping = 4.0; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
@@ -119,13 +115,18 @@ int main()
 	const double spring_constant_probe_self = spring_constant * scale_probe* scale_rigid; // spring constant for coordiates self springs
 	const double spring_damping_probe = spring_damping * scale_probe* scale_rigid;
 
-#pragma omp parallel for simd
+//ref: https://bisqwit.iki.fi/story/howto/openmp/
+//#pragma omp parallel for
+#pragma omp simd
 	for (int i = 0; i < num_triangle; i++)
 	{
 		triangle.triangle[i] = bot.triangles[i];
+		//if (i == 0) {
+		//	std::cout << omp_get_num_threads() << std::endl;
+		//}
 	}
 
-#pragma omp parallel for simd
+#pragma omp simd
 	for (int i = 0; i < num_mass; i++)
 	{
 		mass.pos[i] = bot.vertices[i]; // position (Vec3d) [m]
@@ -133,7 +134,7 @@ int main()
 		mass.m[i] = m; // mass [kg]
 		mass.constrain[i] = bot.isSurface[i];// set constraint to true for suface points, and false otherwise
 	}
-#pragma omp parallel for simd
+#pragma omp simd
 	for (int i = 0; i < num_spring; i++)
 	{
 		spring.edge[i] = bot.edges[i]; // the (left,right) mass index of the spring
@@ -162,26 +163,25 @@ int main()
 	 //}
 
 	 // set the mass value for joint
- //#pragma omp parallel for
-
-	for (int i = 0; i < bot.Joints.size(); i++)
+#pragma omp simd
+	for (int i = 0; i < bot.joints.size(); i++)
 	{
-		for each (int j in bot.Joints[i].left)
+		for each (int j in bot.joints[i].left)
 		{
 			mass.m[j] = m * scale_joint_m;
 		}
-		for each (int j in bot.Joints[i].right)
+		for each (int j in bot.joints[i].right)
 		{
 			mass.m[j] = m * scale_joint_m;
 		}
 	}
 
 
-	// set higher spring constant for the robot body
-	for (int i = 0; i < bot.idEdges[1]; i++)
-	{
-		spring.k[i] = spring.k[i] * scale_rigid;
-	}
+	//// set higher spring constant for the robot body
+	//for (int i = 0; i < bot.idEdges[1]; i++)
+	//{
+	//	spring.k[i] = spring.k[i] * scale_rigid;
+	//}
 
 	// set higher spring constant for the rotational joints
 	for (int i = bot.idEdges[num_body]; i < bot.idEdges[num_body + 1]; i++)
@@ -226,14 +226,14 @@ int main()
 		spring.damping[i] = spring_damping_probe;
 	}
 
-	sim.joint.init(bot.Joints, true);
-	sim.d_joint.init(bot.Joints, false);
+	sim.joint.init(bot.joints, true);
+	sim.d_joint.init(bot.joints, false);
 	sim.d_joint.copyFrom(sim.joint);
 
 
 	// print out mass statistics
 	double total_mass = 0;
-#pragma omp parallel for shared (total_mass,mass.m) reduction(+:total_mass)
+//#pragma omp parallel for shared (total_mass,mass.m) reduction(+:total_mass)
 	for (int i = 0; i < num_mass; i++) { total_mass += mass.m[i]; }
 	printf("total mass:%.2f [kg]\n",total_mass);
 
@@ -250,7 +250,7 @@ int main()
 	std::vector<double> joint_mass(num_joint, 0); // vector of size num_body, with values 0
 #pragma omp parallel for
 	for (int k = 0; k < num_joint; k++)
-		for (const auto & i:bot.Joints[k].left)
+		for (const auto & i:bot.joints[k].left)
 			joint_mass[k] += mass.m[i];
 	printf("joint mass:");
 	for (const auto& i : joint_mass)

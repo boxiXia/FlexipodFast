@@ -1,10 +1,15 @@
 message(STATUS "${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}") # print cmake version
 cmake_minimum_required(VERSION 3.14)
 project(Titan LANGUAGES C CXX CUDA) # use CXX, CUDA by default (since CUDA is a language, don't need cuda_add_executable)
-set(CMAKE_CXX_STANDARD 17) # set C++ standard to C++20
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #set(CMAKE_CXX_EXTENSIONS OFF) ## on g++ this ensures: -std=c++11 and not -std=gnu++11
 
+# https://cliutils.gitlab.io/modern-cmake/chapters/packages/CUDA.html
+if(NOT DEFINED CMAKE_CUDA_STANDARD)
+    set(CMAKE_CUDA_STANDARD 17) # set cuda cmake standard to c++17
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+endif()
+set(CMAKE_CXX_STANDARD 17) # set C++ standard to C++17
 
 
 # https://github.com/microsoft/vcpkg/blob/master/docs/users/integration.md#using-an-environment-variable-instead-of-a-command-line-option
@@ -21,44 +26,48 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 #set(CMAKE_BUILD_TYPE Release)
 #list(APPEND CMAKE_CXX_FLAGS " -O2 ")
 
-# https://cliutils.gitlab.io/modern-cmake/chapters/packages/CUDA.html
-if(NOT DEFINED CMAKE_CUDA_STANDARD)
-    set(CMAKE_CUDA_STANDARD 14)
-    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-endif()
-
-# for simd support,ref: https://gitlab.kitware.com/cmake/cmake/-/merge_requests/3301
-set(OMP_FLAG_MSVC "-openmp:experimental" "-openmp")
-
-# use OpenMP
-find_package(OpenMP REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-
+######################################################################
 # use CUDA
 find_package(CUDA REQUIRED) # find and include CUDA
-
-
 
 ###### here you must modify to fit your GPU architecture #####
 # check https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
 set(CMAKE_CUDA_ARCHITECTURES 75)
 message(STATUS "CMAKE_CUDA_ARCHITECTURES=" ${CMAKE_CUDA_ARCHITECTURES})
 # string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
-string(APPEND CMAKE_CUDA_FLAGS " --default-stream per-thread")
+string(APPEND CMAKE_CUDA_FLAGS " --default-stream per-thread --use_fast_math ")
 # https://devblogs.nvidia.com/gpu-pro-tip-cuda-7-streams-simplify-concurrency/
 ##############################################################
 #CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS Auto)
 #string(APPEND CMAKE_CUDA_FLAGS " ${ARCH_FLAGS}")
+ 
+#################  use OpenMP ###################################################
+# for openmp example,ref: https://bisqwit.iki.fi/story/howto/openmp/
+# for simd support,ref: https://nanxiao.gitbooks.io/cuda-little-book/content/posts/use-cmake-to-compile-cuda-program.html
+# set(OMP_FLAG_MSVC "-openmp:experimental" "-openmp")
+find_package(OpenMP REQUIRED)
+IF (OPENMP_FOUND)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-openmp:experimental")
+    else()
+        SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=${OpenMP_CXX_FLAGS}")
+    endif()
+    #SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_CXX_FLAGS}") 
+ENDIF()
+
+#SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-std:c++latest")
+
+message(STATUS "OpenMP_CXX_FLAGS=" ${OpenMP_CXX_FLAGS})
 message(STATUS ${CMAKE_CUDA_FLAGS})
-  
-  
+################################################################################
+
 # find all opengl packages
 find_package(glm CONFIG REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
-find_package(glad CONFIG REQUIRED)
+#find_package(glad CONFIG REQUIRED)
 # set ALL_GL_LIBS as a placeholder for all opengl library
-set(ALL_GL_LIBS GLEW::GLEW glm glfw glad::glad)
+#set(ALL_GL_LIBS glm::glm GLEW::GLEW glfw glad::glad)
 
 find_package(msgpack CONFIG REQUIRED)
 
@@ -75,9 +84,11 @@ add_definitions(-DROTATION) # enable this to support rotation in dynamics update
 #add_subdirectory(src/Titan)
 add_definitions(-DSTRESS_TEST) # enable stress testing
 
+
 # macro to create a symbolic link
 macro(makeLink src dest target)
-  add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink ${src} ${dest}  DEPENDS  ${dest} COMMENT "mklink ${src} -> ${dest}")
+    message(STATUS "${target}: link \"${src}\" to \"${dest}\"")
+    add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink ${src} ${dest}  DEPENDS  ${dest} COMMENT "mklink ${src} -> ${dest}")
 endmacro()
 
 add_executable(flexipod 
@@ -85,11 +96,8 @@ add_executable(flexipod
     src/vec.h src/vec.cu 
     src/shader.h src/shader.cpp 
     src/object.h src/object.cu
-    src/sim.h src/sim.cu
-    ) 
-# set target cuda architecture
-set_property(TARGET flexipod PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
-
+    src/sim.h src/sim.cu src/sim.cpp
+    src/comonUtils.h src/comonUtils.cpp) 
 
 option(USE_UDP "Enter UDP mode" ON)
 if(USE_UDP)
@@ -100,39 +108,31 @@ if(USE_UDP)
 endif()
 
 set_target_properties(flexipod PROPERTIES 
-                      POSITION_INDEPENDENT_CODE ON
-                      CUDA_SEPARABLE_COMPILATION ON)
+                      POSITION_INDEPENDENT_CODE ON # set cuda related properties
+                      CUDA_SEPARABLE_COMPILATION ON
+                      CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES} # set target cuda architecture
+                      )
+
 target_include_directories(flexipod PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
-target_link_libraries(flexipod PRIVATE 
+target_link_libraries(flexipod PUBLIC 
         OpenMP::OpenMP_CXX
-        ${ALL_GL_LIBS}
+       # ${ALL_GL_LIBS}
+       # glm::glm GLEW::GLEW glfw glad::glad 
+       glm::glm GLEW::GLEW glfw
         cuda)# cudart
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
 
-# create symbolic link for *.glsl
-file(GLOB shaders "${CMAKE_SOURCE_DIR}/src/*.glsl")
-foreach(shader ${shaders})
-    get_filename_component(shader_name "${shader}" NAME)
-    makeLink(${shader} ${CMAKE_CURRENT_BINARY_DIR}/${shader_name} flexipod)
-endforeach()
-file(GLOB msgpack_list "${CMAKE_SOURCE_DIR}/src/*.msgpack" CONFIGURE_DEPENDS "*.msgpack")
+# create symbolic link for *.glsl and *.msgpack (this may require administrator privileges)
+file(GLOB msgpack_list CONFIGURE_DEPENDS 
+    ${CMAKE_SOURCE_DIR}/src/*.msgpack 
+    ${CMAKE_SOURCE_DIR}/src/*.glsl)
 foreach(data ${msgpack_list})
-    message(STATUS ${data})
     get_filename_component(data_name "${data}" NAME)
     makeLink(${data} ${CMAKE_CURRENT_BINARY_DIR}/${data_name} flexipod)
 endforeach()
 
-#makeLink(${CMAKE_SOURCE_DIR}/src/data.msgpack ${CMAKE_CURRENT_BINARY_DIR}/data.msgpack flexipod)
-#makeLink(${CMAKE_SOURCE_DIR}/src/shaderVertex.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderVertex.glsl flexipod)
-#makeLink(${CMAKE_SOURCE_DIR}/src/shaderFragment.glsl ${CMAKE_CURRENT_BINARY_DIR}/shaderFragment.glsl flexipod)
-   
-
-add_executable(simpleSocketTest
-    "src/simple_cpp_sockets_test.cpp"
-    "src/simple_cpp_sockets.h"
-)
 
 
 add_executable(testNetwork
@@ -144,11 +144,6 @@ add_executable(testNetwork
 set_property(TARGET testNetwork PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
 target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
 #target_link_libraries(testNetwork PRIVATE asio asio::asio)
-#if(WIN32)
-#    find_library(WSOCK32_LIBRARY wsock32)
-#    find_library(WS2_32_LIBRARY ws2_32)
-#    target_link_libraries(testNetwork PRIVATE wsock32 ws2_32)
-#endif()
 target_link_libraries(testNetwork PRIVATE cuda)
 target_include_directories(testNetwork PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
@@ -163,14 +158,25 @@ target_link_libraries(mathTest PRIVATE msgpackc-cxx)
 target_link_libraries(mathTest PRIVATE cuda)
 target_include_directories(mathTest PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
-#add_executable(
-#    testMsgpack
-#    "src/msgpackTest.cu"
-#    src/vec.h src/vec.cu)
-#set_property(TARGET testMsgpack PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
-#target_link_libraries(testMsgpack PRIVATE msgpackc-cxx)
-#target_link_libraries(testMsgpack PRIVATE cuda)
-#target_include_directories(testMsgpack PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
 
+#find_package(simdjson CONFIG REQUIRED)
+#find_package(nlohmann_json CONFIG REQUIRED)
 
+add_executable(jasonTest
+    "src/testjson.cu"    
+    "src/vec.h" "src/vec.cu"
+    "src/testjsonHeader.h" "src/testjsonHeader.cpp"
+ "src/comonUtils.h" "src/comonUtils.cpp")
+#target_link_libraries(jasonTest PRIVATE simdjson::simdjson simdjson::simdjson-flags simdjson::simdjson-headers)
+#target_link_libraries(jasonTest PUBLIC nlohmann_json nlohmann_json::nlohmann_json)
+target_link_libraries(jasonTest PRIVATE msgpackc-cxx)
+#set_property(TARGET jasonTest PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
+target_link_libraries(jasonTest PUBLIC cuda)
+target_include_directories(jasonTest PUBLIC ${CUDA_INCLUDE_DIRS} src)
+target_link_libraries(jasonTest PUBLIC OpenMP::OpenMP_CXX)
+set_target_properties(jasonTest PROPERTIES 
+                      POSITION_INDEPENDENT_CODE ON
+                      CUDA_SEPARABLE_COMPILATION ON
+                      CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+                      )

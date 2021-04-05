@@ -313,7 +313,7 @@ void ContactPlane::generateBuffers() {
     glm::vec3 glm_offset = (float)_offset*glm_normal;
 
     #pragma omp parallel for
-    for (size_t i = 0; i < vertex_data.size()/3; i++)
+    for (int i = 0; i < vertex_data.size()/3; i++)
     {
         glm::vec3 v(vertex_data[3 * i], vertex_data[3 * i+1], vertex_data[3 * i+2]);
         v = glm::rotate(quat_rot, v) + glm_offset;

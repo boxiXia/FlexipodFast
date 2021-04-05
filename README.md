@@ -34,7 +34,7 @@ next, install some packages with vcpkg
 For Windows:
 ```bash
 vcpkg install --triplet x64-windows glew glad glm glfw3 msgpack
-`"
+```
 
 ### 3. Clone the repo
 either to clone (ssh):

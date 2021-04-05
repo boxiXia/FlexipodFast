@@ -44,8 +44,9 @@ index 2 (int)
 */
 struct MY_ALIGN(8) Vec2i {
 	int x, y;
+//#ifndef __CUDACC__ // test false if they are currently being compiled by nvcc (device code).
 	MSGPACK_DEFINE_ARRAY(x, y);
-
+//#endif
 	CUDA_CALLABLE_MEMBER Vec2i() {
 		x = 0;
 		y = 0;
@@ -79,7 +80,10 @@ index 3 (int)
 */
 struct MY_ALIGN(8) Vec3i {
 	int x, y, z;
+//#ifndef __CUDACC__
 	MSGPACK_DEFINE_ARRAY(x, y, z);
+//#endif
+
 	CUDA_CALLABLE_MEMBER Vec3i() {
 		x = 0;
 		y = 0;
@@ -120,7 +124,9 @@ use align to force alignment for gpu memory
 */
 struct MY_ALIGN(8) Vec3d {
 	double x, y, z;
+//#ifndef __CUDACC__
 	MSGPACK_DEFINE_ARRAY(x, y, z);
+//#endif
 
 	CUDA_CALLABLE_MEMBER Vec3d() {
 		x = 0;
@@ -378,7 +384,11 @@ template<class T>
 class MY_ALIGN(8) Vec3 {
 public:
 	T x, y, z;
+//#ifndef __CUDACC__
 	MSGPACK_DEFINE_ARRAY(x, y, z);
+//#endif
+
+	
 
 	CUDA_CALLABLE_MEMBER Vec3() {
 		x = 0;
@@ -625,7 +635,10 @@ public:
 
 struct MY_ALIGN(8) Mat3d {
 	double m00, m01, m02, m10, m11, m12, m20, m21, m22;
+//#ifndef __CUDACC__
 	MSGPACK_DEFINE_ARRAY(m00, m01, m02, m10, m11, m12, m20, m21, m22);
+//#endif
+
 
 	// defualt constructor
 	CUDA_CALLABLE_MEMBER Mat3d() {}
@@ -849,7 +862,7 @@ struct MY_ALIGN(8) Mat3d {
 	}
 
 
-	inline CUDA_CALLABLE_MEMBER const double trace() const { // matrix determinant
+	inline CUDA_CALLABLE_MEMBER double trace() const { // matrix determinant
 		return m00 + m11 + m22;
 		// preferably use this version
 	}

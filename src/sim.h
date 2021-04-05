@@ -1,5 +1,15 @@
 ﻿/*modified from the orginal Titan simulation libaray:https://github.com/jacobaustin123/Titan
 ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Parallel Asynchronous Library for Multi-Agent and Soft-Body Robotics using NVIDIA CUDA,� ICRA 2020, May 2020.
+
+Notes:
+__CUDACC__ defines whether nvcc is steering compilation or not
+__CUDA_ARCH__is always undefined when compiling host code, steered by nvcc or not
+__CUDA_ARCH__is only defined for the device code trajectory of compilation steered by nvcc
+For external library that works with cpp but not with .cu, wrap host code with
+#ifndef __CUDA_ARCH__
+....
+#endif
+
 */
 
 #ifndef TITAN_SIM_H
@@ -49,18 +59,11 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #include "Network.h"
 #endif
 
+#include "comonUtils.h"
 
 // header for getWorkingDir() and  getProgramDir()
 #include<string>
-#ifdef WIN32 // windows
-#include <direct.h>
-#include <windows.h>
-#else
-#include <unistd.h>
-#include <limits.h>
-#endif // linux
-std::string getWorkingDir();
-std::string getProgramDir();
+
 
 
 constexpr const int NUM_CUDA_STREAM = 4; // number of cuda stream excluding the default stream
@@ -114,8 +117,11 @@ struct StdJoint {
 	int leftCoord;
 	int rightCoord;
 	Vec3d axis;
-	MSGPACK_DEFINE(left, right, anchor, leftCoord, rightCoord, axis);
+#ifndef __CUDACC__ // not defined when compiling host code
+	MSGPACK_DEFINE_MAP(left, right, anchor, leftCoord, rightCoord, axis);
+#endif
 };
+
 class Model {
 public:
 	double radius_poisson;// poisson discretization radius
@@ -126,21 +132,12 @@ public:
 	std::vector<int> idVertices;// the edge id of the vertices
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<Vec3d> colors;// the mass xyzs
-	std::vector<StdJoint> Joints;// the joints
-
-	MSGPACK_DEFINE_ARRAY(radius_poisson, vertices, edges,triangles, isSurface, idVertices, idEdges, colors, Joints) // write the member variables that you want to pack
+	std::vector<StdJoint> joints;// the joints
+#ifndef __CUDACC__
+	MSGPACK_DEFINE_MAP(radius_poisson, vertices, edges, triangles, isSurface, idVertices, idEdges, colors, joints) // write the member variables that you want to pack
+#endif
 		Model() {}
-	Model(const std::string& file_path) {
-		// get the msgpack robot model
-		// Deserialize the serialized data
-		std::ifstream ifs(file_path, std::ifstream::in | std::ifstream::binary);
-		std::stringstream buffer;
-		buffer << ifs.rdbuf();
-		msgpack::unpacked upd;//unpacked data
-		msgpack::unpack(upd, buffer.str().data(), buffer.str().size());
-		//    std::cout << upd.get() << std::endl;
-		upd.get().convert(*this);
-	}
+	Model(const std::string& file_path, bool versbose = true);
 };
 
 
@@ -214,7 +211,7 @@ struct MASS {
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 	}
 	void CopyPosFrom(MASS& other,const int& index,const int& range = 1, cudaStream_t stream = (cudaStream_t)0) {
-		assert(index+range<=num,"index out of range");
+		assert(index+range<=num);//"index out of range"
 		cudaMemcpyAsync(pos+index*sizeof(Vec3d), other.pos + index * sizeof(Vec3d), sizeof(Vec3d)*range, cudaMemcpyDefault, stream);
 	}
 
@@ -544,7 +541,7 @@ struct JointControl {
 
 	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
 	void update(const MASS& mass, const JOINT& joint, double ndt) {
-		////#pragma omp parallel for simd
+//#pragma omp simd
 		for (int i = 0; i < num; i++) // compute joint angles and angular velocity
 		{
 			Vec2i anchor_edge = joint.anchors.edge[i];
