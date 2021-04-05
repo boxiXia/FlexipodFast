@@ -124,7 +124,7 @@ struct StdJoint {
 
 class Model {
 public:
-	double radius_poisson;// poisson discretization radius
+	double radius_poisson=0;// poisson discretization radius
 	std::vector<Vec3d> vertices;// the mass xyzs
 	std::vector<Vec2i> edges;//the spring ids
 	std::vector<Vec3i> triangles; // the triangle indices
@@ -133,10 +133,11 @@ public:
 	std::vector<int> idEdges;// the edge id of the springs
 	std::vector<Vec3d> colors;// the mass xyzs
 	std::vector<StdJoint> joints;// the joints
+	std::vector<bool> isSurfaceEdges;// whether the springs has surface end-points
 #ifndef __CUDACC__
-	MSGPACK_DEFINE_MAP(radius_poisson, vertices, edges, triangles, isSurface, idVertices, idEdges, colors, joints) // write the member variables that you want to pack
+	MSGPACK_DEFINE_MAP(radius_poisson, vertices, edges, triangles, isSurface, idVertices, idEdges, colors, joints, isSurfaceEdges); // write the member variables that you want to pack
 #endif
-		Model() {}
+	Model() {}
 	Model(const std::string& file_path, bool versbose = true);
 };
 

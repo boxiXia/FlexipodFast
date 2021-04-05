@@ -91,11 +91,11 @@ int main()
 
 
 	constexpr double scale_rigid = 2.5;// scaling factor rigid
-	constexpr double scale_soft = 2; // scaling factor soft
+	constexpr double scale_soft = 1.0; // scaling factor soft
 
-	constexpr double scale_joint_k = 4.0; // scaling factor for the joint spring constant
+	constexpr double scale_joint_k = 2.5; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 2.0; // scaling factor for the joint mass
-	constexpr double scale_joint_damping = 4.0; // scaling factor for the joint spring damping
+	constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
@@ -111,9 +111,9 @@ int main()
 
 	// spring coefficient for the probing springs, e.g. coordinates
 	const double m_probe = m * scale_probe;//mass for the probe
-	const double spring_constant_probe_anchor = spring_constant * scale_probe* scale_rigid; // spring constant for coordiates anchor springs
-	const double spring_constant_probe_self = spring_constant * scale_probe* scale_rigid; // spring constant for coordiates self springs
-	const double spring_damping_probe = spring_damping * scale_probe* scale_rigid;
+	const double spring_constant_probe_anchor = spring_constant * scale_probe*2.0; // spring constant for coordiates anchor springs
+	const double spring_constant_probe_self = spring_constant * scale_probe*2.0; // spring constant for coordiates self springs
+	const double spring_damping_probe = spring_damping * scale_probe* 2.0;
 
 //ref: https://bisqwit.iki.fi/story/howto/openmp/
 //#pragma omp parallel for
@@ -147,6 +147,16 @@ int main()
 	}
 
 
+
+	if (bot.isSurfaceEdges.size() > 0) {
+		double scale_internal_spring = 4.0/ scale_soft;
+		for (int i = 0; i < num_spring; i++) { // using rigid springs for internal constructions
+			spring.k[i] = spring.k[i] * scale_internal_spring;
+		}
+	}
+	
+
+
 	/*bot.idVertices: body,leg0,leg1,leg2,leg3,anchor,coord,the end
 	 bot.idEdges: body, leg0, leg1, leg2, leg3, anchors, rotsprings, fricsprings, oxyz_self_springs, oxyz_anchor_springs, the end */
 
@@ -175,7 +185,6 @@ int main()
 			mass.m[j] = m * scale_joint_m;
 		}
 	}
-
 
 	//// set higher spring constant for the robot body
 	//for (int i = 0; i < bot.idEdges[1]; i++)
