@@ -79,7 +79,7 @@ int main()
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 0.10* radius_poisson;// mass per vertex
+	const double m = 0.08* radius_poisson;// mass per vertex
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
 	const double spring_constant = m*6e6; //spring constant for silicone leg
@@ -93,8 +93,8 @@ int main()
 	constexpr double scale_rigid = 2.5;// scaling factor rigid
 	constexpr double scale_soft = 1.0; // scaling factor soft
 
-	constexpr double scale_joint_k = 2.5; // scaling factor for the joint spring constant
-	constexpr double scale_joint_m = 2.0; // scaling factor for the joint mass
+	constexpr double scale_joint_k = 2.0; // scaling factor for the joint spring constant
+	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
 	constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low

@@ -1097,14 +1097,18 @@ def getCoordinateOXYZSelfSprings():
 # print(getCoordinateOXYZSelfSprings())
 
 
-class RobotDescription(nx.classes.digraph.DiGraph):
+class RobotDescription(nx.OrderedDiGraph):
     def __init__(self, incoming_graph_data=None, unit_dict=dict(), **attr):
         """
         a directed graph of the robot description
         """
         super().__init__(incoming_graph_data, **attr)
         self.unit = Unit(unit_dict)
-
+        
+    @property
+    def orderedEdges(self):
+        return sorted(self.edges,key= lambda x : self.edges[x]["order"])
+    
     def reverseTraversal(self, node, return_edge: bool = False):
         """
         return a list traversing from root to node
@@ -1184,7 +1188,7 @@ class RobotDescription(nx.classes.digraph.DiGraph):
     @property
     def joint_pos(self):
         """return the joint_pos for all edges"""
-        return np.fromiter((self.edges[e]["joint_pos"] for e in self.edges), dtype=np.float64)
+        return np.fromiter((self.edges[e]["joint_pos"] for e in self.orderedEdges), dtype=np.float64)
 
     @joint_pos.setter
     def joint_pos(self, values):
@@ -1196,7 +1200,7 @@ class RobotDescription(nx.classes.digraph.DiGraph):
             for e, v in values:
                 self.edges[e]["joint_pos"] = v
         else:
-            for e, v in zip(self.edges, values):
+            for e, v in zip(self.orderedEdges, values):
                 self.edges[e]["joint_pos"] = v
 
     def createCoordinateOXYZ(self, radius):
@@ -1304,6 +1308,16 @@ class RobotDescription(nx.classes.digraph.DiGraph):
                 f"{e}:{len(edge['id_joint_child'])},{len(edge['id_joint_parent'])}")
         return self
 
+    def draw(self,ax=None):
+        """
+        draw a graph of the robot with nodes and edges information
+        require pydot, use: conda install pydot
+        """
+        pos = nx.drawing.nx_pydot.graphviz_layout(self, prog="dot")
+        edge_labels = {e: self.edges[e]["order"] for e in self.edges}
+        nx.draw(self, pos,
+            with_labels=True, node_size=2000, node_color="lightblue",ax=ax)
+        nx.draw_networkx_edge_labels(self, pos,edge_labels = edge_labels,ax=ax)
 ################################################
 
 def joinLines(left_vertices,
@@ -1443,8 +1457,8 @@ class URDF:
         origin_tag = etree.SubElement(joint_tag, "origin",
                                       xyz=" ".join(map(str, xyz)),
                                       rpy=" ".join(map(str, rpy)))
-        parent_tag = etree.SubElement(joint_tag, "parent", link=e[0])
-        child_tag = etree.SubElement(joint_tag, "child", link=e[1])
+        parent_tag = etree.SubElement(joint_tag, "parent", link=f"{e[0]}")
+        child_tag = etree.SubElement(joint_tag, "child", link=f"{e[1]}")
 
         axis_tag = etree.SubElement(joint_tag, "axis",
                                     xyz=' '.join(map(str, edge["axis"])))
@@ -1537,7 +1551,7 @@ class URDF:
         root = etree.Element("robot", name=f"{name}")
         links = [self._urdfLink(n, root, export_dir=dir_path)
                  for n in self.graph.nodes]
-        joints = [self._urdfJoint(e, root) for e in self.graph.edges]
+        joints = [self._urdfJoint(e, root) for e in self.graph.orderedEdges]
         tree = etree.ElementTree(root)
         tree.write(f"{full_path}", pretty_print=True,
                    xml_declaration=True, encoding="utf-8")
