@@ -6,7 +6,6 @@ build/
 .OldVersions
 *.pyc
 
-data/
 
 *.lck
 
