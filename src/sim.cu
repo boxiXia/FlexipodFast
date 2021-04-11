@@ -10,41 +10,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #include "sim.h"
 
 
-#include <cuda_runtime.h>
-#include <cuda.h>
-#include <cuda_device_runtime_api.h>
-#include <cuda_gl_interop.h>
-#include <exception>
-#include <device_launch_parameters.h>
-//#include <cooperative_groups.h>
-
-
-constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
-
-
-GLenum glCheckError_(const char* file, int line)
-{
-	GLenum errorCode;
-	while ((errorCode = glGetError()) != GL_NO_ERROR)
-	{
-		std::string error;
-		switch (errorCode)
-		{
-		case GL_INVALID_ENUM:                  error = "INVALID_ENUM"; break;
-		case GL_INVALID_VALUE:                 error = "INVALID_VALUE"; break;
-		case GL_INVALID_OPERATION:             error = "INVALID_OPERATION"; break;
-		case GL_STACK_OVERFLOW:                error = "STACK_OVERFLOW"; break;
-		case GL_STACK_UNDERFLOW:               error = "STACK_UNDERFLOW"; break;
-		case GL_OUT_OF_MEMORY:                 error = "OUT_OF_MEMORY"; break;
-		case GL_INVALID_FRAMEBUFFER_OPERATION: error = "INVALID_FRAMEBUFFER_OPERATION"; break;
-		}
-		std::cout << error << " | " << file << " (" << line << ")" << std::endl;
-	}
-	return errorCode;
-}
-#define glCheckError() glCheckError_(__FILE__, __LINE__) 
-
-
 
 #ifdef STRESS_TEST
 __global__ void updtateSpringStrain(
@@ -189,10 +154,6 @@ __global__ void updateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 
 
 #ifdef GRAPHICS
-constexpr int NUM_PER_VERTEX = 9; // number of float per vertex;
-constexpr int VERTEX_COLOR_OFFSET = 3; // offset for the vertex color
-constexpr int VERTEX_NORMAL_OFFSET = 6; // offset for the vertex normal
-// vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
 
 // update vertex positions
 __global__ void updateVertices(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
@@ -300,7 +261,7 @@ __global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restr
 //	}
 //}
 
-Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle) :
+__host__ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle) :
 	mass(num_mass, true), // allocate host
 	d_mass(num_mass, false),// allocate device
 	spring(num_spring, true),// allocate host
@@ -319,127 +280,36 @@ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, siz
 
 }
 
-void Simulation::getAll() {//copy from gpu
-	mass.copyFrom(d_mass, stream[CUDA_MEMORY_STREAM]); // mass
-	spring.copyFrom(d_spring, stream[CUDA_MEMORY_STREAM]);// spring
-#ifdef GRAPHICS
-	triangle.copyFrom(d_triangle, stream[CUDA_MEMORY_STREAM]);// triangle
-#endif //GRAPHICS
-	//cudaDeviceSynchronize();
-}
+__host__ Simulation::~Simulation() {
+	std::cout << "Simulation destructor called." << std::endl;
 
-void Simulation::setAll() {//copy form cpu
-	d_mass.copyFrom(mass, stream[CUDA_MEMORY_STREAM]);
-	d_spring.copyFrom(spring, stream[CUDA_MEMORY_STREAM]);
-#ifdef GRAPHICS
-	d_triangle.copyFrom(triangle, stream[CUDA_MEMORY_STREAM]);
-#endif //GRAPHICS
-	//cudaDeviceSynchronize();
-}
-
-void Simulation::setMass() {
-	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
-}
-
-//int Simulation::computeBlocksPerGrid(const int threadsPerBlock, const int num) {
-//	int blocksPerGrid = (num - 1 + threadsPerBlock) / threadsPerBlock;
-//	assert(blocksPerGrid <= MAX_BLOCKS);//TODO: kernel has a hard limit on MAX_BLOCKS
-//	return blocksPerGrid;
-//}
-
-/* compute the block size (threads per block) and grid size （blocks per grid)
-*
-*/
-int Simulation::computeGridSize(int block_size, int num) {
-	int grid_size = (num - 1 + block_size) / block_size;// Round up according to array size 
-	assert(grid_size <= MAX_BLOCKS);//TODO: kernel has a hard limit on MAX_BLOCKS
-	return grid_size;
-}
-
-void Simulation::updateCudaParameters() {
-	// ref: https://developer.nvidia.com/blog/cuda-pro-tip-occupancy-api-simplifies-launch-configuration/
-	int minGridSize;
-	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &spring_block_size, updateSpring, 0, 0);
-	spring_grid_size = computeGridSize(spring_block_size, spring.size());
-
-	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &mass_block_size, updateMass, 0, 0);
-	mass_grid_size = computeGridSize(mass_block_size, mass.size());
-
-	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &joint_block_size, updateJoint, 0, 0);
-	joint_grid_size = computeGridSize(joint_block_size, joint.points.size());
+	if (STARTED) {
+		{
+			std::unique_lock<std::mutex> lck(mutex_running);//https://en.cppreference.com/w/cpp/thread/condition_variable
+			cv_running.wait(lck, [this] {return ENDED; });
+		}
+		assert(thread_physics_update.joinable());
+		thread_physics_update.join();
+		//printf("thread_physics_update joined\n");
 
 #ifdef GRAPHICS
-	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &triangle_block_size, updateTriangleVertexNormal, 0, 0);
-	triangle_grid_size = computeGridSize(triangle_block_size, triangle.size());
+		assert(thread_graphics_update.joinable());
+		thread_graphics_update.join();
+		//printf("thread_graphics_update joined\n");
+#endif
 
-	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &vertex_block_size, updateVertices, 0, 0);
-	vertex_grid_size = computeGridSize(vertex_block_size, mass.size());
-#endif //GRAPHICS
-
-}
-
-void Simulation::setBreakpoint(const double time, const bool should_end) {
-	//assert(!ENDED, "Simulation has ended. Cannot setBreakpoint.");
-	bpts.insert(BreakPoint(time, should_end)); // TODO mutex breakpoints
-}
-
-/*pause the simulation at (simulation) time t [s] */
-void Simulation::pause(const double t) {
-	assert(!ENDED, "Simulation has ended. can't call pause");
-	setBreakpoint(t, false);
-	//// Wait until simulation is actually paused
-	std::unique_lock<std::mutex> lck(mutex_running);
-	SHOULD_RUN = false;
-	cv_running.notify_all();
-	cv_running.wait(lck, [this] {return !RUNNING; });
+#ifdef UDP
+		assert(thread_msg_update.joinable());
+		thread_msg_update.join();
+		udp_server.close();
+#endif // UDP
+	}
+	freeGPU();
+	printf("Simulation ended\n");
 }
 
 
-void Simulation::resume() {
-	assert(!ENDED, "Simulation has ended. Cannot resume simulation.");
-	assert(STARTED, "Simulation has not started. Cannot resume before calling sim.start().");
-	assert(mass.num > 0, "No masses have been added. Add masses before simulation starts.");
-	//updateCudaParameters();
-	//cudaDeviceSynchronize();
-	std::unique_lock<std::mutex> lck(mutex_running);
-	SHOULD_RUN = true;
-	cv_running.notify_all();
-}
-
-void Simulation::waitForEvent() {
-	assert(!ENDED, "Simulation has ended. can't call waitForEvent()");
-	std::unique_lock<std::mutex> lck(mutex_running);
-	cv_running.wait(lck, [this] {return !RUNNING; });
-}
-
-
-/*backup the robot mass/spring/joint state */
-void Simulation::backupState() {
-	backup_spring = SPRING(spring, true);
-	backup_mass = MASS(mass, true);
-	backup_joint = JOINT(joint, true);
-}
-/*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
-void Simulation::resetState() {//TODO...fix bug
-	cudaDeviceSynchronize();
-	d_mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM]);
-	mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM_ALT]);
-
-	d_spring.copyFrom(backup_spring, stream[CUDA_MEMORY_STREAM]);
-	spring.copyFrom(backup_spring, stream[CUDA_MEMORY_STREAM_ALT]);
-
-	d_joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM]);
-	joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM_ALT]);
-
-	joint_control.reset(backup_mass, backup_joint);
-	//joint_control.update(backup_mass, backup_joint, dt);
-	body.init(backup_mass, id_oxyz_start); // init body frame
-	cudaDeviceSynchronize();
-	RESET = false; // set reset to false 
-}
-
-
-void Simulation::start() {
+__host__ void Simulation::start() {
 	if (ENDED) { throw std::runtime_error("The simulation has ended. Cannot call sim.start() after the end of the simulation."); }
 	if (mass.num == 0) { throw std::runtime_error("No masses have been added. Please add masses before starting the simulation."); }
 	printf("Starting simulation with %d masses and %d springs\n", mass.num, spring.num);
@@ -491,12 +361,6 @@ void Simulation::updatePhysics() { // repeatedly start next
 	//	printf("not supported");
 	//	exit(-1);
 	//}
-
-
-#ifdef STRESS_TEST
-
-#endif //STRESS_TEST
-
 
 
 	cudaDeviceSynchronize();//sync before while loop
@@ -740,6 +604,196 @@ void Simulation::updateUdpMessage() {
 
 
 
+
+void Simulation::freeGPU() {
+	d_balls.clear();
+	d_balls.shrink_to_fit();
+
+	d_planes.clear();
+	d_planes.shrink_to_fit();
+	printf("GPU freed\n");
+}
+
+
+// creates half-space ax + by + cz < d
+void Simulation::createPlane(const Vec3d& abc, const double d, const double FRICTION_K, const double FRICTION_S) { // creates half-space ax + by + cz < d
+	if (ENDED) { throw std::runtime_error("The simulation has ended. New objects cannot be created."); }
+	ContactPlane* new_plane = new ContactPlane(abc, d);
+	assert(FRICTION_K >= 0);// make sure the friction coefficient are meaningful values
+	assert(FRICTION_S >= 0);
+	new_plane->_FRICTION_K = FRICTION_K;
+	new_plane->_FRICTION_S = FRICTION_S;
+	constraints.push_back(new_plane);
+
+	CudaContactPlane cuda_contact_plane;
+	cuda_contact_plane._normal = new_plane->_normal;
+	cuda_contact_plane._offset = d;
+	cuda_contact_plane._FRICTION_K = FRICTION_K;
+	cuda_contact_plane._FRICTION_S = FRICTION_S;
+
+	d_planes.push_back(cuda_contact_plane);
+
+	//d_planes.push_back(CudaContactPlane(*new_plane));
+	SHOULD_UPDATE_CONSTRAINT = true;
+}
+
+void Simulation::createBall(const Vec3d& center, const double r) { // creates ball with radius r at position center
+	if (ENDED) { throw std::runtime_error("The simulation has ended. New constraints cannot be added."); }
+	Ball* new_ball = new Ball(center, r);
+	constraints.push_back(new_ball);
+
+	CudaBall cuda_ball;
+	cuda_ball._center = center;
+	cuda_ball._radius = r;
+	d_balls.push_back(cuda_ball);
+
+	//d_balls.push_back(CudaBall(*new_ball));
+	SHOULD_UPDATE_CONSTRAINT = true;
+}
+
+void Simulation::clearConstraints() { // clears global constraints only
+	constraints.clear();
+	SHOULD_UPDATE_CONSTRAINT = true;
+}
+
+
+#ifdef DEBUG_ENERGY
+double Simulation::energy() { // compute total energy of the system
+	getAll();
+	cudaDeviceSynchronize();
+	double e_potential = 0; // potential energy
+	double e_kinetic = 0; //kinetic energy
+	for (int i = 0; i < mass.num; i++)
+	{
+		e_potential += -global_acc.dot(mass.pos[i]) * mass.m[i];
+		e_kinetic += 0.5 * mass.vel[i].SquaredSum() * mass.m[i];
+	}
+	for (int i = 0; i < spring.num; i++)
+	{
+		e_potential += 0.5 * spring.k[i] * pow((mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm() - spring.rest[i], 2);
+	}
+	return e_potential + e_kinetic;
+}
+#endif // DEBUG_ENERGY
+
+
+
+/* compute the block size (threads per block) and grid size （blocks per grid)
+*/
+int Simulation::computeGridSize(int block_size, int num) {
+	int grid_size = (num - 1 + block_size) / block_size;// Round up according to array size 
+	assert(grid_size <= MAX_BLOCKS);//TODO: kernel has a hard limit on MAX_BLOCKS
+	return grid_size;
+}
+
+void Simulation::updateCudaParameters() {
+	// ref: https://developer.nvidia.com/blog/cuda-pro-tip-occupancy-api-simplifies-launch-configuration/
+	int minGridSize;
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &spring_block_size, updateSpring, 0, 0);
+	spring_grid_size = computeGridSize(spring_block_size, spring.size());
+
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &mass_block_size, updateMass, 0, 0);
+	mass_grid_size = computeGridSize(mass_block_size, mass.size());
+
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &joint_block_size, updateJoint, 0, 0);
+	joint_grid_size = computeGridSize(joint_block_size, joint.points.size());
+
+#ifdef GRAPHICS
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &triangle_block_size, updateTriangleVertexNormal, 0, 0);
+	triangle_grid_size = computeGridSize(triangle_block_size, triangle.size());
+
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &vertex_block_size, updateVertices, 0, 0);
+	vertex_grid_size = computeGridSize(vertex_block_size, mass.size());
+#endif //GRAPHICS
+
+}
+
+
+void Simulation::setAll() {//copy form cpu
+	d_mass.copyFrom(mass, stream[CUDA_MEMORY_STREAM]);
+	d_spring.copyFrom(spring, stream[CUDA_MEMORY_STREAM]);
+#ifdef GRAPHICS
+	d_triangle.copyFrom(triangle, stream[CUDA_MEMORY_STREAM]);
+#endif //GRAPHICS
+	//cudaDeviceSynchronize();
+}
+
+void Simulation::getAll() {//copy from gpu
+	mass.copyFrom(d_mass, stream[CUDA_MEMORY_STREAM]); // mass
+	spring.copyFrom(d_spring, stream[CUDA_MEMORY_STREAM]);// spring
+#ifdef GRAPHICS
+	triangle.copyFrom(d_triangle, stream[CUDA_MEMORY_STREAM]);// triangle
+#endif //GRAPHICS
+	//cudaDeviceSynchronize();
+}
+
+
+void Simulation::setMass() {
+	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
+}
+
+
+/*backup the robot mass/spring/joint state */
+void Simulation::backupState() {
+	backup_spring = SPRING(spring, true);
+	backup_mass = MASS(mass, true);
+	backup_joint = JOINT(joint, true);
+}
+/*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
+void Simulation::resetState() {//TODO...fix bug
+	cudaDeviceSynchronize();
+	d_mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM]);
+	mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM_ALT]);
+
+	d_spring.copyFrom(backup_spring, stream[CUDA_MEMORY_STREAM]);
+	spring.copyFrom(backup_spring, stream[CUDA_MEMORY_STREAM_ALT]);
+
+	d_joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM]);
+	joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM_ALT]);
+
+	joint_control.reset(backup_mass, backup_joint);
+	//joint_control.update(backup_mass, backup_joint, dt);
+	body.init(backup_mass, id_oxyz_start); // init body frame
+	cudaDeviceSynchronize();
+	RESET = false; // set reset to false 
+}
+
+
+void Simulation::setBreakpoint(const double time, const bool should_end) {
+	//assert(!ENDED, "Simulation has ended. Cannot setBreakpoint.");
+	bpts.insert(BreakPoint(time, should_end)); // TODO mutex breakpoints
+}
+
+/*pause the simulation at (simulation) time t [s] */
+void Simulation::pause(const double t) {
+	assert(!ENDED, "Simulation has ended. can't call pause");
+	setBreakpoint(t, false);
+	//// Wait until simulation is actually paused
+	std::unique_lock<std::mutex> lck(mutex_running);
+	SHOULD_RUN = false;
+	cv_running.notify_all();
+	cv_running.wait(lck, [this] {return !RUNNING; });
+}
+
+
+void Simulation::resume() {
+	assert(!ENDED, "Simulation has ended. Cannot resume simulation.");
+	assert(STARTED, "Simulation has not started. Cannot resume before calling sim.start().");
+	assert(mass.num > 0, "No masses have been added. Add masses before simulation starts.");
+	//updateCudaParameters();
+	//cudaDeviceSynchronize();
+	std::unique_lock<std::mutex> lck(mutex_running);
+	SHOULD_RUN = true;
+	cv_running.notify_all();
+}
+
+void Simulation::waitForEvent() {
+	assert(!ENDED, "Simulation has ended. can't call waitForEvent()");
+	std::unique_lock<std::mutex> lck(mutex_running);
+	cv_running.wait(lck, [this] {return !RUNNING; });
+}
+
+
 #ifdef GRAPHICS
 void Simulation::updateGraphics() {
 
@@ -974,161 +1028,33 @@ void Simulation::updateGraphics() {
 	}
 	cv_running.notify_all();
 
-
 	return;
-
-
 }
 #endif
 
 
-
-
-Simulation::~Simulation() {
-	std::cout << "Simulation destructor called." << std::endl;
-
-	if (STARTED) {
-		{
-			std::unique_lock<std::mutex> lck(mutex_running);//https://en.cppreference.com/w/cpp/thread/condition_variable
-			cv_running.wait(lck, [this] {return ENDED; });
-		}
-		assert(thread_physics_update.joinable());
-		thread_physics_update.join();
-		//printf("thread_physics_update joined\n");
-
 #ifdef GRAPHICS
-		assert(thread_graphics_update.joinable());
-		thread_graphics_update.join();
-		//printf("thread_graphics_update joined\n");
-#endif
 
-#ifdef UDP
-		assert(thread_msg_update.joinable());
-		thread_msg_update.join();
-		udp_server.close();
-#endif // UDP
-	}
-	freeGPU();
-	printf("Simulation ended\n");
+void Simulation::generateBuffers() {
+	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	createVBO(&vbo_edge, &cuda_resource_edge, spring.size() * sizeof(uint2), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
+	createVBO(&vbo_triangle, &cuda_resource_triangle, triangle.size() * sizeof(uint3), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 }
 
-
-void Simulation::freeGPU() {
-	d_balls.clear();
-	d_balls.shrink_to_fit();
-
-	d_planes.clear();
-	d_planes.shrink_to_fit();
-	printf("GPU freed\n");
+void Simulation::resizeBuffers() {
+	////TODO>>>>>>
+	resizeVBO(&vbo_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	resizeVBO(&vbo_edge, spring.size() * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
+	resizeVBO(&vbo_triangle, triangle.size() * sizeof(uint3), GL_ELEMENT_ARRAY_BUFFER);
+	resize_buffers = false;
+}
+void Simulation::deleteBuffers() {
+	deleteVBO(&vbo_vertex, cuda_resource_vertex, GL_ARRAY_BUFFER);
+	deleteVBO(&vbo_edge, cuda_resource_edge, GL_ELEMENT_ARRAY_BUFFER);
+	deleteVBO(&vbo_triangle, cuda_resource_triangle, GL_ELEMENT_ARRAY_BUFFER);
 }
 
-
-// creates half-space ax + by + cz < d
-void Simulation::createPlane(const Vec3d& abc, const double d, const double FRICTION_K, const double FRICTION_S) { // creates half-space ax + by + cz < d
-	if (ENDED) { throw std::runtime_error("The simulation has ended. New objects cannot be created."); }
-	ContactPlane* new_plane = new ContactPlane(abc, d);
-	assert(FRICTION_K >= 0);// make sure the friction coefficient are meaningful values
-	assert(FRICTION_S >= 0);
-	new_plane->_FRICTION_K = FRICTION_K;
-	new_plane->_FRICTION_S = FRICTION_S;
-	constraints.push_back(new_plane);
-
-	CudaContactPlane cuda_contact_plane;
-	cuda_contact_plane._normal = new_plane->_normal;
-	cuda_contact_plane._offset = d;
-	cuda_contact_plane._FRICTION_K = FRICTION_K;
-	cuda_contact_plane._FRICTION_S = FRICTION_S;
-
-	d_planes.push_back(cuda_contact_plane);
-
-	//d_planes.push_back(CudaContactPlane(*new_plane));
-	SHOULD_UPDATE_CONSTRAINT = true;
-}
-
-void Simulation::createBall(const Vec3d& center, const double r) { // creates ball with radius r at position center
-	if (ENDED) { throw std::runtime_error("The simulation has ended. New constraints cannot be added."); }
-	Ball* new_ball = new Ball(center, r);
-	constraints.push_back(new_ball);
-
-	CudaBall cuda_ball;
-	cuda_ball._center = center;
-	cuda_ball._radius = r;
-	d_balls.push_back(cuda_ball);
-
-	//d_balls.push_back(CudaBall(*new_ball));
-	SHOULD_UPDATE_CONSTRAINT = true;
-}
-
-void Simulation::clearConstraints() { // clears global constraints only
-	constraints.clear();
-	SHOULD_UPDATE_CONSTRAINT = true;
-}
-
-#ifdef DEBUG_ENERGY
-double Simulation::energy() { // compute total energy of the system
-	getAll();
-	cudaDeviceSynchronize();
-	double e_potential = 0; // potential energy
-	double e_kinetic = 0; //kinetic energy
-	for (int i = 0; i < mass.num; i++)
-	{
-		e_potential += -global_acc.dot(mass.pos[i]) * mass.m[i];
-		e_kinetic += 0.5 * mass.vel[i].SquaredSum() * mass.m[i];
-	}
-	for (int i = 0; i < spring.num; i++)
-	{
-		e_potential += 0.5 * spring.k[i] * pow((mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm() - spring.rest[i], 2);
-	}
-	return e_potential + e_kinetic;
-}
-#endif // DEBUG_ENERGY
-
-#ifdef GRAPHICS
-void Simulation::setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector) {
-	this->camera_pos = camera_position;
-	this->camera_dir = (target_location - camera_position).normalize();
-	this->camera_up = up_vector;
-
-	// initialized the camera_horizontal reference direction
-	camera_href_dir = Vec3d(1, 0, 0);
-	if (abs(camera_href_dir.dot(camera_up)) > 0.9) { camera_href_dir = Vec3d(0, 1, 0); }
-	camera_href_dir = camera_href_dir.decompose(camera_up).normalize();
-
-	if (STARTED) { computeMVP(); }
-	}
-void Simulation::moveViewport(const Vec3d& displacement) {
-	this->camera_pos += displacement;
-	if (STARTED) { computeMVP(); } // compute perspective projection matrix
-}
-void Simulation::computeMVP(bool update_view) {
-	// http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#cumulating-transformations--the-modelviewprojection-matrix
-
-
-	int iconified = glfwGetWindowAttrib(window, GLFW_ICONIFIED);// whether window is iconified
-	int width, height;
-	glfwGetFramebufferSize(window, &width, &height); // check if window is resized
-	bool is_resized = !iconified && (width != framebuffer_width || (height != framebuffer_height));
-	if (is_resized) {// window is resized but not iconified
-		framebuffer_width = width;
-		framebuffer_height = height;
-		// Projection matrix : 70 deg Field of View, width:height ratio, display range : 0.01 unit <-> 100 units
-		this->Projection = glm::perspective(glm::radians(70.0f), (float)framebuffer_width / (float)framebuffer_height, 0.01f, 100.0f);
-	}
-
-	if (update_view) {
-		// Camera matrix
-		this->View = glm::lookAt(
-			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // camera position in World Space
-			glm::vec3(camera_pos.x + camera_dir.x,
-				camera_pos.y + camera_dir.y,
-				camera_pos.z + camera_dir.z),	// look at position
-			glm::vec3(camera_up.x, camera_up.y, camera_up.z));  // camera up vector (set to 0,-1,0 to look upside-down)
-	}
-	if (is_resized || update_view) {
-		this->MVP = Projection * View; // Remember, matrix multiplication is the other way around
-	}
-}
-
+/*----------------------------GL buffer----------------------------------*/
 
 /* create vertex buffer object // modified form cuda samples: simpleGL.cu
 * ref:https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__OPENGL.html
@@ -1164,67 +1090,9 @@ void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GL
 	glCheckError();// check opengl error code
 }
 
+/*-----------------------end of GL buffer------------------------------*/
 
-
-inline void Simulation::generateBuffers() {
-	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	createVBO(&vbo_edge, &cuda_resource_edge, spring.size() * sizeof(uint2), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
-	createVBO(&vbo_triangle, &cuda_resource_triangle, triangle.size() * sizeof(uint3), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
-}
-
-inline void Simulation::resizeBuffers() {
-	////TODO>>>>>>
-	resizeVBO(&vbo_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
-	resizeVBO(&vbo_edge, spring.size() * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
-	resizeVBO(&vbo_triangle, triangle.size() * sizeof(uint3), GL_ELEMENT_ARRAY_BUFFER);
-	resize_buffers = false;
-}
-inline void Simulation::deleteBuffers() {
-	deleteVBO(&vbo_vertex, cuda_resource_vertex, GL_ARRAY_BUFFER);
-	deleteVBO(&vbo_edge, cuda_resource_edge, GL_ELEMENT_ARRAY_BUFFER);
-	deleteVBO(&vbo_triangle, cuda_resource_triangle, GL_ELEMENT_ARRAY_BUFFER);
-}
-
-
-void Simulation::updateBuffers() { // todo: check the kernel call
-	size_t num_bytes;
-	// vertex update, map OpenGL buffer object for writing from CUDA: update positions and colors
-	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));
-	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes, cuda_resource_vertex);
-	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.size());
-	updateColors << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.color, mass.size());
-	updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
-
-	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
-	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-
-	// line indices update
-	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));
-	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_edge, &num_bytes, cuda_resource_edge));
-	updateLines << <spring_grid_size, spring_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_edge, d_spring.edge, spring.size());
-	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
-
-	// triangle indices update
-	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));
-	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_triangle, &num_bytes, cuda_resource_triangle));
-	updateTriangles << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_triangle, d_triangle.triangle, triangle.size());
-	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
-
-}
-
-void Simulation::updateVertexBuffers() {
-	size_t num_bytes;
-	cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]);
-	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes, cuda_resource_vertex);
-	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
-	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
-	if (show_triangle) {
-		updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
-	}
-	cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]);// unmap buffer object
-}
-
-inline void Simulation::draw() {
+void Simulation::draw() {
 	// ref: https://stackoverflow.com/questions/16380005/opengl-3-4-glvertexattribpointer-stride-and-offset-miscalculation
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
 	//glCheckError(); // check opengl error code
@@ -1279,10 +1147,49 @@ inline void Simulation::draw() {
 	}
 }
 
+void Simulation::setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector) {
+	this->camera_pos = camera_position;
+	this->camera_dir = (target_location - camera_position).normalize();
+	this->camera_up = up_vector;
 
-void Simulation::framebuffer_size_callback(GLFWwindow* window, int width, int height)
-{
-	glViewport(0, 0, width, height);
+	// initialized the camera_horizontal reference direction
+	camera_href_dir = Vec3d(1, 0, 0);
+	if (abs(camera_href_dir.dot(camera_up)) > 0.9) { camera_href_dir = Vec3d(0, 1, 0); }
+	camera_href_dir = camera_href_dir.decompose(camera_up).normalize();
+
+	if (STARTED) { computeMVP(); }
+}
+void Simulation::moveViewport(const Vec3d& displacement) {
+	this->camera_pos += displacement;
+	if (STARTED) { computeMVP(); } // compute perspective projection matrix
+}
+void Simulation::computeMVP(bool update_view) {
+	// http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#cumulating-transformations--the-modelviewprojection-matrix
+
+
+	int iconified = glfwGetWindowAttrib(window, GLFW_ICONIFIED);// whether window is iconified
+	int width, height;
+	glfwGetFramebufferSize(window, &width, &height); // check if window is resized
+	bool is_resized = !iconified && (width != framebuffer_width || (height != framebuffer_height));
+	if (is_resized) {// window is resized but not iconified
+		framebuffer_width = width;
+		framebuffer_height = height;
+		// Projection matrix : 70 deg Field of View, width:height ratio, display range : 0.01 unit <-> 100 units
+		this->Projection = glm::perspective(glm::radians(70.0f), (float)framebuffer_width / (float)framebuffer_height, 0.01f, 100.0f);
+	}
+
+	if (update_view) {
+		// Camera matrix
+		this->View = glm::lookAt(
+			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // camera position in World Space
+			glm::vec3(camera_pos.x + camera_dir.x,
+				camera_pos.y + camera_dir.y,
+				camera_pos.z + camera_dir.z),	// look at position
+			glm::vec3(camera_up.x, camera_up.y, camera_up.z));  // camera up vector (set to 0,-1,0 to look upside-down)
+	}
+	if (is_resized || update_view) {
+		this->MVP = Projection * View; // Remember, matrix multiplication is the other way around
+	}
 }
 
 void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
@@ -1340,6 +1247,13 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 	else if (key == GLFW_KEY_Q) { sim.camera_up_offset -= 0.05; } // camera moves down
 	else if (key == GLFW_KEY_E) { sim.camera_up_offset += 0.05; }// camera moves up
 }
+
+
+void Simulation::framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+	glViewport(0, 0, width, height);
+}
+
 void Simulation::createGLFWWindow() {
 	// Initialise GLFW
 	if (!glfwInit()) { throw(std::runtime_error("Failed to initialize GLFW\n")); }
@@ -1401,5 +1315,52 @@ void Simulation::createGLFWWindow() {
 	// reset window color
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 }
+
+#endif
+
+
+#ifdef GRAPHICS
+
+
+void Simulation::updateBuffers() { // todo: check the kernel call
+	size_t num_bytes;
+	// vertex update, map OpenGL buffer object for writing from CUDA: update positions and colors
+	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));
+	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes, cuda_resource_vertex);
+	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.size());
+	updateColors << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.color, mass.size());
+	updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
+
+	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
+	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
+
+	// line indices update
+	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));
+	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_edge, &num_bytes, cuda_resource_edge));
+	updateLines << <spring_grid_size, spring_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_edge, d_spring.edge, spring.size());
+	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_edge, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
+
+	// triangle indices update
+	gpuErrchk(cudaGraphicsMapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));
+	gpuErrchk(cudaGraphicsResourceGetMappedPointer((void**)&dptr_triangle, &num_bytes, cuda_resource_triangle));
+	updateTriangles << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_triangle, d_triangle.triangle, triangle.size());
+	gpuErrchk(cudaGraphicsUnmapResources(1, &cuda_resource_triangle, stream[CUDA_GRAPHICS_STREAM]));// unmap buffer object
+
+}
+
+void Simulation::updateVertexBuffers() {
+	size_t num_bytes;
+	cudaGraphicsMapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]);
+	cudaGraphicsResourceGetMappedPointer((void**)&dptr_vertex, &num_bytes, cuda_resource_vertex);
+	////printf("CUDA mapped VBO: May access %ld bytes\n", num_bytes);
+	updateVertices << <vertex_grid_size, vertex_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, mass.num);
+	if (show_triangle) {
+		updateTriangleVertexNormal << <triangle_grid_size, triangle_block_size, 0, stream[CUDA_GRAPHICS_STREAM] >> > (dptr_vertex, d_mass.pos, d_triangle.triangle, triangle.size());
+	}
+	cudaGraphicsUnmapResources(1, &cuda_resource_vertex, stream[CUDA_GRAPHICS_STREAM]);// unmap buffer object
+}
+
+
+
 
 #endif

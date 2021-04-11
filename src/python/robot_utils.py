@@ -17,6 +17,9 @@ from matplotlib.colors import to_hex
 from lxml import etree
 import os
 import functools
+# conda install pythonocc-core
+from OCC.Extend.DataExchange import write_stl_file
+from OCC.Core.STEPControl import STEPControl_Reader
 
 def remapArray(arr:np.ndarray,src,dst):
     """
@@ -633,6 +636,8 @@ class VolumeMesh(dict):
     
     def transform(self,t):
         self["vertices"] = applyTransform(self["vertices"],t)
+        if "fine_mesh" in self: # fine mesh from stl
+            self["fine_mesh"].vertices = applyTransform(self["fine_mesh"].vertices,t)
         return self
     def reColor(self,cmap=None,update_signed_distance=False):
         """update the vertex and lines colors"""
@@ -690,38 +695,49 @@ class VolumeMesh(dict):
     
     @staticmethod
     def fromGmsh(
-        gmsh, 
-        min_radius:float=0., max_radius:float=-1., max_nn:int=1,
+        msh_file,
+        min_radius:float=1e-10, 
+        max_radius:float=1e10, 
+        max_nn:int=1,
+        cmap="hot",
         transform=None,
-        cmap="hot"):
+        verbose:bool = True,
+        stl_file = None):
         """
         generate VolumeMesh from gmsh, generate additional lines if 
         min_radius, max_radius and max_nn are specified
         input:
-            gmsh: (str):file_path of ".gmsh", or
-                  (meshio._mesh.Mesh) a gmsh file opened by meshio
-            min_radius: (float) minimum radius for line generation, min_radius>0
-            max_radius: (float)  maximum radius for line generation,max_radius>min_radius
-            max_nn:  (int) maximun number of neighbor, max_nn>0
+            msh_file:  (str):file_path of ".gmsh", or
+                    (meshio._mesh.Mesh) a gmsh file opened by meshio
+            min_radius:(float) minimum radius for line generation, min_radius>0
+            max_radius:(float)  maximum radius for line generation,max_radius>min_radius
+            max_nn:    (int) maximun number of neighbor, max_nn>0
+            cmap:      (plt colormap) ref: https://matplotlib.org/tutorials/colors/colormaps.html
+            transform: None or a numpy 3x3 rotation or 4x4 homogeneous transformation matrix
+            verbose:   bool, display processing info if true
+            stl_file:  None or The file/PathLike to read from, should be a .stl file
         returns:
-            a VolumMesh object
+            a VolumeMesh object containing the vertices, faces, edges etc.
         """
-        if type(gmsh) is str:
-            vmesh = meshio.read(gmsh)
-        elif type(gmsh) is meshio._mesh.Mesh:
-            vmesh = gmsh
+        if type(msh_file) is str:
+            vmesh = meshio.read(msh_file)
+        elif type(msh_file) is meshio._mesh.Mesh:
+            vmesh = msh_file
         else:
             raise TypeError("input mesh is should be a .gmsh string or meshio._mesh.Mesh.")
 
         # numpy array:(3x3) rotation or (4x4) homogeneous transform
-        if (transform !=None) and ~np.array_equal(transform, np.eye(4)):# should transform the points
+        if (transform is not None) and ~np.array_equal(transform, np.eye(4)):# should transform the points
             vmesh.points = applyTransform(vmesh.points, transform) 
 
         vertices = vmesh.points
         triangles = vmesh.cells_dict["triangle"]
         tetra = vmesh.cells_dict["tetra"]
-        lines = tetra[:, list(itertools.combinations(range(4), 2))].reshape((-1, 2))
-        lines, lines_counts = getUniqueEdges(lines)
+        # edges from tetrahedron
+        edges_tetra = tetra[:, list(
+            itertools.combinations(range(4), 2))].reshape((-1, 2))
+        # edges_face = triangles[:, list(
+        #     itertools.combinations(range(3), 2))].reshape((-1, 2))
 
         if max_nn>1:  # generate additional lines
             assert((0<min_radius) and (min_radius<max_radius))
@@ -739,14 +755,27 @@ class VolumeMesh(dict):
                 edges_k = np.column_stack((index,[k]*index.size))
                 edges_list.append(edges_k) 
             edges,_ = getUniqueEdges(np.vstack(edges_list))
-
             # trim springs outside the mesh
             mid_points = getMidpoints(vertices, edges)
             is_inside = mesh.ray.contains_points(mid_points)
             edges = edges[is_inside]
             # combine tetra lines and lines from nearest neighbor search
-            lines,_ = getUniqueEdges(np.vstack((lines, edges)))
-        return VolumeMesh(vertices=vertices,lines=lines,triangles=triangles,cmap=cmap)
+            edges,_ = getUniqueEdges(np.vstack((edges_tetra, edges)))
+
+        edge_lengths = np.linalg.norm(
+            vertices[edges[:, 0]]-vertices[edges[:, 1]], axis=1)
+        # select only long enough edges
+        selected_edges = edge_lengths >= min_radius
+        edges = edges[selected_edges]  # make it larger
+        # edge_lengths = edge_lengths[selected_edges]
+
+        vmd = VolumeMesh(vertices=vertices,lines=edges,triangles=triangles,cmap=cmap)
+        if stl_file is not None: # add stl surface mesh
+            stl_mesh = meshio.read(stl_file)
+            vmd["fine_mesh"] = trimesh.Trimesh(
+                stl_mesh.points, stl_mesh.cells_dict["triangle"],process=False, maintain_order=True)
+        if verbose:vmd.describe() # describe the vmd
+        return vmd
     
     def removeVertices(self,ids,keep_triangles:bool=False):
         """
@@ -861,107 +890,122 @@ class VolumeMesh(dict):
             new_vertices, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
         return self
 ####################################################################################
-def discretize(msh_file, min_radius, max_radius, max_nn,transform=None):
-    vmesh = meshio.read(msh_file)
-    if (transform is not None) and ~np.array_equal(transform, np.eye(4)):# should transform the points
-        vmesh.points = applyTransform(vmesh.points, transform)
 
-    tetra = vmesh.cells_dict["tetra"]  # (nx4) np array of tetrahedron
-    vertices = vmesh.points
-    triangles = vmesh.cells_dict["triangle"]
-    # edges from tetrahedron
-    edges_tetra = tetra[:, list(
-        itertools.combinations(range(4), 2))].reshape((-1, 2))
-    edges_face = triangles[:, list(
-        itertools.combinations(range(3), 2))].reshape((-1, 2))
+def convertStepToSTL(
+    in_file_name: str, out_file_name: str,
+    mode='binary',
+    linear_deflection=0.5,
+    angular_deflection=0.3):
+    """
+    export stl given a step/stp model
+    Input:
+    in_file_name : str, Location of the file to be imported, file type should be stp/step
+    out_file_name : str, Location of the file to be imported, file type should be stl
+    mode: optional, "ascii" by default. Can either be "binary"
+    linear_deflection: optional, default to 0.001. Lower, more occurate mesh
+    angular_deflection: optional, default to 0.5. Lower, more accurate_mesh
+    """
+    # convert to absolute path
+    in_file_name = os.path.abspath(in_file_name)
+    out_file_name = os.path.abspath(out_file_name)
+    step_reader = STEPControl_Reader()
+    step_reader.ReadFile( in_file_name )
+    step_reader.TransferRoot()
+    myshape = step_reader.Shape()
+    # Export to STL
+    write_stl_file(
+        myshape, out_file_name, mode=mode, 
+        linear_deflection=linear_deflection, 
+        angular_deflection=angular_deflection)
 
-    # trimesh mesh, process=False to reserve vertex order
-    mesh = trimesh.Trimesh(vertices, triangles,
-                           process=False, maintain_order=True)
-    mesh.visual.face_colors = [255, 255, 255, 255]
 
-    # #     ###############################################################
-    # mesh_dict = mesh.to_dict()
-    # bounds,xyz_grid_edge,xyz_grid_inside = voxelizeMesh(mesh)
-    # vertices = sample_helper(mesh_dict, xyz_grid_edge, xyz_grid_inside)
 
-    pcd_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(vertices))
-    # KDTree for nearest neighbor search
-    pcd_tree = o3d.geometry.KDTreeFlann(pcd_o3d)
-    neighbors = [np.asarray(pcd_tree.search_hybrid_vector_3d(
-        point, max_radius, max_nn=max_nn)[1]) for point in vertices]
-    edges = np.vstack([getEdges(neighbor[:max_nn]) for neighbor in neighbors])
-    edges, edge_counts = getUniqueEdges(edges)
-    # trim springs outside the mesh
-    mid_points = getMidpoints(vertices, edges)
-    is_inside = mesh.ray.contains_points(mid_points)
-    edges = edges[is_inside]
-    # #     ###############################################################
-    edges = np.vstack((edges, edges_tetra))
-#     edges = edges_tetra[:]
-
-    edges, edge_counts = getUniqueEdges(edges)
-    neighbor_counts = getNeighborCounts(edges)
-    edge_lengths = np.linalg.norm(
-        vertices[edges[:, 0]]-vertices[edges[:, 1]], axis=1)
-
-    # select only long enough edges
-    selected_edges = edge_lengths >= min_radius
-    edges = edges[selected_edges]  # make it larger
-    edge_lengths = edge_lengths[selected_edges]
-
-    print(f"# vertices         = {vertices.shape[0]}")
-    print(f"# surface triangle =", triangles.shape[0])
-    print(f"# tetra            =", tetra.shape[0])
-    print(f"# unique edges     = {edges.shape[0]}")
-
-    fig, ax = plt.subplots(1, 3, figsize=(12, 2), dpi=75)
-    ax[0].hist(edge_counts, bins=np.arange(0.5, 10), density=True)
-    ax[0].set_xticks(np.arange(10))
-    ax[0].set_xlabel("edge counts")
-    ax[1].hist(edge_lengths, density=True, bins='auto')
-    ax[1].set_xlabel("edge length")
-    ax[2].hist(neighbor_counts, density=True, bins='auto')
-    ax[2].set_xlabel("neighbor counts")
-    #     plt.tight_layout()
-    plt.show()
-
-    pcd_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(vertices))
-
-    # signed_distance = trimesh.proximity.signed_distance(mesh, vertices)
-    # nsd = normalizeMinMax(signed_distance)  # normalized_signed_distance
-    # cmap = plt.cm.get_cmap('plasma')
-    # pcd_o3d.colors = o3d.utility.Vector3dVector(cmap(nsd)[:, :3])
-
-    lsd_o3d = o3d.geometry.LineSet(
-        o3d.utility.Vector3dVector(vertices),
-        o3d.utility.Vector2iVector(edges))
-
-    # cmap = plt.cm.get_cmap('seismic')
-    # normalized_edge_lengths = normalizeMinMax(edge_lengths)
-    # edges_colors = cmap(normalized_edge_lengths)[:, :3]  # drop alpha channel
-
-    # normalized_edge_counts = normalizeMinMax(edge_counts)
-    # print(edge_counts.min(),edge_counts.max())
-    # edges_colors = cmap(normalized_edge_counts)[:,:3]# drop alpha channel
+# def discretize(msh_file, 
+#                min_radius:float = 0,
+#                max_radius:float = 1e12, 
+#                max_nn:int =28,
+#                transform=None,
+#                verbose:bool = True,
+#                stl_file = None
+#               ):
+#     """
+#     add additinoal edges to the vertices given a msh file
+#     input:
+#         msh_file: The file/PathLike to read from, should be a .msh file
+#         min_radius: minimum radius to connect the vertices
+#         max_radius: maximum radius to connect the vertices
+#         max_nn: maximun neareast negighbors to for additional edges
+#         transform=None: a numpy 3x3 rotation or 4x4 homogeneous transformation matrix
+#         verbose: bool, display processing info if true
+#         stl_file: None or The file/PathLike to read from, should be a .stl file
+#     output:
+#         a VolumeMesh object containing the vertices, faces, edges etc.
+#     """
+#     vmesh = meshio.read(msh_file)
+#     if (transform is not None) and ~np.array_equal(transform, np.eye(4)):# should transform the points
+#         vmesh.points = applyTransform(vmesh.points, transform)
+#     vertices = vmesh.points
+#     tetra = vmesh.cells_dict["tetra"]  # (nx4) np array of tetrahedron
+#     triangles = vmesh.cells_dict["triangle"]
+#     # edges from tetrahedron
+#     edges_tetra = tetra[:, list(
+#         itertools.combinations(range(4), 2))].reshape((-1, 2))
+# #     edges_face = triangles[:, list(
+# #         itertools.combinations(range(3), 2))].reshape((-1, 2))
     
-    # lsd_o3d.colors = o3d.utility.Vector3dVector(edges_colors)
-    # o3dShow([lsd_o3d,pcd_o3d,coord_frame],background_color=(255,255,255),mesh_show_wireframe=True)
+#     ############## add additional edges to connect the vertices ############
+#     pcd_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(vertices))
+#     # KDTree for nearest neighbor search
+#     pcd_tree = o3d.geometry.KDTreeFlann(pcd_o3d)
+#     neighbors = [np.asarray(pcd_tree.search_hybrid_vector_3d(
+#         point, max_radius, max_nn=max_nn)[1]) for point in vertices]
+#     edges = np.vstack([getEdges(neighbor[:max_nn]) for neighbor in neighbors])
+#     edges, edge_counts = getUniqueEdges(edges)
+#     # trim springs outside the mesh
+#     # trimesh mesh, process=False to reserve vertex order
+#     mesh = trimesh.Trimesh(vertices, triangles,process=False, maintain_order=True)
+# #     mesh.visual.face_colors = [255, 255, 255, 255]
+#     mid_points = getMidpoints(vertices, edges)
+#     is_inside = mesh.ray.contains_points(mid_points)
+#     edges = edges[is_inside]
+#     ########################################################################
+#     edges = np.vstack((edges, edges_tetra))
 
-    # lsd_o3d = o3d.geometry.TetraMesh(
-    #     o3d.utility.Vector3dVector(vmesh.points),
-    #     o3d.utility.Vector4iVector(vmesh.get_cells_type("tetra")))
-    # o3d.visualization.draw_geometries([lsd_o3d],mesh_show_wireframe=True)
+#     edges, edge_counts = getUniqueEdges(edges)
+#     neighbor_counts = getNeighborCounts(edges)
+#     edge_lengths = np.linalg.norm(
+#         vertices[edges[:, 0]]-vertices[edges[:, 1]], axis=1)
 
-    #     vsmesh_o3d = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(vertices),o3d.utility.Vector3iVector(triangles))
-    # o3dShow([vsmesh_o3d,pcd_o3d],background_color=(0,0,0),show_coordinate_frame=False,mesh_show_wireframe=True)
+#     # select only long enough edges
+#     selected_edges = edge_lengths >= min_radius
+#     edges = edges[selected_edges]  # make it larger
+#     edge_lengths = edge_lengths[selected_edges]
+    
+#     if verbose: # display the information
+#         print(f"{'-'*20} {msh_file} {'-'*20}")
+#         print(f"# vertices         = {vertices.shape[0]}")
+#         print(f"# surface triangle =", triangles.shape[0])
+#         print(f"# tetra            =", tetra.shape[0])
+#         print(f"# unique edges     = {edges.shape[0]}")
 
-    # display(mesh.show())
-    #     display(trimesh.scene.Scene([mesh],).show())
-    vmd = VolumeMesh(vertices, edges, triangles)
-    return vmd
-
-# vmesh_leg,mesh_leg,pcd_leg,lsd_leg,nsd_leg = discretize(msh_file="../../mesh/leg_simplified.msh")
+#         fig, ax = plt.subplots(1, 3, figsize=(12, 2), dpi=75)
+#         ax[0].hist(edge_counts, bins=np.arange(0.5, 10), density=True)
+#         ax[0].set_xticks(np.arange(10))
+#         ax[0].set_xlabel("edge counts")
+#         ax[1].hist(edge_lengths, density=True, bins='auto')
+#         ax[1].set_xlabel("edge length")
+#         ax[2].hist(neighbor_counts, density=True, bins='auto')
+#         ax[2].set_xlabel("neighbor counts")
+#         #     plt.tight_layout()
+#         plt.show()
+    
+#     vmd = VolumeMesh(vertices, edges, triangles)
+#     if stl_file is not None: # add stl surface mesh
+#         stl_mesh = meshio.read(stl_file)
+#         vmd["fine_mesh"] = trimesh.Trimesh(
+#             stl_mesh.points, stl_mesh.cells_dict["triangle"],
+#             process=False, maintain_order=True)
+#     return vmd
 
 ########################################################################################
 def equidistantDisk(nr):
@@ -1211,11 +1255,12 @@ class RobotDescription(nx.OrderedDiGraph):
             self.edges[e]["coord"] = getCoordinateOXYZ(radius=radius)
             self.edges[e]["coord_self_lines"] = getCoordinateOXYZSelfSprings()
 
-    def exportURDF(self, path):
+    def exportURDF(self, path,use_fine_mesh:bool = False):
         """
         generate the URDF at path, path should be *./urdf
+        if use_fine_mesh, use self["fine_mesh"] if it exist
         """
-        tree = URDF(self).export(path)
+        tree = URDF(self).export(path,use_fine_mesh=use_fine_mesh)
         return tree
 
     def makeJoint(self, opt):
@@ -1484,7 +1529,10 @@ class URDF:
                                                rpy=" ".join(map(str, rpy)))
 
         # deepcopy to avoid changing orginal vertices
-        mesh = copy.deepcopy(node["vmd"].triMesh())  # trimesh mesh
+        if self.use_fine_mesh and "fine_mesh" in node["vmd"]:
+            mesh = copy.deepcopy(node["vmd"]["fine_mesh"]) # using fine mesh
+        else:
+            mesh = copy.deepcopy(node["vmd"].triMesh())  # trimesh mesh
         density = node["density"]*toSI("density")
         mesh.density = density
         mesh.vertices *= toSI("length")
@@ -1535,13 +1583,15 @@ class URDF:
         )
         return link_tag
 
-    def export(self, path):
+    def export(self, path,use_fine_mesh:bool=False):
         """
         generate the URDF at path, path should be *./urdf
         """
         # example:
         # URDF(graph).export(path= "../../data/urdf/test/robot.urdf")
         # ref: https://github.com/MPEGGroup/trimesh/blob/master/trimesh/exchange/urdf.py
+        
+        self.use_fine_mesh = use_fine_mesh # use vmd["fine_mesh"] if exist
         full_path = os.path.abspath(path)
         dir_path = os.path.dirname(full_path)
         name, ext = os.path.splitext(os.path.basename(full_path))

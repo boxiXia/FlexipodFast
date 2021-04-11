@@ -1,17 +1,3 @@
-#ifndef CUDA_API_PER_THREAD_DEFAULT_STREAM
-#define CUDA_API_PER_THREAD_DEFAULT_STREAM
-#endif // !CUDA_API_PER_THREAD_DEFAULT_STREAM
-
-#ifdef __CUDACC__
-#define CUDA_CALLABLE_MEMBER __host__ __device__
-#else
-#define CUDA_CALLABLE_MEMBER
-#endif
-#ifdef __CUDACC__
-#define CUDA_DEVICE __device__
-#else
-#define CUDA_DEVICE
-#endif
 
 #include<cuda_runtime.h>
 #include<cuda_device_runtime_api.h>
@@ -25,6 +11,7 @@
 #include "shader.h"
 #include "object.h"
 #include "sim.h"
+#include "vec.h"
 
 #include<algorithm>
 
@@ -37,7 +24,7 @@
 
 #include <thread>
 
-#include "vec.h"
+
 #include <complex>
 
 
@@ -51,7 +38,6 @@ int main()
 
 	std::cout << "current working dir: " << getWorkingDir() << "\n";
 	std::cout << "program dir: " << getProgramDir() << "\n";
-
 
 	Model bot(getProgramDir()+"\\flexipod_12dof.msgpack"); //defined in sim.h
 	//Model bot(getProgramDir() + "\\flexipod_4dof.msgpack"); //defined in sim.h

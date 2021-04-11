@@ -35,7 +35,7 @@ find_package(CUDA REQUIRED) # find and include CUDA
 set(CMAKE_CUDA_ARCHITECTURES 75)
 message(STATUS "CMAKE_CUDA_ARCHITECTURES=" ${CMAKE_CUDA_ARCHITECTURES})
 # string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
-string(APPEND CMAKE_CUDA_FLAGS " --default-stream per-thread --use_fast_math ")
+string(APPEND CMAKE_CUDA_FLAGS " --default-stream per-thread --use_fast_math ") # CUDA_API_PER_THREAD_DEFAULT_STREAM
 # https://devblogs.nvidia.com/gpu-pro-tip-cuda-7-streams-simplify-concurrency/
 ##############################################################
 #CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS Auto)

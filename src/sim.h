@@ -35,6 +35,16 @@ For external library that works with cpp but not with .cu, wrap host code with
 #include <cuda_gl_interop.h>
 #endif
 
+#include <cuda_runtime.h>
+#include <cuda.h>
+
+//#include <cuda_device_runtime_api.h>
+#include <cuda_gl_interop.h>
+#include <exception>
+#include <device_launch_parameters.h>
+//#include <cooperative_groups.h>
+
+
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
@@ -72,6 +82,7 @@ constexpr const int CUDA_MEMORY_STREAM = 1;  // stream to run the memory operati
 constexpr const int CUDA_MEMORY_STREAM_ALT = 2;  // additional stream to run the memory operations
 constexpr const int CUDA_GRAPHICS_STREAM = 3; // steam to run graphics update
 
+constexpr int MAX_BLOCKS = 65535; // max number of CUDA blocks
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -82,6 +93,12 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 		exit(code);
 	}
 }
+
+GLenum glCheckError_(const char* file, int line); 
+#define glCheckError() glCheckError_(__FILE__, __LINE__) //helper function to check OpenGL error
+
+
+
 
 
 /*  helper function to free device/host memory given host_or_device_ptr */
@@ -801,6 +818,15 @@ typedef WsaUdpServer< DataReceive, std::deque<DataSend>> UdpServer;
 
 #endif // UDP
 
+
+#ifdef GRAPHICS
+constexpr int NUM_PER_VERTEX = 9; // number of float per vertex;
+constexpr int VERTEX_COLOR_OFFSET = 3; // offset for the vertex color
+constexpr int VERTEX_NORMAL_OFFSET = 6; // offset for the vertex normal
+// vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
+#endif // GRAPHICS
+
+
 class Simulation {
 public:
 	double dt = 0.0001;
@@ -1008,24 +1034,23 @@ public:
 	bool show_triangle = true;
 	bool resize_buffers = true; // update all (vbo_vertex,vbo_color,vbo_edge, vbo_triangles) if true
 
-	inline void updateBuffers();
-	inline void updateVertexBuffers();//only update vertex (positions)
-	inline void generateBuffers();
-	inline void resizeBuffers();
-	inline void deleteBuffers();
+	void updateBuffers();
+	void updateVertexBuffers();//only update vertex (positions)
+	void generateBuffers();
+	void resizeBuffers();
+	void deleteBuffers();
 
 	void createVBO(GLuint* vbo, struct cudaGraphicsResource** vbo_res, size_t size, unsigned int vbo_res_flags, GLenum buffer_type = GL_ARRAY_BUFFER);
 	void deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GLenum buffer_type);
 	void resizeVBO(GLuint* vbo, size_t size, GLenum buffer_type = GL_ARRAY_BUFFER);
 	/*-------------------------------------------------------------------------------*/
-	inline void draw();
+	void draw();
 	void createGLFWWindow();
 	static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 	static void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
 #endif
 };
-
 
 #ifdef GRAPHICS
 #endif
