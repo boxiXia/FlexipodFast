@@ -68,6 +68,7 @@ find_package(glfw3 CONFIG REQUIRED)
 #find_package(glad CONFIG REQUIRED)
 # set ALL_GL_LIBS as a placeholder for all opengl library
 #set(ALL_GL_LIBS glm::glm GLEW::GLEW glfw glad::glad)
+find_package(imgui CONFIG REQUIRED) # GUI
 
 find_package(msgpack CONFIG REQUIRED)
 
@@ -120,6 +121,7 @@ target_link_libraries(flexipod PUBLIC
        # ${ALL_GL_LIBS}
        # glm::glm GLEW::GLEW glfw glad::glad 
        glm::glm GLEW::GLEW glfw
+       imgui::imgui
         cuda)# cudart
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")

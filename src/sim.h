@@ -33,6 +33,10 @@ For external library that works with cpp but not with .cu, wrap host code with
 #include <glm/glm.hpp>// Include GLM
 #include <glm/gtc/matrix_transform.hpp>
 #include <cuda_gl_interop.h>
+// imgui
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
 #endif
 
 #include <cuda_runtime.h>
@@ -985,6 +989,11 @@ private:
 public:
 	void setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector);
 	void moveViewport(const Vec3d& displacement);
+	
+	glm::vec4 clear_color = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f); // rgba, clearing window color when calling glClearColor 
+	int contex_version_major = 4; // for GLFW_CONTEXT_VERSION_MAJOR
+	int contex_version_minor = 6; // for GLFW_CONTEXT_VERSION_MINOR
+
 
 	GLFWwindow* window;
 	int framebuffer_width, framebuffer_height; // the width and height of the framebuffer
@@ -1017,6 +1026,12 @@ public:
 	double camera_yaw = 0; // rotation angle of the vector from target to camera about camera_up vector
 
 	void computeMVP(bool update_view = true); // compute MVP
+
+private:
+	/*--------------------------------- ImGui ----------------------------------------*/
+	void startupImgui();
+	void runImgui();
+	void shutdownImgui();
 
 	/*------------- vertex buffer object and their device pointers--------------------*/
 	GLuint vbo_vertex; // handle for vertexbuffer: for vertex position,color, vertex normal update

@@ -799,13 +799,14 @@ void Simulation::updateGraphics() {
 
 	createGLFWWindow(); // create a window with  width and height
 
+
+	startupImgui(); // Setup Dear ImGui
+
+
 	int glDeviceId;// todo:this output wrong number, maybe it is a cuda bug...
 	unsigned int glDeviceCount;
 	cudaGLGetDevices(&glDeviceCount, &glDeviceId, 1u, cudaGLDeviceListAll);
 	printf("openGL device: %u\n", glDeviceId);
-
-	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
-	glBindVertexArray(VertexArrayID);
 
 	// get the directory of this program
 	std::string program_dir = getProgramDir();
@@ -821,6 +822,9 @@ void Simulation::updateGraphics() {
 		program_dir + "\\shadow_mapping_depth_vertex.glsl",
 		program_dir + "\\shadow_mapping_depth_fragment.glsl");
 	//simpleDepthShader.use();
+
+	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
+	glBindVertexArray(VertexArrayID);
 
 	/*------------------- configure depth map FBO ----------------------------*/
 	glGenFramebuffers(1, &depthMapFBO);
@@ -860,12 +864,15 @@ void Simulation::updateGraphics() {
 	if (error != GL_NO_ERROR)
 		std::cerr << "OpenGL Error " << error << std::endl;
 
+	
+	auto t_end = std::chrono::steady_clock::now();
+	auto t_start = t_end - std::chrono::seconds(1);
 	while (!SHOULD_END) {
-
-		std::this_thread::sleep_for(std::chrono::microseconds(int(1e6 / 60.02)));// TODO fix race condition
-
-		//if (T- T_previous_update>1.0/60.1) 
-		{ // graphics update loop
+		t_end = std::chrono::steady_clock::now();
+		if((int)std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count()> 1e9 / 60.0)
+		{ 
+			t_start = t_end;
+			// graphics update loop
 			if (resize_buffers) {
 				resizeBuffers(); // needs to be run from GPU thread
 				updateBuffers(); // full update
@@ -874,7 +881,6 @@ void Simulation::updateGraphics() {
 				updateVertexBuffers(); // partial update
 			}
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
-			//T_previous_update = T;
 
 			// copy only the position
 			//mass.CopyPosFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
@@ -997,6 +1003,11 @@ void Simulation::updateGraphics() {
 
 			// Swap buffers, render screen
 			glfwPollEvents();
+		
+			runImgui();// run ImGui, show menu etc.
+
+
+			// update new frame
 			glfwSwapBuffers(window);
 
 			//// check for errors
@@ -1012,8 +1023,10 @@ void Simulation::updateGraphics() {
 				cv_running.notify_all(); //notify others SHOULD_END = true
 			}
 		}
-
+		//std::this_thread::sleep_for(std::chrono::microseconds(100));
 	}
+
+	shutdownImgui(); // imgui Cleanup and shutdown 
 
 	// end the graphics
 	deleteBuffers(); // delete the buffer objects
@@ -1034,6 +1047,57 @@ void Simulation::updateGraphics() {
 
 
 #ifdef GRAPHICS
+
+/*--------------------------------- ImGui ----------------------------------------*/
+/*Setup Dear ImGui*/
+void Simulation::startupImgui() {
+// Setup Dear ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
+	//ImGui::StyleColorsClassic();
+
+	// Setup Platform/Renderer backends
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	//const char* glsl_version = "#version 460"; //TODO change this in header
+	std::ostringstream glsl_version;
+	glsl_version << "#version " << contex_version_major << contex_version_minor << "0";
+	ImGui_ImplOpenGL3_Init(glsl_version.str().c_str());
+}
+
+/*run Imgui, processing inputs*/
+void Simulation::runImgui() {
+	// Start the Dear ImGui frame
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	bool show_demo_window = true;
+	ImGui::ShowDemoWindow(&show_demo_window);
+	ImGui::ShowMetricsWindow();
+	// Rendering
+	ImGui::Render();
+	int display_w, display_h;
+	glfwGetFramebufferSize(window, &display_w, &display_h);
+	glViewport(0, 0, display_w, display_h);
+
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+/* imgui Cleanup and shutdown */
+void Simulation::shutdownImgui() {
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+}
+/*-------------------------------------------------------------------------------*/
+
+
 
 void Simulation::generateBuffers() {
 	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
@@ -1313,7 +1377,8 @@ void Simulation::createGLFWWindow() {
 	// Ensure we can capture the escape key being pressed below
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 	// reset window color
-	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	glClearColor(clear_color.x, 0.0f, 0.0f, 0.0f);
+	
 }
 
 #endif
