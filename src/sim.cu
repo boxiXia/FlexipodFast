@@ -952,9 +952,9 @@ void Simulation::updateGraphics() {
 
 			// 1. render depth of scene to texture (from light's perspective)
 			// --------------------------------------------------------------
-			float near_plane = -5.0, far_plane = 10.f;
+			float near_plane = -5.0, far_plane = 50.f;
 			//lightProjection = glm::perspective(glm::radians(45.0f), (GLfloat)SHADOW_WIDTH / (GLfloat)SHADOW_HEIGHT, near_plane, far_plane); // note that if you use a perspective projection matrix you'll have to change the light position as the current light position isn't enough to reflect the whole scene
-			glm::mat4 lightProjection = glm::ortho(-1.5f, 1.5f, -1.5f, 1.5f, near_plane, far_plane);
+			glm::mat4 lightProjection = glm::ortho(-2.0f, 2.0f, -2.0f, 2.0f, near_plane, far_plane);
 
 			//lightView = glm::lookAt(light.direction, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
 			glm::vec3 light_pos = glm::vec3(

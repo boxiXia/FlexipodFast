@@ -79,9 +79,9 @@ int main()
 	constexpr double scale_rigid = 2.5;// scaling factor rigid
 	constexpr double scale_soft = 1.0; // scaling factor soft
 
-	constexpr double scale_joint_k = 2.0; // scaling factor for the joint spring constant
+	constexpr double scale_joint_k = 3.0; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
-	constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
+	constexpr double scale_joint_damping = 3.0; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates

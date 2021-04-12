@@ -5,10 +5,10 @@ layout(location = 1) in vec3 vertexColor;
 layout(location = 2) in vec3 vertexNormal;
 
 // Output data ; will be interpolated for each fragment.
-out vec3 fragColor;  // fragment color
-out vec3 fragPos;    // fragment position
-out vec3 fragNormal; // fragment normal
-out vec4 fragPosLightSpace; //fragment position in light space
+layout(location = 0) out vec3 fragColor;  // fragment color
+layout(location = 1) out vec3 fragPos;    // fragment position
+layout(location = 2) out vec3 fragNormal; // fragment normal
+layout(location = 3) out vec4 fragPosLightSpace; //fragment position in light space
 
 // Values that stay constant for the whole mesh.
 uniform mat4 MVP;       // model view projection matrix

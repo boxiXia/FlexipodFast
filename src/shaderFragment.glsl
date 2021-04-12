@@ -1,9 +1,9 @@
 #version 460 core
 // Interpolated values from the vertex shaders
-in vec3 fragColor;
-in vec3 fragPos;// fragment position
-in vec3 fragNormal; // fragment normal
-in vec4 fragPosLightSpace; //fragment position in light space
+layout(location = 0) in vec3 fragColor;
+layout(location = 1) in vec3 fragPos;// fragment position
+layout(location = 2) in vec3 fragNormal; // fragment normal
+layout(location = 3) in vec4 fragPosLightSpace; //fragment position in light space
 
 // Ouput data
 out vec3 color;
@@ -32,6 +32,32 @@ uniform DirectionLight light;
 //     return (2.0 * near * far) / (far + near - z * (far - near));	
 // }
 
+// https://github.com/opengl-tutorials/ogl/blob/master/tutorial16_shadowmaps/ShadowMapping.fragmentshader
+vec2 poissonDisk[16] = vec2[]( 
+   vec2( -0.94201624, -0.39906216 ), 
+   vec2( 0.94558609, -0.76890725 ), 
+   vec2( -0.094184101, -0.92938870 ), 
+   vec2( 0.34495938, 0.29387760 ), 
+   vec2( -0.91588581, 0.45771432 ), 
+   vec2( -0.81544232, -0.87912464 ), 
+   vec2( -0.38277543, 0.27676845 ), 
+   vec2( 0.97484398, 0.75648379 ), 
+   vec2( 0.44323325, -0.97511554 ), 
+   vec2( 0.53742981, -0.47373420 ), 
+   vec2( -0.26496911, -0.41893023 ), 
+   vec2( 0.79197514, 0.19090188 ), 
+   vec2( -0.24188840, 0.99706507 ), 
+   vec2( -0.81409955, 0.91437590 ), 
+   vec2( 0.19984126, 0.78641367 ), 
+   vec2( 0.14383161, -0.14100790 ) 
+);
+// Returns a random number based on a vec3 and an int.
+float random(vec3 seed, int i){
+	vec4 seed4 = vec4(seed,i);
+	float dot_product = dot(seed4, vec4(12.9898,78.233,45.164,94.673));
+	return fract(sin(dot_product) * 43758.5453);
+}
+
 //https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
 float ShadowCalculation(vec4 fragPosLightSpace)
 {
@@ -49,22 +75,29 @@ float ShadowCalculation(vec4 fragPosLightSpace)
     // vec3 lightDir = normalize(lightPos - fragPos);
     vec3 lightDir = light.direction;
     
-    float bias = max(0.04 * (1.0 - dot(normal, lightDir)), 0.004);
+    float bias = max(0.01 * (1.0 - dot(normal, lightDir)), 0.001);
     // check whether current frag pos is in shadow
     // float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0;
     // PCF
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-    for(int x = -1; x <= 1; ++x)
-    {
-        for(int y = -1; y <= 1; ++y)
-        {
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r; 
-            shadow += currentDepth - bias > pcfDepth  ? 1.0 : 0.0;        
-        }    
+
+    // for(int x = -1; x <= 1; ++x){
+    //     for(int y = -1; y <= 1; ++y){
+    //         float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r; 
+    //         shadow += currentDepth - bias > pcfDepth  ? 1.0 : 0.0;        
+    //     }    
+    // }
+    // shadow /= 9.0;
+
+    //https://github.com/opengl-tutorials/ogl/blob/master/tutorial16_shadowmaps/ShadowMapping.fragmentshader
+    for (int i=0;i<9;i++){// poisson disk sampling 
+            int index = int(16.0*random(floor(fragPos.xyz*1000.0), i))%16;
+            float pcfDepth = texture(shadowMap, projCoords.xy + poissonDisk[index] * texelSize).r; 
+            shadow += currentDepth - bias > pcfDepth  ? 1.0 : 0.0;     
     }
     shadow /= 9.0;
-    
+
     // keep the shadow at 0.0 when outside the far_plane region of the light's frustum.
     if(projCoords.z > 1.0)
         shadow = 0.0;

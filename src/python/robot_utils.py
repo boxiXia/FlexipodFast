@@ -701,7 +701,7 @@ class VolumeMesh(dict):
         max_nn:int=1,
         cmap="hot",
         transform=None,
-        verbose:bool = True,
+        verbose:bool = False,
         stl_file = None):
         """
         generate VolumeMesh from gmsh, generate additional lines if 
