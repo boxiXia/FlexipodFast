@@ -28,15 +28,17 @@ For external library that works with cpp but not with .cu, wrap host code with
 #ifdef GRAPHICS
 #include "shader.h"
 
+// imgui
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
 #include <GL/glew.h>// Include GLEW
 #include <GLFW/glfw3.h>// Include GLFW
 #include <glm/glm.hpp>// Include GLM
 #include <glm/gtc/matrix_transform.hpp>
 #include <cuda_gl_interop.h>
-// imgui
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
+
 #endif
 
 #include <cuda_runtime.h>
@@ -473,7 +475,7 @@ struct JOINT {
 };
 
 // enum for the JointControl mode
-enum JointControlMode {
+enum class JointControlMode {
 	vel = 0, // velocity control mode
 	pos = 1, // position control mode
 };
@@ -1005,8 +1007,8 @@ public:
 	Shader simpleDepthShader;
 	GLuint depthMapFBO; // depth map frame buffer object
 	GLuint depthMap; // handle for the depthmap texture
-	const GLuint SHADOW_WIDTH = 2160;
-	const GLuint SHADOW_HEIGHT = 2160;
+	const GLuint SHADOW_WIDTH = 1080;
+	const GLuint SHADOW_HEIGHT = 1080;
 	/*------------------------------------------------*/
 
 	DirectionLight light; // directional light
@@ -1026,6 +1028,9 @@ public:
 	double camera_yaw = 0; // rotation angle of the vector from target to camera about camera_up vector
 
 	void computeMVP(bool update_view = true); // compute MVP
+
+	// imgui
+	bool show_imgui = true; // show imgui window
 
 private:
 	/*--------------------------------- ImGui ----------------------------------------*/

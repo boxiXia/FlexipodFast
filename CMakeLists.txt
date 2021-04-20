@@ -129,7 +129,9 @@ target_link_libraries(flexipod PUBLIC
 # create symbolic link for *.glsl and *.msgpack (this may require administrator privileges)
 file(GLOB msgpack_list CONFIGURE_DEPENDS 
     ${CMAKE_SOURCE_DIR}/src/*.msgpack 
-    ${CMAKE_SOURCE_DIR}/src/*.glsl)
+    ${CMAKE_SOURCE_DIR}/src/*.glsl
+    ${CMAKE_SOURCE_DIR}/src/fonts/*.ttf
+    )
 foreach(data ${msgpack_list})
     get_filename_component(data_name "${data}" NAME)
     makeLink(${data} ${CMAKE_CURRENT_BINARY_DIR}/${data_name} flexipod)

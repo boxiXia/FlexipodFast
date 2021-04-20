@@ -40,3 +40,224 @@ Model::Model(const std::string& file_path, bool versbose) {
 
 	}
 }
+
+#ifdef GRAPHICS
+
+/*--------------------------------- ImGui ----------------------------------------*/
+
+bool DragScalarVec3d(const char* label, const ImGuiDataType& data_type, Vec3d& vec, const float& v_speed, const void* p_min, const void* p_max, const char* format = "%.3f", ImGuiSliderFlags flags = 0) {
+	bool value_changed = false;
+	ImGui::BeginGroup();
+	ImGui::PushID(label);
+	ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.2f);
+	ImGui::Text(label);
+	ImGui::SameLine(); ImGui::PushID(0);
+	value_changed |= ImGui::DragScalar("x", data_type, &(vec.x), v_speed, p_min, p_max, format, flags);
+	ImGui::PopID(); ImGui::SameLine(); ImGui::PushID(1);
+	value_changed |= ImGui::DragScalar("y", data_type, &(vec.y), v_speed, p_min, p_max, format, flags);
+	ImGui::PopID(); ImGui::SameLine(); ImGui::PushID(2);
+	value_changed |= ImGui::DragScalar("z", data_type, &(vec.z), v_speed, p_min, p_max, format, flags);
+	ImGui::PopID();
+	ImGui::PopItemWidth();
+	ImGui::EndGroup();
+	return value_changed;
+}
+
+
+// Implementing a simple custom widget using the public API.
+// You may also use the <imgui_internal.h> API to get raw access to more data/helpers, however the internal API isn't guaranteed to be forward compatible.
+// FIXME: Need at least proper label centering + clipping (internal functions RenderTextClipped provides both but api is flaky/temporary)
+static bool MyKnob(const char* label, float* p_value, float v_min, float v_max)
+{
+	ImGuiIO& io = ImGui::GetIO();
+	ImGuiStyle& style = ImGui::GetStyle();
+
+	float radius_outer = 40.0f;
+	ImVec2 pos = ImGui::GetCursorScreenPos();
+	ImVec2 center = ImVec2(pos.x + radius_outer, pos.y + radius_outer);
+	float line_height = ImGui::GetTextLineHeight();
+	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+	float ANGLE_MIN = 3.141592f * -1.0f;
+	float ANGLE_MAX = 3.141592f * 1.0f;
+
+	ImGui::InvisibleButton(label, ImVec2(radius_outer * 2, radius_outer * 2 + line_height + style.ItemInnerSpacing.y));
+	bool value_changed = false;
+	bool is_active = ImGui::IsItemActive();
+	bool is_hovered = ImGui::IsItemActive();
+	if (is_active && ((io.MouseDelta.x != 0.0f) || (io.MouseDelta.y != 0.0f)))
+	{
+
+		float step = (v_max - v_min) / 200.0f;
+		//*p_value += io.MouseDelta.x * step;
+		//*p_value += atan2f(io.MouseDelta.y, io.MouseDelta.x)* step;
+		*p_value += (io.MouseDelta.y + io.MouseDelta.x) * step;
+
+		if (*p_value < v_min) *p_value = v_min;
+		if (*p_value > v_max) *p_value = v_max;
+		value_changed = true;
+	}
+
+	float t = (*p_value - v_min) / (v_max - v_min);
+	float angle = ANGLE_MIN + (ANGLE_MAX - ANGLE_MIN) * t;
+	float angle_cos = cosf(angle), angle_sin = sinf(angle);
+	float radius_inner = radius_outer * 0.20f;
+	draw_list->AddCircleFilled(center, radius_outer, ImGui::GetColorU32(ImGuiCol_FrameBg), 16);
+	draw_list->AddLine(ImVec2(center.x + angle_cos * radius_inner, center.y + angle_sin * radius_inner), ImVec2(center.x + angle_cos * (radius_outer - 2), center.y + angle_sin * (radius_outer - 2)), ImGui::GetColorU32(ImGuiCol_SliderGrabActive), 2.0f);
+	draw_list->AddCircleFilled(center, radius_inner, ImGui::GetColorU32(is_active ? ImGuiCol_FrameBgActive : is_hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), 16);
+	draw_list->AddText(ImVec2(pos.x, pos.y + radius_outer * 2 + style.ItemInnerSpacing.y), ImGui::GetColorU32(ImGuiCol_Text), label);
+
+	if (is_active || is_hovered)
+	{
+		ImGui::SetNextWindowPos(ImVec2(pos.x - style.WindowPadding.x, pos.y - line_height - style.ItemInnerSpacing.y - style.WindowPadding.y));
+		ImGui::BeginTooltip();
+		ImGui::Text("%.3f", *p_value);
+		ImGui::EndTooltip();
+	}
+
+	return value_changed;
+}
+
+/*Setup Dear ImGui*/
+void Simulation::startupImgui() {
+	// Setup Dear ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
+	//ImGui::StyleColorsClassic();
+
+	// fonts
+	//io.Fonts->AddFontDefault();
+	//io.Fonts->TexDesiredWidth = 20;
+	//ImGui::SetWindowFontScale(2);
+	//ImGui::GetFont()->FontSize = 20;
+
+	// Setup Platform/Renderer backends
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	//const char* glsl_version = "#version 460"; //TODO change this in header
+	std::ostringstream glsl_version;
+	glsl_version << "#version " << contex_version_major << contex_version_minor << "0";
+	ImGui_ImplOpenGL3_Init(glsl_version.str().c_str());
+
+
+	//scale for high dpi 
+	// https://doc.magnum.graphics/magnum/classMagnum_1_1ImGuiIntegration_1_1Context.html#ImGuiIntegration-Context-dpi
+	auto monitor = glfwGetPrimaryMonitor();
+	//const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	float xscale, yscale;
+	glfwGetMonitorContentScale(monitor, &xscale, &yscale);
+	//std::cout << xscale << "," << yscale;
+	io.Fonts->AddFontFromFileTTF("Cousine-Regular.ttf", 16.0f * xscale);
+	ImGui::GetStyle().ScaleAllSizes(xscale);
+
+}
+
+
+/*run Imgui, processing inputs*/
+void Simulation::runImgui() {
+	if (show_imgui) {// show imgui window
+		
+		// Start the Dear ImGui frame
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+
+		//bool show_demo_window = true;
+		//ImGui::ShowDemoWindow(&show_demo_window);
+		//ImGui::ShowMetricsWindow();
+		//ImGui::ShowStyleEditor();
+
+		ImGui::Begin("Debug console", &show_imgui);
+
+		static double gravity_max = 10;
+		static double gravity_min = -10;
+
+		ImGui::Text("%10.3f [s] | %.1f FPS", T,ImGui::GetIO().Framerate);
+
+
+
+		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
+		ImGui::SameLine();
+
+		if (RUNNING) { if (ImGui::Button("Pause ")) { pause(0); } } // pause
+		else if (ImGui::Button("Resume")) { resume(); }// resume
+
+		//static float v_knob = 0;
+		//MyKnob("knob", &v_knob, -3.142, 3.14
+
+		// physics
+		if (joint_control.size() > 0 && ImGui::CollapsingHeader("physics")) {
+
+			static double dt_min = 1e-7;
+			static double dt_max = 1e-3;
+			ImGui::DragScalar("dt", ImGuiDataType_Double, &dt, 1e-7, &dt_min, &dt_max, "%5.3e");
+			DragScalarVec3d("gravity", ImGuiDataType_Double, global_acc, 0.1, &gravity_min, &gravity_max, "%.2f");
+		}
+
+		// joint control
+		if (joint_control.size() > 0 && ImGui::CollapsingHeader("joint control")) {
+
+			float width = ImGui::GetContentRegionAvail().x;
+			float cursor_pos_x = ImGui::GetCursorPosX();
+			ImGui::Text("id");ImGui::SameLine();
+
+			ImGui::SetCursorPosX(width * 0.32f);
+			ImGui::Text("pos_desired"); ImGui::SameLine();
+			ImGui::SetCursorPosX(width * 0.75f);
+			ImGui::Text("vel_desired"); 
+			
+			ImGui::PushItemWidth(width * 0.5);
+			char label[20];
+			for (int i = 0; i < joint_control.size(); i++)
+			{
+				ImGui::Text("%2d", i); 
+				ImGui::SameLine();
+				
+				sprintf(label, "joint_pos_des_%d", i); 
+				ImGui::PushID(label);
+				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.01f, NULL, NULL, "%6.3f");
+				ImGui::PopID();
+
+				ImGui::SameLine();
+				sprintf(label, "joint_vel_des_%d", i);
+				ImGui::PushID(label);
+				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.01f, NULL, NULL, "%6.3f");
+				ImGui::PopID();
+			}
+			ImGui::PopItemWidth();
+			ImGui::Separator();
+		}
+
+		ImGui::Checkbox("draw mesh ", &show_triangle);
+
+		ImGui::End();
+
+
+		// Rendering
+		ImGui::Render();
+		int display_w, display_h;
+		glfwGetFramebufferSize(window, &display_w, &display_h);
+		glViewport(0, 0, display_w, display_h);
+
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	}
+
+
+
+
+
+}
+
+/* imgui Cleanup and shutdown */
+void Simulation::shutdownImgui() {
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+}
+/*-------------------------------------------------------------------------------*/
+#endif // GRAPHICS

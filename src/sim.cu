@@ -893,40 +893,40 @@ void Simulation::updateGraphics() {
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == vel) {
+					if (joint_control.mode == JointControlMode::vel) {
 						joint_control.vel_desired[i] += i < 2 ? speed_multiplier : -speed_multiplier;
 					}
-					else if (joint_control.mode == pos) {
+					else if (joint_control.mode == JointControlMode::pos) {
 						joint_control.pos_desired[i] += i < 2 ? pos_multiplier : -pos_multiplier;
 					}
 				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == vel) {
+					if (joint_control.mode == JointControlMode::vel) {
 						joint_control.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
 					}
-					else if (joint_control.mode == pos) {
+					else if (joint_control.mode == JointControlMode::pos) {
 						joint_control.pos_desired[i] -= i < 2 ? pos_multiplier : -pos_multiplier;
 					}
 				}
 			}
 			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == vel) {
+					if (joint_control.mode == JointControlMode::vel) {
 						joint_control.vel_desired[i] -= speed_multiplier;
 					}
-					else if (joint_control.mode == pos) {
+					else if (joint_control.mode == JointControlMode::pos) {
 						joint_control.pos_desired[i] -= pos_multiplier;
 					}
 				}
 			}
 			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == vel) {
+					if (joint_control.mode == JointControlMode::vel) {
 						joint_control.vel_desired[i] += speed_multiplier;
 					}
-					else if (joint_control.mode == pos) {
+					else if (joint_control.mode == JointControlMode::pos) {
 						joint_control.pos_desired[i] += pos_multiplier;
 					}
 				}
@@ -1048,54 +1048,61 @@ void Simulation::updateGraphics() {
 
 #ifdef GRAPHICS
 
-/*--------------------------------- ImGui ----------------------------------------*/
-/*Setup Dear ImGui*/
-void Simulation::startupImgui() {
-// Setup Dear ImGui context
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-	// Setup Dear ImGui style
-	ImGui::StyleColorsDark();
-	//ImGui::StyleColorsClassic();
-
-	// Setup Platform/Renderer backends
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	//const char* glsl_version = "#version 460"; //TODO change this in header
-	std::ostringstream glsl_version;
-	glsl_version << "#version " << contex_version_major << contex_version_minor << "0";
-	ImGui_ImplOpenGL3_Init(glsl_version.str().c_str());
-}
-
-/*run Imgui, processing inputs*/
-void Simulation::runImgui() {
-	// Start the Dear ImGui frame
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplGlfw_NewFrame();
-	ImGui::NewFrame();
-
-	bool show_demo_window = true;
-	ImGui::ShowDemoWindow(&show_demo_window);
-	ImGui::ShowMetricsWindow();
-	// Rendering
-	ImGui::Render();
-	int display_w, display_h;
-	glfwGetFramebufferSize(window, &display_w, &display_h);
-	glViewport(0, 0, display_w, display_h);
-
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-}
-
-/* imgui Cleanup and shutdown */
-void Simulation::shutdownImgui() {
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
-}
-/*-------------------------------------------------------------------------------*/
+///*--------------------------------- ImGui ----------------------------------------*/
+///*Setup Dear ImGui*/
+//void Simulation::startupImgui() {
+//// Setup Dear ImGui context
+//	IMGUI_CHECKVERSION();
+//	ImGui::CreateContext();
+//	ImGuiIO& io = ImGui::GetIO(); (void)io;
+//	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+//	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+//
+//	// Setup Dear ImGui style
+//	ImGui::StyleColorsDark();
+//	//ImGui::StyleColorsClassic();
+//
+//	// fonts
+//	//io.Fonts->AddFontDefault();
+//	//io.Fonts->TexDesiredWidth = 20;
+//	//ImGui::SetWindowFontScale(2);
+//	ImGui::GetFont()->FontSize = 20;
+//
+//	// Setup Platform/Renderer backends
+//	ImGui_ImplGlfw_InitForOpenGL(window, true);
+//	//const char* glsl_version = "#version 460"; //TODO change this in header
+//	std::ostringstream glsl_version;
+//	glsl_version << "#version " << contex_version_major << contex_version_minor << "0";
+//	ImGui_ImplOpenGL3_Init(glsl_version.str().c_str());
+//
+//}
+//
+///*run Imgui, processing inputs*/
+//void Simulation::runImgui() {
+//	// Start the Dear ImGui frame
+//	ImGui_ImplOpenGL3_NewFrame();
+//	ImGui_ImplGlfw_NewFrame();
+//	ImGui::NewFrame();
+//
+//	bool show_demo_window = true;
+//	ImGui::ShowDemoWindow(&show_demo_window);
+//	ImGui::ShowMetricsWindow();
+//	// Rendering
+//	ImGui::Render();
+//	int display_w, display_h;
+//	glfwGetFramebufferSize(window, &display_w, &display_h);
+//	glViewport(0, 0, display_w, display_h);
+//
+//	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+//}
+//
+///* imgui Cleanup and shutdown */
+//void Simulation::shutdownImgui() {
+//	ImGui_ImplOpenGL3_Shutdown();
+//	ImGui_ImplGlfw_Shutdown();
+//	ImGui::DestroyContext();
+//}
+///*-------------------------------------------------------------------------------*/
 
 
 
@@ -1303,6 +1310,9 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 				break;
 			}
 		}
+		else if (key == GLFW_KEY_M) {
+			sim.show_imgui = !sim.show_imgui;
+		}
 	}
 	if (key == GLFW_KEY_W) { sim.camera_h_offset -= 0.05; }//camera moves closer
 	else if (key == GLFW_KEY_S) { sim.camera_h_offset += 0.05; }//camera moves away
@@ -1336,6 +1346,7 @@ void Simulation::createGLFWWindow() {
 
 	auto monitor = glfwGetPrimaryMonitor();
 	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
 	glfwWindowHint(GLFW_RED_BITS, mode->redBits);
 	glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
 	glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
@@ -1379,6 +1390,8 @@ void Simulation::createGLFWWindow() {
 	// reset window color
 	glClearColor(clear_color.x, 0.0f, 0.0f, 0.0f);
 	
+
+
 }
 
 #endif
