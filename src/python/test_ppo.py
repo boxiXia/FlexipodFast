@@ -57,7 +57,6 @@ action_dim = env.action_space.shape[0]
 ########################################################
 from torch.utils.tensorboard import SummaryWriter
 # default `log_dir` is "runs" - we'll be more specific here
-writer = SummaryWriter('runs/d_pos_soft_1.0_0')
 
 folder_name = "runs/pos_soft_1.0_internal_4.0_0"
 writer = SummaryWriter(folder_name)
@@ -121,8 +120,8 @@ for i_episode in range(0, max_episodes+1):
     if i_episode % log_interval == 0:
         avg_length = avg_length/log_interval
         running_reward = running_reward/log_interval
-        writer.add_scalar("train/avg_length", avg_length, i_episode)
-        writer.add_scalar("train/running_reward", running_reward, i_episode)
+        writer.add_scalar("avg_length/train", avg_length, i_episode)
+        writer.add_scalar("running_reward/train", running_reward, i_episode)
         
         # stop training if avg_reward > solved_reward
         if running_reward > (log_interval*solved_reward):
