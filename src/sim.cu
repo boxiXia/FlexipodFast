@@ -395,10 +395,10 @@ void Simulation::updatePhysics() { // repeatedly start next
 				while (!(SHOULD_RUN || SHOULD_END)) { // paused
 #ifdef UDP
 					bool msg_received = ReceiveUdpMessage();
-					// send message every 2 ms or received new message (500Hz)
+					// send message every 1 ms or received new message (1000Hz)
 					std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
 					float diff = std::chrono::duration_cast<std::chrono::milliseconds>(ct_end - ct_begin).count();
-					if (diff >= 2 || msg_received) {
+					if (diff >= 1 || msg_received) {
 						udp_server.send();// send udp message
 						ct_begin = ct_end;
 					}
@@ -585,8 +585,14 @@ void Simulation::updateUdpMessage() {
 					, id_part_end, mass, spring
 #endif //STRESS_TEST
 				));
-
-			if (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
+			if (UDP_INIT) {
+				for (int i = 1; i < NUM_UDP_MULTIPLIER; i++){ // replicate up to NUM_UDP_MULTIPLIER times
+					udp_server.msg_send.push_front(udp_server.msg_send.front());
+					//printf("udp init # %d\n", udp_server.msg_send.size());
+				}
+				UDP_INIT = false;
+			}
+			while (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
 				udp_server.msg_send.pop_back();
 			}
 			udp_server.send();// send udp message
@@ -755,6 +761,11 @@ void Simulation::resetState() {//TODO...fix bug
 	//joint_control.update(backup_mass, backup_joint, dt);
 	body.init(backup_mass, id_oxyz_start); // init body frame
 	cudaDeviceSynchronize();
+
+#ifdef UDP
+	UDP_INIT = true; // tell the udp thread to initiailze
+	SHOULD_SEND_UDP = true; // tell the udp to send
+#endif // UDP
 	RESET = false; // set reset to false 
 }
 

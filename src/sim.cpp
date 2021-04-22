@@ -149,10 +149,12 @@ void Simulation::startupImgui() {
 	// https://doc.magnum.graphics/magnum/classMagnum_1_1ImGuiIntegration_1_1Context.html#ImGuiIntegration-Context-dpi
 	auto monitor = glfwGetPrimaryMonitor();
 	//const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-	float xscale, yscale;
-	glfwGetMonitorContentScale(monitor, &xscale, &yscale);
+	float xscale=2, yscale=2;
+	//glfwGetMonitorContentScale(monitor, &xscale, &yscale);
 	//std::cout << xscale << "," << yscale;
-	io.Fonts->AddFontFromFileTTF("Cousine-Regular.ttf", 16.0f * xscale);
+	std::string font_path = (getProgramDir() + "\\Cousine-Regular.ttf");
+
+	io.Fonts->AddFontFromFileTTF(font_path.c_str(), 16.0f * xscale);
 	ImGui::GetStyle().ScaleAllSizes(xscale);
 
 }

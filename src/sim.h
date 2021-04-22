@@ -786,7 +786,7 @@ public:
 		orientation[5] = body.rot.m21;
 
 #ifdef STRESS_TEST
-		constexpr int NUM_SPRING_STRAIN = 128;
+		constexpr int NUM_SPRING_STRAIN = 64;
 		int step_spring_strain = id_part_end / NUM_SPRING_STRAIN;
 		spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
 		for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
@@ -851,7 +851,8 @@ public:
 	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 	int NUM_UPDATE_PER_ROTATION = 3; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
-	int NUM_UDP_MULTIPLIER = 5;// udp update is decreased by this factor
+	int NUM_UDP_MULTIPLIER = 8;// udp update is decreased by this factor
+	bool UDP_INIT = true; // bool to inform the udp thread to initialize
 #endif
 	// host
 	MASS mass; // a flat fiew of all masses
