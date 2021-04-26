@@ -157,8 +157,10 @@ public:
 	std::vector<Vec3d> colors;// the mass xyzs
 	std::vector<StdJoint> joints;// the joints
 	std::vector<bool> isSurfaceEdges;// whether the springs has surface end-points
+	std::vector<int> idSelectedEdges; // # selected edges for spring strain
 #ifndef __CUDACC__
-	MSGPACK_DEFINE_MAP(radius_poisson, vertices, edges, triangles, isSurface, idVertices, idEdges, colors, joints, isSurfaceEdges); // write the member variables that you want to pack
+	MSGPACK_DEFINE_MAP(radius_poisson, vertices, edges, triangles, isSurface, 
+		idVertices, idEdges, colors, joints, isSurfaceEdges, idSelectedEdges); // write the member variables that you want to pack
 #endif
 	Model() {}
 	Model(const std::string& file_path, bool versbose = true);
@@ -754,7 +756,7 @@ public:
 	DataSend(const UDP_HEADER& header, const double& T,
 		const JointControl& joint_control, const RigidBody& body
 #ifdef STRESS_TEST
-		, const int& id_part_end, // spring stress test id end
+		, const std::vector<int>& id_selected_edges, // spring stress test id end
 		const MASS& mass, const SPRING& spring
 #endif //STRESS_TEST
 	) {
@@ -786,17 +788,20 @@ public:
 		orientation[5] = body.rot.m21;
 
 #ifdef STRESS_TEST
-		constexpr int NUM_SPRING_STRAIN = 64;
-		int step_spring_strain = id_part_end / NUM_SPRING_STRAIN;
-		spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
-		for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
-		{
-			int i = k * step_spring_strain;
-			Vec2i e = spring.edge[i];
-			Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
-			double length = s_vec.norm(); // current spring length
-			spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
+		constexpr int NUM_SPRING_STRAIN = 128;
+		if (id_selected_edges.size() > 0) { // only update if there selected edges exists
+			int step_spring_strain = id_selected_edges.size() / NUM_SPRING_STRAIN;
+			spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
+			for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
+			{
+				int i = id_selected_edges[k * step_spring_strain];
+				Vec2i e = spring.edge[i];
+				Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
+				double length = s_vec.norm(); // current spring length
+				spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
+			}
 		}
+
 
 #endif // STRESS_TEST
 
@@ -845,13 +850,11 @@ public:
 	int id_oxyz_start = 0;// coordinate oxyz start index (inclusive)
 	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
 
-	int id_part_end = 0;// parts mass end index
-
 	// cuda and udp update parameters (should be constant during the simualtion)
 	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 	int NUM_UPDATE_PER_ROTATION = 3; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
-	int NUM_UDP_MULTIPLIER = 8;// udp update is decreased by this factor
+	int NUM_UDP_MULTIPLIER = 5;// udp update is decreased by this factor
 	bool UDP_INIT = true; // bool to inform the udp thread to initialize
 #endif
 	// host
@@ -873,16 +876,9 @@ public:
 	JOINT backup_joint;
 
 
-//#ifdef STRESS_TEST
-//private:
-//	double* spring_strain;//host
-//	double* d_spring_strain;//device
-//	int num_spring_strain = 256; // number of samples for the spring_strain
-//	int step_spring_strain;
-//	int spring_strain_block_size = 32; // mass update threads per block
-//	int spring_strain_grid_size; // mass update blocks per grid
-//public:
-//#endif //STRESS_TEST
+#ifdef STRESS_TEST
+	std::vector<int> id_selected_edges;
+#endif //STRESS_TEST
 
 	void backupState();//backup the robot mass/spring/joint state
 	void resetState();// restore the robot mass/spring/joint state to the backedup state

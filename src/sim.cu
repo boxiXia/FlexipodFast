@@ -582,7 +582,7 @@ void Simulation::updateUdpMessage() {
 			udp_server.msg_send.emplace_front(
 				DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
 #ifdef STRESS_TEST	
-					, id_part_end, mass, spring
+					, id_selected_edges, mass, spring
 #endif //STRESS_TEST
 				));
 			if (UDP_INIT) {
@@ -823,15 +823,15 @@ void Simulation::updateGraphics() {
 	std::string program_dir = getProgramDir();
 	// Create and compile our GLSL program from the shaders
 	shader = Shader(
-		program_dir + "\\shaderVertex.glsl",
-		program_dir + "\\shaderFragment.glsl");
+		program_dir + "\\shader\\shaderVertex.glsl",
+		program_dir + "\\shader\\shaderFragment.glsl");
 	//shader.use();
 
 	//https://learnopengl.com/Advanced-Lighting/Shadows/Point-Shadows
 	//https://github.com/JoeyDeVries/LearnOpenGL/tree/master/src/5.advanced_lighting/3.1.3.shadow_mapping
 	simpleDepthShader = Shader(
-		program_dir + "\\shadow_mapping_depth_vertex.glsl",
-		program_dir + "\\shadow_mapping_depth_fragment.glsl");
+		program_dir + "\\shader\\shadow_mapping_depth_vertex.glsl",
+		program_dir + "\\shader\\shadow_mapping_depth_fragment.glsl");
 	//simpleDepthShader.use();
 
 	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;

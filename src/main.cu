@@ -43,6 +43,7 @@ int main()
 	//Model bot(getProgramDir() + "\\flexipod_4dof.msgpack"); //defined in sim.h
 
 
+
 	const size_t num_body = bot.idVertices.size() - 3;//number of bodies
 	const size_t num_mass = bot.vertices.size(); // number of mass
 	const size_t num_spring = bot.edges.size(); // number of spring
@@ -54,6 +55,11 @@ int main()
 	MASS& mass = sim.mass; // reference variable for sim.mass
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 	TRIANGLE triangle = sim.triangle;// reference variable for sim.triangle
+
+#ifdef STRESS_TEST
+	sim.id_selected_edges = bot.idSelectedEdges;
+#endif
+
 
 	sim.dt = 4e-5; // timestep
 	//sim.dt = 5e-5; // timestep
@@ -199,7 +205,6 @@ int main()
 		spring.resetable[i] = true;
 	}
 
-	sim.id_part_end = bot.idVertices[num_body];// index where the parts m ends
 	sim.id_oxyz_start = bot.idVertices[num_body + 1];
 	sim.id_oxyz_end = bot.idVertices[num_body + 2];
 

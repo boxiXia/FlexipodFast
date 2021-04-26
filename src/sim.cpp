@@ -208,9 +208,9 @@ void Simulation::runImgui() {
 			float cursor_pos_x = ImGui::GetCursorPosX();
 			ImGui::Text("id");ImGui::SameLine();
 
-			ImGui::SetCursorPosX(width * 0.32f);
+			ImGui::SetCursorPosX(width * 0.2f);
 			ImGui::Text("pos_desired"); ImGui::SameLine();
-			ImGui::SetCursorPosX(width * 0.75f);
+			ImGui::SetCursorPosX(width * 0.6f);
 			ImGui::Text("vel_desired"); 
 			
 			ImGui::PushItemWidth(width * 0.5);
