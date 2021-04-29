@@ -574,17 +574,25 @@ bool Simulation::ReceiveUdpMessage() {
 }
 
 void Simulation::updateUdpMessage() {
+	int step = 5;
+	int k_step = step;
 	while (!SHOULD_END) {
 		if (SHOULD_SEND_UDP) {
 			SHOULD_SEND_UDP = false;
-
+			
 			body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS * dt);
-			udp_server.msg_send.emplace_front(
-				DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
+			if (k_step == step) 
+{
+				k_step = 0; // reset k
+				udp_server.msg_send.emplace_front(
+					DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
 #ifdef STRESS_TEST	
-					, id_selected_edges, mass, spring
+						, id_selected_edges, mass, spring
 #endif //STRESS_TEST
-				));
+					));
+			}
+			k_step++;
+
 			if (UDP_INIT) {
 				for (int i = 1; i < NUM_UDP_MULTIPLIER; i++){ // replicate up to NUM_UDP_MULTIPLIER times
 					udp_server.msg_send.push_front(udp_server.msg_send.front());

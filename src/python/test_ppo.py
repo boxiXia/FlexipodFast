@@ -22,8 +22,6 @@ from torch.utils.tensorboard import SummaryWriter
 # from ddpg.utils import NormalizedEnv
 from flexipod_env import FlexipodEnv
 
-env = FlexipodEnv(dof = 12)
-# env = NormalizedEnv(env)
 
 ############## Hyperparameters ##############
 # env_name = "BipedalWalker-v3"
@@ -54,15 +52,18 @@ betas = (0.9, 0.999)
 random_seed = 42
 #############################################
 # creating environment
+num_sensors = 128
+num_obs = 5
+step = 4 # UDP stepping
+env = FlexipodEnv(num_sensors = num_sensors,num_observation=num_obs)
 # env = gym.make(env_name)
 # state_dim = env.observation_space.shape[0]
 state_dim = np.prod(env.observation_space.shape)
 action_dim = env.action_space.shape[0]
 
 ########################################################
-
 for trial in range(3):
-    folder_name = f"runs/soft[1.0]_internal[1.0]_sensor[bone]_{trial}"
+    folder_name = f"runs/soft@{1}_internal@{4}_num@{num_sensors}_loc@all_obs@{num_obs}_step@{step}_trial@{trial}"
     writer = SummaryWriter(folder_name)
 
     ##################################

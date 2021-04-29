@@ -36,9 +36,14 @@ class FlexipodEnv(gym.Env):
     UDP_MOTOR_POS_COMMEND = int(11)
     UDP_STEP_MOTOR_POS_COMMEND = int(10)
     
-    def __init__(self, dof = 12, num_observation=5,normalize = True,
-           ip_local = "127.0.0.1", port_local = 32000,
-           ip_remote = "127.0.0.1",port_remote = 32001):
+    def __init__(
+        self, 
+        dof = 12, 
+        num_observation=5,
+        num_sensors = 128, # num of spring strain sensors
+        normalize = True,
+        ip_local = "127.0.0.1", port_local = 32000,
+        ip_remote = "127.0.0.1",port_remote = 32001):
         
         super(FlexipodEnv,self).__init__()
         self.local_address = (ip_local, port_local)
@@ -63,7 +68,7 @@ class FlexipodEnv(gym.Env):
             ("ang_vel",      3,      -30.,           30.          ), # base link (body) angular velocity [rad/s]
             ("com_acc",      3,      -30.,           30.          ), # base link (body) acceleration
             ("com_vel",      3,      -2.,            2.           ), # base link (body) velocity
-            ("spring_strain",128,   -0.005,         0.005         ), # selected spring strain
+            ("spring_strain",num_sensors,-0.005,    0.005         ), # selected spring strain
             ("com_pos",      3.,     -1.,            1.           ), # base link (body) position
         ],dtype=[('name', 'U14'), ('size', 'i4'), ('min', 'f4'),('max', 'f4')])
         
