@@ -599,7 +599,7 @@ void Simulation::updateUdpMessage() {
 			}
 			// sending..
 			udp_server.msg_send.clear();// clearing first
-			for (int i = 1; i < NUM_UDP_MULTIPLIER; i++) { // replicate up to NUM_UDP_MULTIPLIER times
+			for (int i = 0; i < NUM_UDP_MULTIPLIER; i++) { // replicate up to NUM_UDP_MULTIPLIER times
 				udp_server.msg_send.push_back(msg_send[i*step]);
 				//printf("udp init # %d\n", udp_server.msg_send.size());
 			}
