@@ -574,34 +574,34 @@ bool Simulation::ReceiveUdpMessage() {
 }
 
 void Simulation::updateUdpMessage() {
-	int step = 5;
-	int k_step = step;
+	constexpr int step = 16;
+	auto msg_send = udp_server.msg_send;//copy constuct
+
 	while (!SHOULD_END) {
 		if (SHOULD_SEND_UDP) {
 			SHOULD_SEND_UDP = false;
-			
 			body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS * dt);
-			if (k_step == step) 
-{
-				k_step = 0; // reset k
-				udp_server.msg_send.emplace_front(
-					DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
+			msg_send.emplace_front(
+				DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
 #ifdef STRESS_TEST	
-						, id_selected_edges, mass, spring
+					, id_selected_edges, mass, spring
 #endif //STRESS_TEST
-					));
-			}
-			k_step++;
-
+				));
 			if (UDP_INIT) {
-				for (int i = 1; i < NUM_UDP_MULTIPLIER; i++){ // replicate up to NUM_UDP_MULTIPLIER times
-					udp_server.msg_send.push_front(udp_server.msg_send.front());
+				for (int i = 1; i < NUM_UDP_MULTIPLIER* step; i++){ // replicate up to NUM_UDP_MULTIPLIER*step times
+					msg_send.push_front(msg_send.front());
 					//printf("udp init # %d\n", udp_server.msg_send.size());
 				}
 				UDP_INIT = false;
 			}
-			while (udp_server.msg_send.size() > NUM_UDP_MULTIPLIER) {
-				udp_server.msg_send.pop_back();
+			while (msg_send.size() > NUM_UDP_MULTIPLIER * step) {
+				msg_send.pop_back();
+			}
+			// sending..
+			udp_server.msg_send.clear();// clearing first
+			for (int i = 1; i < NUM_UDP_MULTIPLIER; i++) { // replicate up to NUM_UDP_MULTIPLIER times
+				udp_server.msg_send.push_back(msg_send[i*step]);
+				//printf("udp init # %d\n", udp_server.msg_send.size());
 			}
 			udp_server.send();// send udp message
 		}
