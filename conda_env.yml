@@ -1,0 +1,46 @@
+name: flexipod
+channels:
+  - pytorch
+  - open3d-admin
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - absl-py
+  - autopep8
+  - box2d-py
+  - cython 
+  - embree
+  - gym
+  - joblib
+  - lxml
+  - matplotlib
+  - meshio
+  - msgpack-python
+  - networkx
+  - numba
+  - numpy
+  - open3d
+  - pandas
+  - pip
+  - point_cloud_utils
+  - pydot
+  - pythonocc-core
+  - cudatoolkit=11.1
+  - pytorch
+  - torchaudio
+  - torchvision
+  - rtree=0.9.4
+  - scikit-learn
+  - seaborn
+  - shapely
+  - tensorboard
+  - tqdm
+  - trimesh
+  - jupyter
+  - jupyter_contrib_nbextensions
+  - line_profiler
+  - pip:
+    - pybullet
+    - gmsh
+    # - pyembree # on windows this has to be installed manually

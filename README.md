@@ -57,59 +57,69 @@ string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
 
 #### 0. create a anaconda environment
 ```
-conda create --name flexipod python=3.7
+conda env create --file conda_env.yml
 ```
+<!-- ```
+conda create --name flexipod python=3.8
+``` -->
 To activate the conda environment:
 ```
 conda activate flexipod
 ```
-check if pip works properly:
+<!-- check if pip works properly:
 ```
 pip list
-```
-if you see error "module 'brotli' has no attribute 'error'":
+``` -->
+<!-- if you see error "module 'brotli' has no attribute 'error'":
 ```
 conda install -c anaconda urllib3
-```
+``` -->
 
-#### 1. install dependency
-```
+#### 1. install additional dependency
+<!-- ```
 #install (required)
 conda config --add channels conda-forge
 conda install jupyter numpy matplotlib seaborn scikit-learn Cython joblib numba 
 conda install shapely rtree networkx trimesh point_cloud_utils 
-pip install open3d msgpack
+pip install open3d msgpack embree
 
-```
+``` -->
 Install pyembree on windows (recommended,optional)
 ```
 #clone pyembree into \Lib\site-packages\ of my environment
 git clone https://github.com/scopatz/pyembree.git
 cd pyembree
-conda install cython numpy
-conda install -c conda-forge embree
 set INCLUDE=%CONDA_PREFIX%\Library\include
 set LIB=%CONDA_PREFIX%\Library\lib
 python setup.py install --prefix=%CONDA_PREFIX%
 ```
 
-Install (optional)
-```
+Install jupyter extension (optional)
+<!-- ```
 conda install jupyter_contrib_nbextensions autopep8 line_profiler
-# if you haven't done it already:
-jupyter contrib nbextension install --user
-# enable extensions in jupyter notbook
+``` -->
+if you haven't done it already:
 ```
-
-Install shapely on Windows (only for fallback):
-[download whl](https://www.lfd.uci.edu/~gohlke/pythonlibs/#shapely)
+jupyter contrib nbextension install --user
+```
+Enable extensions in jupyter notbook
+```
+jupyter nbextension enable highlight_selected_word/main
+jupyter nbextension enable zenmode/main
+jupyter nbextension enable autosavetime/main 
+jupyter nbextension enable freeze/main
+jupyter nbextension enable code_prettify/autopep8
+jupyter nbextension enable execute_time/ExecuteTime
+```
+<!-- Install shapely on Windows (only for fallback):
+[download whl](https://www.lfd.uci.edu/~gohlke/pythonlibs/#shapely) -->
 
 
 ## Troubleshoot
 ### (Windows) Simulation window is showing, but I see no robot
 In Nvidia control panel, go to "Manage 3D Settings" -> "program setting". Add the "flexipod.exe" and make sure the setting: "OpenGL rendering GPU" is set to Nvidia GPU
 
-### Cuda failure: no CUDA-capable device is detected
+### Specifying GPU for mult-gpu setup
 Modify the [.vs/launch.vs.json](.vs/launch.vs.json): ```CUDA_VISIBLE_DEVICES``` to a smaller number, e.g. 0
 ```json
 "env": { "CUDA_VISIBLE_DEVICES": "0" }
