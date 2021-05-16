@@ -5,7 +5,10 @@ import numpy as np
 from collections import defaultdict
 import msgpack
 import socket
-import warnings
+import os
+
+import pybullet as p
+import pybullet_utils.bullet_client as bc
 
 def linearMinMaxConversionCoefficient(a,b,c,d):
     """
@@ -15,6 +18,50 @@ def linearMinMaxConversionCoefficient(a,b,c,d):
     k = (d - c)/(b-a)
     m = c - a*k
     return k,m
+
+class BulletCollisionDetect:
+    """
+    Helper class for collision detection using pybullet
+    """
+    def __init__(self,gui=False):
+        """
+        load urdf and init the collision detection
+        """
+        urdf_path="../../data/urdf/test/robot.urdf"
+        urdf_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),urdf_path)
+        # print(os.path.abspath(urdf_path))
+        # loading using bullet_client
+        # ref: https://docs.google.com/document/d/10sXEhzFRSnvFcl3XxNGhnD4N2SedqwdAvK3dsihxVUA/edit#
+        self._p = bc.BulletClient(p.GUI if gui else p.DIRECT)
+        self.body_id = self._p.loadURDF(urdf_path,
+                              useFixedBase=1,
+                              flags=p.URDF_USE_SELF_COLLISION)  # load urdf
+        self.dof = self._p.getNumJoints(self.body_id)
+        # JOINT_INFO_DICT = {name: i for i, name in enumerate([
+        #  "jointIndex", "jointName", "jointType", "qIndex", "uIndex",
+        #  "flags", "jointDamping", "jointFriction", "jointLowerLimit",
+        #  "jointUpperLimit", "jointMaxForce", "jointMaxVelocity", "linkName",
+        #  "jointAxis", "parentFramePos", "parentFrameOrn", "parentIndex"])}
+#         joint_info = [self._p.getJointInfo(self.body_id, i) for i in range(self.dof)]
+#         self.joint_lower_limit = np.asarray(
+#             [j[JOINT_INFO_DICT["jointLowerLimit"]] for j in joint_info])
+#         self.joint_upper_limit = np.asarray(
+#             [j[JOINT_INFO_DICT["jointUpperLimit"]] for j in joint_info])
+#         self.joint_range = self.joint_upper_limit-self.joint_lower_limit
+
+    def getContactPoints(self,joint_pos):
+        """
+        get contact points info given joint position in rad
+        ref:https://docs.google.com/document/d/10sXEhzFRSnvFcl3XxNGhnD4N2SedqwdAvK3dsihxVUA/edit#heading=h.cb0co8y2vuvc
+        """
+        for i in range(self.dof):
+            self._p.resetJointState(self.body_id, i, joint_pos[i],0)
+        self._p.performCollisionDetection()
+        return self._p.getContactPoints()
+        
+    def __del__(self):
+        self._p.disconnect()
+#         print("deleted")
 
 class FlexipodEnv(gym.Env):
     """
@@ -42,10 +89,14 @@ class FlexipodEnv(gym.Env):
         num_observation=5,
         num_sensors = 128, # num of spring strain sensors
         normalize = True,
+        max_joint_vel = 10, # maximum joint velocity rad/s
         ip_local = "127.0.0.1", port_local = 32000,
         ip_remote = "127.0.0.1",port_remote = 32001):
         
         super(FlexipodEnv,self).__init__()
+        
+        self.cd = BulletCollisionDetect() # collision detection with pybullet
+        
         self.local_address = (ip_local, port_local)
         self.remote_address = (ip_remote, port_remote)
         
@@ -55,7 +106,6 @@ class FlexipodEnv(gym.Env):
         
         self._max_episode_steps = np.inf
         
-        max_joint_vel = 10
         # name of the returned message
         REC_NAME = np.array([
             # name,         size,      min,          max
@@ -100,23 +150,22 @@ class FlexipodEnv(gym.Env):
         self.raw_min_obs = np.tile(self.raw_min_obs,(num_observation,1))
         self.raw_max_obs = np.tile(self.raw_max_obs,(num_observation,1))
         
+        self.flatten_obs = True # whether to flatten the observation
+        if(self.flatten_obs):
+            self.raw_min_obs = self.raw_min_obs.ravel()
+            self.raw_max_obs = self.raw_max_obs.ravel()
+        
         if normalize: # conditionally normalize the action space
-            self.action_space = gym.spaces.Box(low = - np.ones_like(self.raw_min_act),
-                                               high = np.ones_like(self.raw_max_act))
-            self.observation_space = gym.spaces.Box(low = - np.ones_like(self.raw_min_obs),
-                                                    high = np.ones_like(self.raw_max_obs))
+            self.action_space = gym.spaces.Box(low = - np.ones_like(self.raw_min_act),high = np.ones_like(self.raw_max_act))
+            self.observation_space = gym.spaces.Box(low = - np.ones_like(self.raw_min_obs),high = np.ones_like(self.raw_max_obs))
             # action conversion from normalized to raw: y = kx + m
-            self.to_raw_act_k,self.to_raw_act_m = linearMinMaxConversionCoefficient(
-                a = -1.0,b = 1.0,c = self.raw_min_act,d = self.raw_max_act)
+            self.to_raw_act_k,self.to_raw_act_m = linearMinMaxConversionCoefficient(-1.0,1.0,self.raw_min_act,self.raw_max_act)
             # action conversion from raw to normalized: nor - normalized
-            self.to_nor_act_k, self.to_nor_act_m = linearMinMaxConversionCoefficient(
-                a = self.raw_min_act,b = self.raw_max_act, c = -1.0,d = 1.0)
+            self.to_nor_act_k, self.to_nor_act_m = linearMinMaxConversionCoefficient(self.raw_min_act,self.raw_max_act,-1.0,1.0)
             # observation from normalized to raw:
-            self.to_raw_obs_k,self.to_raw_obs_m = linearMinMaxConversionCoefficient(
-                a = -1.0, b = 1.0, c = self.raw_min_obs, d = self.raw_max_obs)
+            self.to_raw_obs_k,self.to_raw_obs_m = linearMinMaxConversionCoefficient(-1.0, 1.0,self.raw_min_obs,self.raw_max_obs)
             # observation from raw to normalized:
-            self.to_nor_obs_k, self.to_nor_obs_m = linearMinMaxConversionCoefficient(
-                a = self.raw_min_obs,b = self.raw_max_obs, c = -1.0,d = 1.0)
+            self.to_nor_obs_k, self.to_nor_obs_m = linearMinMaxConversionCoefficient(self.raw_min_obs,self.raw_max_obs,-1.0,1.0)
         else: # raw action and observation
             self.action_space = gym.spaces.Box(low = self.raw_min_act,high = self.raw_max_act)
             self.observation_space = gym.spaces.Box(low = self.raw_min_obs,high = self.raw_max_obs)
@@ -125,7 +174,6 @@ class FlexipodEnv(gym.Env):
         self.packer = msgpack.Packer(use_single_float=True, use_bin_type=True)
         # self.reset_cmd_b = self.packer.pack([self.UDP_RESET,0,[0,0,0,0]])
         self.reset_cmd_b = self.packer.pack([self.UDP_RESET,0])
-
         self.pause_cmd_b = self.packer.pack([self.UDP_PAUSE,0,[0,0,0,0]])
         self.resume_cmd_b = self.packer.pack([self.UDP_RESUME,0,[0,0,0,0]])
         self.close_cmd_b = self.packer.pack([self.UDP_TERMINATE,0,[0,0,0,0]])
@@ -137,25 +185,23 @@ class FlexipodEnv(gym.Env):
         self.send_sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) # UDP
         self.send_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1) #immediate reuse of IP address
         
+        # start the simulation
+        self.startSimulation()
+        
     def __del__(self): # Deleting (Calling destructor) 
         print('Destructor called, FlexipodEnv deleted.')
 #         self.close()
     
     def step(self,action = None):
-#         step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),action])
         if action is not None:
-            
             # map action -> action*max_acton
             cmd_action = np.asarray(action,dtype=np.float32)
             if self.normalize:
                 cmd_action = cmd_action*self.to_raw_act_k + self.to_raw_act_m            
-            
             # # position difference control
             cmd_action += self.joint_pos
             step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
-
             # step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
-#             step_cmd_b = self.packer.pack([self.UDP_STEP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
             num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
         msg_rec = self.receive()
         return self._processRecMsg(msg_rec)
@@ -169,7 +215,7 @@ class FlexipodEnv(gym.Env):
         actuation = msg_rec_i[self.ID['actuation']] # actuation (size=dof) of the latest observation
         # com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
         com_z = msg_rec_i[self.ID['com_pos']][2]
-        
+        # joint position (sin,cos->rad)
         joint_pos = msg_rec_i[self.ID['joint_pos']]
         self.joint_pos = np.arctan2(joint_pos[1::2],joint_pos[::2]).astype(np.float32) # convert to rad
         # print(self.joint_pos)
@@ -178,9 +224,10 @@ class FlexipodEnv(gym.Env):
         observation = np.stack(
             [np.hstack(msg_i[2:-1]+[msg_i[id_com_pos][2]]).astype(np.float32) 
                 for msg_i in msg_rec] )
+        if self.flatten_obs:
+            observation = observation.ravel()
         if self.normalize: # normalize the observation
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
-
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
         uph_cost = orientation_z + com_z-0.15
@@ -211,14 +258,17 @@ class FlexipodEnv(gym.Env):
 
     def startSimulation(self):
         try: # check if the simulation is opened
-            msg_rec = self.receive()
-        except socket.timeout: # program not opened
-            task = subprocess.Popen(["run_flexipod.bat"])
+            msg_rec = self.receive(max_attempts=2,verbose=False)
+        except TimeoutError: # program not opened
+            # path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"./run_flexipod.bat")
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"..\\..\\build\\flexipod.exe")
+            # print(path)
+            task = subprocess.Popen([path])
             
     def endSimulation(self):
             self.send_sock.sendto(self.close_cmd_b,self.remote_address)
 
-    def receive(self,max_attempts:int = 10):
+    def receive(self,max_attempts:int = 10,verbose=True):
         try:
             sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) # UDP
             # sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1) #immediate reuse of IP address
@@ -233,7 +283,8 @@ class FlexipodEnv(gym.Env):
                     data_unpacked = msgpack.unpackb(data)
                     return data_unpacked
                 except Exception as e:
-                    print(f"receive(): try #{k}:{e}")
+                    if verbose:
+                        print(f"receive(): try #{k}:{e}")
             sock.shutdown(socket.SHUT_RDWR)
             sock.close()
             raise TimeoutError("receive():tried too many times")
@@ -255,7 +306,10 @@ class FlexipodEnv(gym.Env):
         self.send_sock.sendto(self.resume_cmd_b,self.remote_address)
 
 
-
-
 if __name__ == '__main__':
     env = FlexipodEnv(dof = 12)
+    # print(subprocess.Popen(["cmd"], shell=True))
+    # print(subprocess.Popen(["set CUDA_VISIBLE_DEVICES=0"], shell=True))
+
+    # env.startSimulation()
+    # print("exit python")

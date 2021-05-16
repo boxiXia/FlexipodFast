@@ -45,25 +45,6 @@ Model::Model(const std::string& file_path, bool versbose) {
 
 /*--------------------------------- ImGui ----------------------------------------*/
 
-bool DragScalarVec3d(const char* label, const ImGuiDataType& data_type, Vec3d& vec, const float& v_speed, const void* p_min, const void* p_max, const char* format = "%.3f", ImGuiSliderFlags flags = 0) {
-	bool value_changed = false;
-	ImGui::BeginGroup();
-	ImGui::PushID(label);
-	ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.2f);
-	ImGui::Text(label);
-	ImGui::SameLine(); ImGui::PushID(0);
-	value_changed |= ImGui::DragScalar("x", data_type, &(vec.x), v_speed, p_min, p_max, format, flags);
-	ImGui::PopID(); ImGui::SameLine(); ImGui::PushID(1);
-	value_changed |= ImGui::DragScalar("y", data_type, &(vec.y), v_speed, p_min, p_max, format, flags);
-	ImGui::PopID(); ImGui::SameLine(); ImGui::PushID(2);
-	value_changed |= ImGui::DragScalar("z", data_type, &(vec.z), v_speed, p_min, p_max, format, flags);
-	ImGui::PopID();
-	ImGui::PopItemWidth();
-	ImGui::EndGroup();
-	return value_changed;
-}
-
-
 // Implementing a simple custom widget using the public API.
 // You may also use the <imgui_internal.h> API to get raw access to more data/helpers, however the internal API isn't guaranteed to be forward compatible.
 // FIXME: Need at least proper label centering + clipping (internal functions RenderTextClipped provides both but api is flaky/temporary)
@@ -162,6 +143,15 @@ void Simulation::startupImgui() {
 
 /*run Imgui, processing inputs*/
 void Simulation::runImgui() {
+
+	// for measuring simulation speed
+	static auto t_prev = std::chrono::steady_clock::now();
+	static auto t_sim_prev = T;
+
+	static double gravity_max = 10;
+	static double gravity_min = -10;
+	static double sim_speed = 1; // 
+
 	if (show_imgui) {// show imgui window
 		
 		// Start the Dear ImGui frame
@@ -174,15 +164,19 @@ void Simulation::runImgui() {
 		//ImGui::ShowMetricsWindow();
 		//ImGui::ShowStyleEditor();
 
+		// measure simulation speed
+		auto t = std::chrono::steady_clock::now();
+		double duration = (double)std::chrono::duration_cast<std::chrono::milliseconds>(t - t_prev).count() / 1000.;//[seconds]
+		if (duration > 1) {
+			sim_speed = (T - t_sim_prev) / duration;
+			t_sim_prev = T;
+			t_prev = t;
+		}
+
 		ImGui::Begin("Debug console", &show_imgui);
 
-		static double gravity_max = 10;
-		static double gravity_min = -10;
-
-		ImGui::Text("%10.3f [s] | %.1f FPS", T,ImGui::GetIO().Framerate);
-
-
-
+		// simulation time | simulation speed | rendering FPS
+		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed,ImGui::GetIO().Framerate);
 		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
 		ImGui::SameLine();
 
@@ -198,7 +192,7 @@ void Simulation::runImgui() {
 			static double dt_min = 1e-7;
 			static double dt_max = 1e-3;
 			ImGui::DragScalar("dt", ImGuiDataType_Double, &dt, 1e-7, &dt_min, &dt_max, "%5.3e");
-			DragScalarVec3d("gravity", ImGuiDataType_Double, global_acc, 0.1, &gravity_min, &gravity_max, "%.2f");
+			ImGui::DragScalarN("gravity", ImGuiDataType_Double, &global_acc, 3, 0.1,&gravity_min, &gravity_max, "%.2f");
 		}
 
 		// joint control
@@ -248,10 +242,6 @@ void Simulation::runImgui() {
 
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 	}
-
-
-
-
 
 }
 

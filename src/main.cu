@@ -36,6 +36,8 @@ int main()
 	// for time measurement
 	auto start = std::chrono::steady_clock::now();
 
+	cudaSetDevice(0);//TODO change it into argument
+
 	std::cout << "current working dir: " << getWorkingDir() << "\n";
 	std::cout << "program dir: " << getProgramDir() << "\n";
 
@@ -75,7 +77,7 @@ int main()
 	//const double m = 2.5/(double)num_mass;// mass per vertex
 
 	const double spring_constant = m*6e6; //spring constant for silicone leg
-	const double spring_damping = m*5e2; // damping for spring
+	const double spring_damping = m*6e2; // damping for spring
 
 	//const double spring_constant = m * 22e6; //spring constant for silicone leg
 	//const double spring_damping = m * 3e2; // damping for spring

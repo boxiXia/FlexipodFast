@@ -1,0 +1,5 @@
+{
+    "python.pythonPath": "C:\\Users\\boxi\\miniconda3\\envs\\flexipod\\python.exe",
+    "python.analysis.extraPaths": ["src\\python_src","src\\python_src\\pytorch_sac"]
+
+}

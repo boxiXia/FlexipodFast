@@ -574,7 +574,7 @@ bool Simulation::ReceiveUdpMessage() {
 }
 
 void Simulation::updateUdpMessage() {
-	constexpr int step = 16;
+	constexpr int step = 4; // saving every n step
 	auto msg_send = udp_server.msg_send;//copy constuct
 
 	while (!SHOULD_END) {
@@ -817,15 +817,12 @@ void Simulation::waitForEvent() {
 void Simulation::updateGraphics() {
 
 	createGLFWWindow(); // create a window with  width and height
-
-
 	startupImgui(); // Setup Dear ImGui
 
-
-	int glDeviceId;// todo:this output wrong number, maybe it is a cuda bug...
-	unsigned int glDeviceCount;
-	cudaGLGetDevices(&glDeviceCount, &glDeviceId, 1u, cudaGLDeviceListAll);
-	printf("openGL device: %u\n", glDeviceId);
+	//int glDeviceId;// todo:this output wrong number, maybe it is a cuda bug...
+	//unsigned int glDeviceCount;
+	//cudaGLGetDevices(&glDeviceCount, &glDeviceId, 1u, cudaGLDeviceListAll);
+	//printf("openGL device: %u\n", glDeviceId);
 
 	// get the directory of this program
 	std::string program_dir = getProgramDir();
@@ -882,7 +879,6 @@ void Simulation::updateGraphics() {
 	GLenum error = glGetError();
 	if (error != GL_NO_ERROR)
 		std::cerr << "OpenGL Error " << error << std::endl;
-
 	
 	auto t_end = std::chrono::steady_clock::now();
 	auto t_start = t_end - std::chrono::seconds(1);
@@ -1066,64 +1062,6 @@ void Simulation::updateGraphics() {
 
 
 #ifdef GRAPHICS
-
-///*--------------------------------- ImGui ----------------------------------------*/
-///*Setup Dear ImGui*/
-//void Simulation::startupImgui() {
-//// Setup Dear ImGui context
-//	IMGUI_CHECKVERSION();
-//	ImGui::CreateContext();
-//	ImGuiIO& io = ImGui::GetIO(); (void)io;
-//	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-//	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-//
-//	// Setup Dear ImGui style
-//	ImGui::StyleColorsDark();
-//	//ImGui::StyleColorsClassic();
-//
-//	// fonts
-//	//io.Fonts->AddFontDefault();
-//	//io.Fonts->TexDesiredWidth = 20;
-//	//ImGui::SetWindowFontScale(2);
-//	ImGui::GetFont()->FontSize = 20;
-//
-//	// Setup Platform/Renderer backends
-//	ImGui_ImplGlfw_InitForOpenGL(window, true);
-//	//const char* glsl_version = "#version 460"; //TODO change this in header
-//	std::ostringstream glsl_version;
-//	glsl_version << "#version " << contex_version_major << contex_version_minor << "0";
-//	ImGui_ImplOpenGL3_Init(glsl_version.str().c_str());
-//
-//}
-//
-///*run Imgui, processing inputs*/
-//void Simulation::runImgui() {
-//	// Start the Dear ImGui frame
-//	ImGui_ImplOpenGL3_NewFrame();
-//	ImGui_ImplGlfw_NewFrame();
-//	ImGui::NewFrame();
-//
-//	bool show_demo_window = true;
-//	ImGui::ShowDemoWindow(&show_demo_window);
-//	ImGui::ShowMetricsWindow();
-//	// Rendering
-//	ImGui::Render();
-//	int display_w, display_h;
-//	glfwGetFramebufferSize(window, &display_w, &display_h);
-//	glViewport(0, 0, display_w, display_h);
-//
-//	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-//}
-//
-///* imgui Cleanup and shutdown */
-//void Simulation::shutdownImgui() {
-//	ImGui_ImplOpenGL3_Shutdown();
-//	ImGui_ImplGlfw_Shutdown();
-//	ImGui::DestroyContext();
-//}
-///*-------------------------------------------------------------------------------*/
-
-
 
 void Simulation::generateBuffers() {
 	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
