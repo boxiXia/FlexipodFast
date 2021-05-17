@@ -1,0 +1,62 @@
+defaults:
+    # - agent: pytorch_sac/agent/sac
+    - agent: sac
+
+seed: 1
+
+agent:
+    critic_cfg:
+        hidden_dim: 64
+        hidden_depth: 2
+    actor_cfg:
+        hidden_depth: 64
+        hidden_dim: 2
+    batch_size: 32
+
+# num_seed_steps: 5000
+num_seed_steps: ${agent.batch_size}
+
+# env:
+#     _target_: dmc2gym.make
+#     domain_name: cheetah
+#     task_name: run
+#     seed: ${seed}
+#     visualize_reward: True
+env:
+    _target_: flexipod_env.make
+    # domain_name: cheetah
+    # task_name: run
+    # seed: ${seed}
+    # visualize_reward: True
+
+
+# this needs to be specified manually
+experiment: test_exp
+
+num_train_steps: 1e6
+replay_buffer_capacity: ${num_train_steps}
+
+
+
+eval_frequency: 10000
+num_eval_episodes: 10
+
+device: "cuda:1"
+# device: "cpu"
+
+# logger
+log_frequency: 10000
+log_save_tb: true
+
+# video recorder
+save_video: False
+
+# hydra configuration
+hydra:
+    job:
+        # name: sac
+        name: ${agent.name}
+    run:
+        dir: ./exp/${now:%Y.%m.%d.%H%M}_${agent.name}_${experiment}
+    searchpath:
+        - pkg://pytorch_sac/config

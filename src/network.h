@@ -163,6 +163,8 @@ public:
 	DataReceive msg_rec; // struct to be received, public
 	DataSend msg_send; // struct to be sent, public
 
+	int counter_rec = 0; //  a counter for counting received message
+
 	int port_local; // local port
 	int port_remote; // remote port
 	std::string ip_remote; // remote ip
@@ -246,6 +248,7 @@ private:
 					//TODO notify the simulation thread
 					//TODO use condition variable
 					flag_new_received = true;
+					counter_rec++;
 				}
 			}
 			catch (std::system_error) {

@@ -1,6 +1,7 @@
 name: flexipod
 channels:
   - pytorch
+  - nvidia
   - open3d-admin
   - conda-forge
   - defaults
@@ -41,6 +42,7 @@ dependencies:
   - jupyter_contrib_nbextensions
   - line_profiler
   - pip:
+    - hydra-core --pre
     - pybullet
     - gmsh
     # - pyembree # on windows this has to be installed manually

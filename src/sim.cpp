@@ -152,6 +152,9 @@ void Simulation::runImgui() {
 	static double gravity_min = -10;
 	static double sim_speed = 1; // 
 
+	static int counter_rec = 0;
+	static float rec_fps = 0;
+
 	if (show_imgui) {// show imgui window
 		
 		// Start the Dear ImGui frame
@@ -166,9 +169,11 @@ void Simulation::runImgui() {
 
 		// measure simulation speed
 		auto t = std::chrono::steady_clock::now();
-		double duration = (double)std::chrono::duration_cast<std::chrono::milliseconds>(t - t_prev).count() / 1000.;//[seconds]
+		float duration = (float)std::chrono::duration_cast<std::chrono::milliseconds>(t - t_prev).count() / 1000.;//[seconds]
 		if (duration > 1) {
 			sim_speed = (T - t_sim_prev) / duration;
+			rec_fps = (float(udp_server.counter_rec - counter_rec)) / duration;
+			counter_rec = udp_server.counter_rec;
 			t_sim_prev = T;
 			t_prev = t;
 		}
@@ -177,6 +182,8 @@ void Simulation::runImgui() {
 
 		// simulation time | simulation speed | rendering FPS
 		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed,ImGui::GetIO().Framerate);
+		ImGui::Text("UDP rec %.2f FPS", rec_fps);
+
 		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
 		ImGui::SameLine();
 

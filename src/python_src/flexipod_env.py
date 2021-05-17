@@ -199,7 +199,8 @@ class FlexipodEnv(gym.Env):
             if self.normalize:
                 cmd_action = cmd_action*self.to_raw_act_k + self.to_raw_act_m            
             # # position difference control
-            cmd_action += self.joint_pos
+            cmd_action += self.joint_pos # the actual position
+            # if len(self.cd.getContactPoints(cmd_action))>0:
             step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
             # step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
             num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
@@ -305,9 +306,18 @@ class FlexipodEnv(gym.Env):
     def resume(self):
         self.send_sock.sendto(self.resume_cmd_b,self.remote_address)
 
+def make(**kargs):
+    return FlexipodEnv(**kargs)
+    # print(kargs)
+    # return 0
 
 if __name__ == '__main__':
     env = FlexipodEnv(dof = 12)
+    env.reset()
+    while True:
+        action = env.action_space.sample()
+        env.step(action)
+        # time.sleep(0.0001)
     # print(subprocess.Popen(["cmd"], shell=True))
     # print(subprocess.Popen(["set CUDA_VISIBLE_DEVICES=0"], shell=True))
 
