@@ -63,7 +63,7 @@ action_dim = env.action_space.shape[0]
 
 ########################################################
 for trial in range(3):
-    folder_name = f"runs/soft@{1}_internal@{4}_num@{num_sensors}_loc@all_obs@{num_obs}_step@{step}_trial@{trial}"
+    folder_name = f"runs/soft@{1}_internal@{4}_num@{num_sensors}_loc@all_obs@{num_obs}_udpstep@{step}_trial@{trial}"
     writer = SummaryWriter(folder_name)
 
     ##################################
