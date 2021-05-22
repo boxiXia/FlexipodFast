@@ -41,6 +41,7 @@ For external library that works with cpp but not with .cu, wrap host code with
 
 #endif
 
+#include <cuda_device_runtime_api.h>
 #include <cuda_runtime.h>
 #include <cuda.h>
 
@@ -840,6 +841,8 @@ constexpr int VERTEX_NORMAL_OFFSET = 6; // offset for the vertex normal
 
 class Simulation {
 public:
+	int device;
+
 	double dt = 0.0001;
 	double T = 0; //simulation time
 	Vec3d global_acc = Vec3d(0, 0, 0); // global acceleration
@@ -901,7 +904,7 @@ public:
 	cudaStream_t stream[NUM_CUDA_STREAM]; // cuda stream:https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 
 	//Simulation();
-	Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle);
+	Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle, int device = 0);
 	~Simulation();
 
 	void getAll();

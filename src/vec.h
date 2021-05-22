@@ -157,9 +157,9 @@ struct MY_ALIGN(8) Vec3d {
 	// fill a float array arr with the vector value
 	// ref: https://stackoverflow.com/questions/5724171/passing-an-array-by-reference
 	inline void fillArray(float(&arr)[3]) const {
-		arr[0] = x;
-		arr[1] = y;
-		arr[2] = z;
+		arr[0] = (float)x;
+		arr[1] = (float)y;
+		arr[2] = (float)z;
 	}
 
 	Vec3d(const std::vector<double> & v) {
@@ -245,7 +245,7 @@ struct MY_ALIGN(8) Vec3d {
 			return z;
 		default:
 			printf("C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
-			exit(-1);
+			return x;
 		} // to do remove this
 	}
 
@@ -490,7 +490,7 @@ public:
 			return z;
 		default:
 			printf("C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
-			exit(-1);
+			return x;
 		} // to do remove this
 	}
 
@@ -946,7 +946,7 @@ struct MY_ALIGN(8) Mat3d {
 		return body_space ? r1.transpose().dot(av) : av; // transform av to body space if body_space==true
 	}
 
-	friend void assertClose(Mat3d & a, Mat3d & b, double eps = 1e-15) {
+	friend void assertClose(const Mat3d & a, const Mat3d & b, double eps = 1e-15) {
 		assert(abs((a - b).det()) < eps);
 	}
 

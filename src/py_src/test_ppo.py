@@ -32,9 +32,8 @@ render = True
 # log_interval = 2           # print avg reward in the interval
 
 
-update_timestep = 4000      # update policy every n timesteps
+update_timestep = 4096      # update policy every n timesteps
 
-# max_episodes = 4000                   # max training episodes
 max_timesteps = 125*update_timestep   # max training timesteps
 max_episode_timesteps = 1500 # max timesteps in one episode
 

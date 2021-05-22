@@ -8,7 +8,7 @@
       "projectTarget": "flexipod.exe",
       "name": "flexipod.exe",
       "env": {
-        "CUDA_VISIBLE_DEVICES": "0"
+        "CUDA_VISIBLE_DEVICES": 0
       }
     }
   ]

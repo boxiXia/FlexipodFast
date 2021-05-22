@@ -33,7 +33,8 @@ To use vcpkg in CMAKE, you can either:
 next, install some packages with vcpkg
 For Windows:
 ```bash
-vcpkg install --triplet x64-windows glew glad glm glfw3 msgpack
+vcpkg install --triplet x64-windows glew glad glm glfw3 msgpack clipp
+vcpkg install --triplet x64-windows --head imgui[glfw-binding,opengl3-glew-binding]
 ```
 
 ### 3. Clone the repo

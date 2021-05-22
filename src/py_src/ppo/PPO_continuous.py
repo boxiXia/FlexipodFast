@@ -80,22 +80,22 @@ class ActorCritic(nn.Module):
         # action mean range -1 to 1
         self.actor =  nn.Sequential(
                 nn.Flatten(),
-                ResidualDenseBlock(state_dim,128, activation="leaky_relu"),
-                ResidualDenseBlock(128,128, activation="leaky_relu"),
-                ResidualDenseBlock(128,128, activation="leaky_relu"),
-                ResidualDenseBlock(128,128, activation="leaky_relu"),
-                nn.Linear(128, action_dim),
+                ResidualDenseBlock(state_dim,512, activation="leaky_relu"),
+                ResidualDenseBlock(512,512, activation="leaky_relu"),
+                ResidualDenseBlock(512,512, activation="leaky_relu"),
+                # ResidualDenseBlock(512,512, activation="leaky_relu"),
+                nn.Linear(512, action_dim),
                 nn.Tanh()
                 )
         
         # critic
         self.critic = nn.Sequential(
                 nn.Flatten(),
-                ResidualDenseBlock(state_dim,128, activation="leaky_relu"),
-                ResidualDenseBlock(128,128, activation="leaky_relu"),
-                ResidualDenseBlock(128,128, activation="leaky_relu"),
-                ResidualDenseBlock(128,128, activation="leaky_relu"),
-                nn.Linear(128, 1)
+                ResidualDenseBlock(state_dim,512, activation="leaky_relu"),
+                ResidualDenseBlock(512,512, activation="leaky_relu"),
+                ResidualDenseBlock(512,512, activation="leaky_relu"),
+                # ResidualDenseBlock(512,512, activation="leaky_relu"),
+                nn.Linear(512, 1)
                 )
                 
         self.action_var = torch.full((action_dim,), action_std*action_std).to(device)

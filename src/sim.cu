@@ -261,19 +261,21 @@ __global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restr
 //	}
 //}
 
-__host__ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle) :
-	mass(num_mass, true), // allocate host
-	d_mass(num_mass, false),// allocate device
-	spring(num_spring, true),// allocate host
-	d_spring(num_spring, false),// allocate device
-	triangle(num_triangle, true),//allocate host
-	d_triangle(num_triangle, false),//allocate device
-	joint_control(num_joint, true) // joint controller, must also call reset, see updatePhysics()
+__host__ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle,int device) :
+	device(device)
 #ifdef UDP
 	, udp_server(port_local, port_remote, ip_remote)// port_local,port_remote,ip_remote,num_joint
 #endif //UDP
 {
-	//cudaDeviceSynchronize();
+	gpuErrchk(cudaSetDevice(device)); // set cuda device
+	mass =   MASS(num_mass, true);// allocate host
+	d_mass = MASS(num_mass, false);// allocate device
+	spring =   SPRING(num_spring, true);// allocate host
+	d_spring = SPRING(num_spring, false);// / allocate device
+	triangle =   TRIANGLE(num_triangle, true);//allocate host
+	d_triangle = TRIANGLE(num_triangle, false);//allocate device
+	joint_control = JointControl(num_joint, true); // joint controller, must also call reset, see updatePhysics()
+
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
 		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
 	}
@@ -354,6 +356,7 @@ __host__ void Simulation::start() {
 }
 
 void Simulation::updatePhysics() { // repeatedly start next
+	gpuErrchk(cudaSetDevice(device)); // set cuda device
 
 	//cudaDeviceProp deviceProp;
 	//cudaGetDeviceProperties(&deviceProp, 0);
@@ -376,7 +379,6 @@ void Simulation::updatePhysics() { // repeatedly start next
 
 	while (true) {
 		if (!bpts.empty() && (*bpts.begin()).t <= T) {// paused when a break p
-			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 		//            std::cout << "Breakpoint set for time " << *bpts.begin() << " reached at simulation time " << T << "!" << std::endl;
 
 			do {
@@ -495,7 +497,6 @@ void Simulation::updatePhysics() { // repeatedly start next
 		mass.CopyPosFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]);
 		cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
 
-		//cudaDeviceSynchronize();
 
 		//std::chrono::steady_clock::time_point ct_begin = std::chrono::steady_clock::now();
 		////std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
@@ -574,6 +575,9 @@ bool Simulation::ReceiveUdpMessage() {
 }
 
 void Simulation::updateUdpMessage() {
+
+	gpuErrchk(cudaSetDevice(device)); // set cuda device
+
 	constexpr int step = 4; // saving every n step
 	auto msg_send = udp_server.msg_send;//copy constuct
 
@@ -815,6 +819,7 @@ void Simulation::waitForEvent() {
 
 #ifdef GRAPHICS
 void Simulation::updateGraphics() {
+	gpuErrchk(cudaSetDevice(device)); // set cuda device
 
 	createGLFWWindow(); // create a window with  width and height
 	startupImgui(); // Setup Dear ImGui

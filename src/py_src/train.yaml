@@ -1,3 +1,4 @@
+# note: for training flexipod
 defaults:
     # - agent: pytorch_sac/agent/sac
     - agent: sac
@@ -6,16 +7,19 @@ seed: 1
 
 agent:
     critic_cfg:
-        hidden_dim: 64
-        hidden_depth: 2
+        hidden_dim: 512
+        hidden_depth: 3
     actor_cfg:
-        hidden_depth: 64
-        hidden_dim: 2
-    batch_size: 32
+        hidden_dim: 512
+        hidden_depth: 3
+    batch_size: 4096
+    # batch_size: 256
 
-# num_seed_steps: 5000
-num_seed_steps: ${agent.batch_size}
 
+num_seed_steps: 16384
+# num_seed_steps: 512
+
+# num_seed_steps: ${agent.batch_size}
 # env:
 #     _target_: dmc2gym.make
 #     domain_name: cheetah
@@ -24,10 +28,6 @@ num_seed_steps: ${agent.batch_size}
 #     visualize_reward: True
 env:
     _target_: flexipod_env.make
-    # domain_name: cheetah
-    # task_name: run
-    # seed: ${seed}
-    # visualize_reward: True
 
 
 # this needs to be specified manually
@@ -37,12 +37,11 @@ num_train_steps: 1e6
 replay_buffer_capacity: ${num_train_steps}
 
 
-
+# eval_frequency: 512
 eval_frequency: 10000
-num_eval_episodes: 10
+num_eval_episodes: 3
 
-device: "cuda:1"
-# device: "cpu"
+device: "cuda"
 
 # logger
 log_frequency: 10000
@@ -50,6 +49,7 @@ log_save_tb: true
 
 # video recorder
 save_video: False
+# save_video: true
 
 # hydra configuration
 hydra:
