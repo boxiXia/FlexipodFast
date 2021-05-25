@@ -3,9 +3,6 @@ import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
 os.environ["CUDA_VISIBLE_DEVICES"]=f"{1}"
 
-
-
-
 import torch
 print(f"current_device:{torch.cuda.current_device()}")
 print(f"device_count:{torch.cuda.device_count()}")
