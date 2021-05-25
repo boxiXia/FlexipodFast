@@ -3,6 +3,9 @@ import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
 os.environ["CUDA_VISIBLE_DEVICES"]=f"{1}"
 
+
+
+
 import torch
 print(f"current_device:{torch.cuda.current_device()}")
 print(f"device_count:{torch.cuda.device_count()}")
@@ -94,12 +97,16 @@ for trial in range(3):
     state = env.reset()
     for time_step in range(1,max_timesteps+1):
             # Running policy_old:
-            action = ppo.select_action(state, memory)
-            state, reward, done, _ = env.step(action)
-
+            action,action_logprob = ppo.select_action(state)
+            next_state, reward, done, _ = env.step(action)
+            
+            memory.states.append(state) # TODO only works with 1d array
+            memory.actions.append(action)
+            memory.logprobs.append(action_logprob)
             # Saving reward and is_terminals:
             memory.rewards.append(reward)
             memory.is_terminals.append(done)
+            state = next_state
 
             # if render:
             #     env.render()

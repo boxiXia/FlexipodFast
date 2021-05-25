@@ -103,19 +103,13 @@ class ActorCritic(nn.Module):
     def forward(self):
         raise NotImplementedError
     
-    def act(self, state, memory):
+    def act(self, state):
         action_mean = self.actor(state)
-        cov_mat = torch.diag(self.action_var).to(device)
-        
+        cov_mat = torch.diag(self.action_var)
         dist = MultivariateNormal(action_mean, cov_mat)
         action = dist.sample()
-        action_logprob = dist.log_prob(action)
-        
-        memory.states.append(state)
-        memory.actions.append(action)
-        memory.logprobs.append(action_logprob)
-        
-        return action.detach()
+        action_logprob = dist.log_prob(action) # shape[1]
+        return action.detach(),action_logprob.detach()
     
     def evaluate(self, state, action):   
         action_mean = self.actor(state)
@@ -147,11 +141,13 @@ class PPO:
         
         self.MseLoss = nn.MSELoss()
     
-    def select_action(self, state, memory):
-        # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-        state = torch.FloatTensor(state[np.newaxis,:]).to(device)
-        # return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
-        return self.policy_old.act(state, memory).cpu().numpy().ravel()
+    def select_action(self, state):
+        state = torch.tensor(state[np.newaxis,:],dtype = torch.float32,device=device)
+        
+        action,action_logprob = self.policy_old.act(state)
+        action = action.cpu().numpy().ravel()
+        action_logprob = action_logprob.cpu().numpy()[0]
+        return action,action_logprob
 
     def update(self, memory):
         # Monte Carlo estimate of rewards:
@@ -168,10 +164,10 @@ class PPO:
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
         
         # convert list to tensor
-        old_states = torch.squeeze(torch.stack(memory.states).to(device), 1).detach()
-        old_actions = torch.squeeze(torch.stack(memory.actions).to(device), 1).detach()
-        old_logprobs = torch.squeeze(torch.stack(memory.logprobs), 1).to(device).detach()
-        
+        old_states = torch.tensor(np.stack(memory.states),dtype=torch.float32,device = device).detach()
+        old_actions = torch.tensor(np.stack(memory.actions),dtype=torch.float32,device = device).detach()
+        old_logprobs = torch.tensor(np.stack(memory.logprobs),dtype=torch.float32,device = device).detach()
+
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
             # print(_)
@@ -254,12 +250,16 @@ def main():
         for t in range(max_timesteps):
             time_step +=1
             # Running policy_old:
-            action = ppo.select_action(state, memory)
-            state, reward, done, _ = env.step(action)
+            action,action_logprob = ppo.select_action(state)
+            next_state, reward, done, _ = env.step(action)
             
+            memory.states.append(state) # TODO only works with 1d array
+            memory.actions.append(action)
+            memory.logprobs.append(action_logprob)
             # Saving reward and is_terminals:
             memory.rewards.append(reward)
             memory.is_terminals.append(done)
+            state = next_state
             
             # update if its time
             if time_step % update_timestep == 0:
