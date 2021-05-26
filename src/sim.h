@@ -610,7 +610,7 @@ struct JointControl {
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
 				
-				double vel_desired_proxy = pos_error[i] / (ndt * 5); // reach the destination at 5 control step
+				double vel_desired_proxy = pos_error[i] / ndt; // reach the destination at 1 control step
 				double dv = max_acc * ndt;
 				clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
 				clampInplace(vel_desired_proxy, -max_vel, max_vel);
@@ -789,7 +789,7 @@ public:
 		orientation[5] = body.rot.m21;
 
 #ifdef STRESS_TEST
-		constexpr int NUM_SPRING_STRAIN = 128;
+		constexpr int NUM_SPRING_STRAIN = 64;
 		if (id_selected_edges.size() > 0) { // only update if there selected edges exists
 			int step_spring_strain = id_selected_edges.size() / NUM_SPRING_STRAIN;
 			spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector

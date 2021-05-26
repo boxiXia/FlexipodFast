@@ -87,7 +87,7 @@ class FlexipodEnv(gym.Env):
         self, 
         dof = 12, 
         num_observation=5,
-        num_sensors = 128, # num of spring strain sensors
+        num_sensors = 64, # num of spring strain sensors
         normalize = True,
         max_joint_vel = 10, # maximum joint velocity rad/s
         ip_local = "127.0.0.1", port_local = 32000,
@@ -135,7 +135,7 @@ class FlexipodEnv(gym.Env):
         state_size = np.sum([REC_NAME[self.ID[name]]["size"] for name in OBS_NAME])-2
         
         # action min-max
-        max_action = 0.02 # [rad], delta position control
+        max_action = 0.04 # [rad], delta position control
         # raw min/max action
         self.raw_min_act = - max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
         self.raw_max_act =   max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
@@ -197,7 +197,7 @@ class FlexipodEnv(gym.Env):
             # map action -> action*max_acton
             cmd_action = np.asarray(action,dtype=np.float32)
             if self.normalize:
-                cmd_action = cmd_action*self.to_raw_act_k + self.to_raw_act_m            
+                cmd_action = cmd_action*self.to_raw_act_k + self.to_raw_act_m
             # # position difference control
             cmd_action += self.joint_pos # the actual position
             # if len(self.cd.getContactPoints(cmd_action))>0:
@@ -219,7 +219,7 @@ class FlexipodEnv(gym.Env):
         # joint position (sin,cos->rad)
         joint_pos = msg_rec_i[self.ID['joint_pos']]
         self.joint_pos = np.arctan2(joint_pos[1::2],joint_pos[::2]).astype(np.float32) # convert to rad
-        # print(self.joint_pos)
+        # print(f"self.joint_pos ={self.joint_pos}")
         id_com_pos = self.ID['com_pos']
 
         observation = np.stack(
@@ -247,7 +247,7 @@ class FlexipodEnv(gym.Env):
     
     def reset(self):
         self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
-        time.sleep(1/200)
+        time.sleep(1/10)
         msg_rec = self.receive()
         observation,reward,done,info =  self._processRecMsg(msg_rec)
         self.episode_start_time = info['t']

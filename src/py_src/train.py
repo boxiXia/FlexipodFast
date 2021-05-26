@@ -82,6 +82,7 @@ class Workspace(object):
         num_seed_steps = self.cfg.num_seed_steps  # steps prior to training
         eval_frequency = self.cfg.eval_frequency  # evaluate every x steps
         eval_step = eval_frequency # evaluate if step>eval_step
+        update_step = num_seed_steps
         env = self.env
 
         # reset agent and env
@@ -90,26 +91,6 @@ class Workspace(object):
         episode, episode_step, episode_reward, done = 0, 0, 0.0, False
 
         while self.step < num_train_steps:
-            if done:
-                self.logger.log('train/duration',
-                                time.time() - start_time, self.step)
-                start_time = time.time()
-                self.logger.dump(self.step, save=(self.step > num_seed_steps))
-                # evaluate agent periodically
-                if self.step > eval_step:
-                    eval_step += eval_frequency
-                    self.logger.log('eval/episode', episode, self.step)
-                    self.evaluate()
-                self.logger.log('train/episode_reward',
-                                episode_reward, self.step)
-                self.logger.log('train/episode', episode, self.step)
-
-                # reset agent and env
-                self.agent.reset()
-                obs = env.reset()
-                episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
-
-
             # sample action for data collection
             if self.step < num_seed_steps:
                 action = env.action_space.sample()
@@ -121,18 +102,19 @@ class Workspace(object):
             # run training update
             # if self.step >= self.cfg.num_seed_steps:
             #     self.agent.update(self.replay_buffer, self.logger, self.step)
-            if self.step >= num_seed_steps and self.step % 128 == 0:
-                try:
-                    env.pause()
-                except Exception:
-                    pass
-                for k in range(4):
-                    self.agent.update(self.replay_buffer,
-                                 self.logger, self.step)
-                try:
-                    env.resume()
-                except Exception:
-                    pass
+            
+            # if self.step >= num_seed_steps and self.step % 128 == 0:
+            #     try:
+            #         env.pause()
+            #     except Exception:
+            #         pass
+            #     for k in range(4):
+            #         self.agent.update(self.replay_buffer,
+            #                      self.logger, self.step)
+            #     try:
+            #         env.resume()
+            #     except Exception:
+            #         pass
 
             next_obs, reward, done, _ = env.step(action)
 
@@ -143,11 +125,41 @@ class Workspace(object):
 
             self.replay_buffer.add(obs, action, reward, next_obs, done,
                                    done_no_max)
-
             obs = next_obs
             episode_step += 1
             self.step += 1
 
+            if done:
+                self.logger.log('train/duration',
+                                time.time() - start_time, self.step)
+                
+                if self.step >= num_seed_steps and self.step > update_step: # agent update
+                    num_updates = (self.step-update_step)//32
+                    update_step = self.step
+                    print(f"#update:{num_updates}")
+                    try:
+                        env.pause()
+                    except Exception:
+                        pass
+                    for k in range(num_updates):
+                        self.agent.update(self.replay_buffer,self.logger, self.step)
+                        
+                self.logger.log('train/episode_reward',
+                                episode_reward, self.step)
+                self.logger.log('train/episode', episode, self.step)
+                self.logger.dump(self.step, save=(self.step > num_seed_steps))
+                
+                # evaluate agent periodically
+                if self.step > eval_step:
+                    eval_step += eval_frequency
+                    self.logger.log('eval/episode', episode, self.step)
+                    self.evaluate()
+                
+                start_time = time.time()
+                # reset agent and env
+                self.agent.reset()
+                obs = env.reset()
+                episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
 
 @hydra.main(config_path=".", config_name='train')
 def main(cfg):

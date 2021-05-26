@@ -51,9 +51,9 @@ betas = (0.9, 0.999)
 random_seed = 42
 #############################################
 # creating environment
-num_sensors = 128
+num_sensors = 64
 num_obs = 5
-step = 4 # UDP stepping
+step = 2 # UDP stepping
 env = FlexipodEnv(num_sensors = num_sensors,num_observation=num_obs)
 # env = gym.make(env_name)
 # state_dim = env.observation_space.shape[0]

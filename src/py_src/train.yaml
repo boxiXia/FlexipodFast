@@ -12,11 +12,11 @@ agent:
     actor_cfg:
         hidden_dim: 512
         hidden_depth: 3
-    batch_size: 4096
+    batch_size: 1024
     # batch_size: 256
 
 
-num_seed_steps: 16384
+num_seed_steps: 10000
 # num_seed_steps: 512
 
 # num_seed_steps: ${agent.batch_size}

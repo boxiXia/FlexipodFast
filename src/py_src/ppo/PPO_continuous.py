@@ -5,7 +5,9 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import gym
 import numpy as np
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda")
+
 # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 
@@ -80,23 +82,23 @@ class ActorCritic(nn.Module):
         # action mean range -1 to 1
         self.actor =  nn.Sequential(
                 nn.Flatten(),
-                ResidualDenseBlock(state_dim,512, activation="leaky_relu"),
-                ResidualDenseBlock(512,512, activation="leaky_relu"),
-                ResidualDenseBlock(512,512, activation="leaky_relu"),
-                # ResidualDenseBlock(512,512, activation="leaky_relu"),
-                nn.Linear(512, action_dim),
+                ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                # ResidualDenseBlock(256,256, activation="leaky_relu"),
+                nn.Linear(256, action_dim),
                 nn.Tanh()
-                )
+                ).to(device)
         
         # critic
         self.critic = nn.Sequential(
                 nn.Flatten(),
-                ResidualDenseBlock(state_dim,512, activation="leaky_relu"),
-                ResidualDenseBlock(512,512, activation="leaky_relu"),
-                ResidualDenseBlock(512,512, activation="leaky_relu"),
-                # ResidualDenseBlock(512,512, activation="leaky_relu"),
-                nn.Linear(512, 1)
-                )
+                ResidualDenseBlock(state_dim,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                ResidualDenseBlock(256,256, activation="leaky_relu"),
+                # ResidualDenseBlock(256,256, activation="leaky_relu"),
+                nn.Linear(256, 1)
+                ).to(device)
                 
         self.action_var = torch.full((action_dim,), action_std*action_std).to(device)
         
@@ -259,6 +261,7 @@ def main():
             # Saving reward and is_terminals:
             memory.rewards.append(reward)
             memory.is_terminals.append(done)
+            
             state = next_state
             
             # update if its time
@@ -266,6 +269,7 @@ def main():
                 ppo.update(memory)
                 memory.clear_memory()
                 time_step = 0
+                
             running_reward += reward
             if render:
                 env.render()

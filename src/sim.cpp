@@ -224,13 +224,15 @@ void Simulation::runImgui() {
 				
 				sprintf(label, "joint_pos_des_%d", i); 
 				ImGui::PushID(label);
-				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.01f, NULL, NULL, "%6.3f");
+				ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
+				//ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.01f, NULL, NULL, "%6.3f");
 				ImGui::PopID();
 
 				ImGui::SameLine();
 				sprintf(label, "joint_vel_des_%d", i);
 				ImGui::PushID(label);
-				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.01f, NULL, NULL, "%6.3f");
+				ImGui::Text("%+4.3f", joint_control.vel_desired[i]);
+				//ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.01f, NULL, NULL, "%6.3f");
 				ImGui::PopID();
 			}
 			ImGui::PopItemWidth();

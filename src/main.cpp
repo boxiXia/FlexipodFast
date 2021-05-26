@@ -90,8 +90,9 @@ int main(int argc, char* argv[])
 	//constexpr double scale_rigid = 1;// scaling factor rigid
 
 
-	constexpr double scale_rigid = 2.5;// scaling factor rigid
-	constexpr double scale_soft = 1.0; // scaling factor soft
+	constexpr double scale_rigid = 3.0;// scaling factor rigid
+	constexpr double scale_soft = 2.0; // scaling factor soft
+	constexpr double scale_rot_spring = 2.0; // stiffness scale for rotation spring
 
 	constexpr double scale_joint_k = 3.0; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
@@ -199,7 +200,7 @@ int main(int argc, char* argv[])
 	}
 	for (int i = bot.idEdges[num_body + 1]; i < bot.idEdges[num_body + 2]; i++)
 	{
-		spring.k[i] = spring_constant_rigid; // joints rotation spring
+		spring.k[i] = spring_constant*scale_rot_spring; // joints rotation spring
 		//spring.k[i] = spring_constant; // joints rotation spring
 		//spring.damping[i] = spring_damping_restable;
 	}
@@ -269,7 +270,7 @@ int main(int argc, char* argv[])
 	// set max speed for each joint
 	double max_rpm = 400;//maximun revolution per minute
 	sim.joint_control.max_vel = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
-	double settling_time = 0.2;// reaches max_rpm within this time
+	double settling_time = 0.4;// reaches max_rpm within this time
 	sim.joint_control.max_acc = sim.joint_control.max_vel / settling_time;
 
 #ifdef GRAPHICS

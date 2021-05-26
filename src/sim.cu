@@ -261,18 +261,18 @@ __global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restr
 //	}
 //}
 
-__host__ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle,int device) :
+__host__ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_joint, size_t num_triangle, int device) :
 	device(device)
 #ifdef UDP
 	, udp_server(port_local, port_remote, ip_remote)// port_local,port_remote,ip_remote,num_joint
 #endif //UDP
 {
 	gpuErrchk(cudaSetDevice(device)); // set cuda device
-	mass =   MASS(num_mass, true);// allocate host
+	mass = MASS(num_mass, true);// allocate host
 	d_mass = MASS(num_mass, false);// allocate device
-	spring =   SPRING(num_spring, true);// allocate host
+	spring = SPRING(num_spring, true);// allocate host
 	d_spring = SPRING(num_spring, false);// / allocate device
-	triangle =   TRIANGLE(num_triangle, true);//allocate host
+	triangle = TRIANGLE(num_triangle, true);//allocate host
 	d_triangle = TRIANGLE(num_triangle, false);//allocate device
 	joint_control = JointControl(num_joint, true); // joint controller, must also call reset, see updatePhysics()
 
@@ -531,6 +531,36 @@ bool Simulation::ReceiveUdpMessage() {
 	if (udp_server.flag_new_received) {
 		udp_server.flag_new_received = false;
 		switch (udp_server.msg_rec.header) {
+		case UDP_HEADER::MOTOR_POS_COMMEND:
+			joint_control.updateControlMode(JointControlMode::pos);
+			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
+				joint_control.pos_desired[i] = udp_server.msg_rec.joint_value_desired[i];
+			}
+			if (!RUNNING) { SHOULD_RUN = true; }
+			break;
+		case UDP_HEADER::STEP_MOTOR_POS_COMMEND:
+			joint_control.updateControlMode(JointControlMode::pos);
+			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
+				joint_control.pos_desired[i] = udp_server.msg_rec.joint_value_desired[i];
+			}
+			if (!RUNNING) { SHOULD_RUN = true; }
+			setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
+			break;
+		case UDP_HEADER::MOTOR_SPEED_COMMEND:
+			joint_control.updateControlMode(JointControlMode::vel);
+			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
+				joint_control.vel_desired[i] = udp_server.msg_rec.joint_value_desired[i];
+			}
+			if (!RUNNING) { SHOULD_RUN = true; }
+			break;
+		case UDP_HEADER::STEP_MOTOR_SPEED_COMMEND:
+			joint_control.updateControlMode(JointControlMode::vel);
+			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
+				joint_control.vel_desired[i] = udp_server.msg_rec.joint_value_desired[i];
+			}
+			if (!RUNNING) { SHOULD_RUN = true; }
+			setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
+			break;
 		case UDP_HEADER::TERMINATE://close the program
 			bpts.insert(BreakPoint(0, true));//SHOULD_END = true;
 			break;
@@ -540,31 +570,11 @@ bool Simulation::ReceiveUdpMessage() {
 			SHOULD_RUN = true;
 			resetState();// restore the robot mass/spring/joint state to the backedup state
 			break;
-		case UDP_HEADER::MOTOR_SPEED_COMMEND:
-			joint_control.updateControlMode(JointControlMode::vel);
-			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
-				joint_control.vel_desired[i] = udp_server.msg_rec.joint_value_desired[i];
-			}
-			break;
-		case UDP_HEADER::MOTOR_POS_COMMEND:
-			joint_control.updateControlMode(JointControlMode::pos);
-			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
-				joint_control.pos_desired[i] = udp_server.msg_rec.joint_value_desired[i];
-			}
-			break;
 		case UDP_HEADER::PAUSE:
 			bpts.insert(BreakPoint(0, false));//SHOULD_END = true;
 			break;
 		case UDP_HEADER::RESUME:
 			SHOULD_RUN = true;
-			break;
-		case UDP_HEADER::STEP_MOTOR_SPEED_COMMEND:
-			joint_control.updateControlMode(JointControlMode::vel);
-			for (int i = 0; i < joint_control.size(); i++) {//update joint speed from received udp packet
-				joint_control.vel_desired[i] = udp_server.msg_rec.joint_value_desired[i];
-			}
-			if (!RUNNING) { SHOULD_RUN = true; }
-			setBreakpoint(T + NUM_QUEUED_KERNELS * dt * NUM_UDP_MULTIPLIER);
 			break;
 		default:
 			break;
@@ -592,7 +602,7 @@ void Simulation::updateUdpMessage() {
 #endif //STRESS_TEST
 				));
 			if (UDP_INIT) {
-				for (int i = 1; i < NUM_UDP_MULTIPLIER* step; i++){ // replicate up to NUM_UDP_MULTIPLIER*step times
+				for (int i = 1; i < NUM_UDP_MULTIPLIER * step; i++) { // replicate up to NUM_UDP_MULTIPLIER*step times
 					msg_send.push_front(msg_send.front());
 					//printf("udp init # %d\n", udp_server.msg_send.size());
 				}
@@ -604,7 +614,7 @@ void Simulation::updateUdpMessage() {
 			// sending..
 			udp_server.msg_send.clear();// clearing first
 			for (int i = 0; i < NUM_UDP_MULTIPLIER; i++) { // replicate up to NUM_UDP_MULTIPLIER times
-				udp_server.msg_send.push_back(msg_send[i*step]);
+				udp_server.msg_send.push_back(msg_send[i * step]);
 				//printf("udp init # %d\n", udp_server.msg_send.size());
 			}
 			udp_server.send();// send udp message
@@ -884,13 +894,13 @@ void Simulation::updateGraphics() {
 	GLenum error = glGetError();
 	if (error != GL_NO_ERROR)
 		std::cerr << "OpenGL Error " << error << std::endl;
-	
+
 	auto t_end = std::chrono::steady_clock::now();
 	auto t_start = t_end - std::chrono::seconds(1);
 	while (!SHOULD_END) {
 		t_end = std::chrono::steady_clock::now();
-		if((int)std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count()> 1e9 / 60.0)
-		{ 
+		if ((int)std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count() > 1e9 / 60.0)
+		{
 			t_start = t_end;
 			// graphics update loop
 			if (resize_buffers) {
@@ -1023,7 +1033,7 @@ void Simulation::updateGraphics() {
 
 			// Swap buffers, render screen
 			glfwPollEvents();
-		
+
 			runImgui();// run ImGui, show menu etc.
 
 
@@ -1351,7 +1361,7 @@ void Simulation::createGLFWWindow() {
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 	// reset window color
 	glClearColor(clear_color.x, 0.0f, 0.0f, 0.0f);
-	
+
 
 
 }
