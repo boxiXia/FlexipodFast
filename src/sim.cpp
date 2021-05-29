@@ -170,7 +170,7 @@ void Simulation::runImgui() {
 		// measure simulation speed
 		auto t = std::chrono::steady_clock::now();
 		float duration = (float)std::chrono::duration_cast<std::chrono::milliseconds>(t - t_prev).count() / 1000.;//[seconds]
-		if (duration > 1) {
+		if (duration > 0.5) {
 			float sim_duration = T - t_sim_prev;
 			sim_speed = sim_duration / duration;
 			rec_fps = (float(udp_server.counter_rec - counter_rec)) / sim_duration; // frame per simulation seconds
@@ -224,19 +224,23 @@ void Simulation::runImgui() {
 				
 				sprintf(label, "joint_pos_des_%d", i); 
 				ImGui::PushID(label);
-				ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
-				//ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.01f, NULL, NULL, "%6.3f");
+				//ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
+				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.005f, NULL, NULL, "%6.3f");
 				ImGui::PopID();
 
 				ImGui::SameLine();
 				sprintf(label, "joint_vel_des_%d", i);
 				ImGui::PushID(label);
-				ImGui::Text("%+4.3f", joint_control.vel_desired[i]);
-				//ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.01f, NULL, NULL, "%6.3f");
+				//ImGui::Text("%+4.3f", joint_control.vel_desired[i]);
+				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
 				ImGui::PopID();
 			}
 			ImGui::PopItemWidth();
 			ImGui::Separator();
+
+			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
+			const char* elem_name = (joint_control.mode == JointControlMode::vel)?  "vel":"pos";
+			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
 		}
 
 		ImGui::Checkbox("draw mesh ", &show_triangle);

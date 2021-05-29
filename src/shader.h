@@ -24,7 +24,7 @@ public:
 	glm::vec3 color = glm::vec3(1.f, 1.f, 1.f); // light color
 	float ambient = 0.4f; // ambient intensity
 	float diffuse = 0.6f; // diffuse intensity
-	float specular = 1.f; // specular intensity
+	float specular = 0.8f; // specular intensity
 	
 	/*associate with the shader given shade id and the varibales's base name*/
 	void setName(GLuint& shaderID, const std::string& name) {

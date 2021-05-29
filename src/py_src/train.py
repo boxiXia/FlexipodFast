@@ -24,6 +24,11 @@ class Workspace(object):
     def __init__(self, cfg):
         self.work_dir = os.getcwd()
         print(f'workspace: {self.work_dir}')
+        
+        self.model_dir = f"{self.work_dir}//model" # model save dir
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+            
         self.cfg = cfg
 
         self.logger = Logger(self.work_dir,
@@ -75,6 +80,7 @@ class Workspace(object):
         self.logger.log('eval/episode_reward', average_episode_reward,
                         self.step)
         self.logger.dump(self.step)
+        return average_episode_reward
 
     def run(self):
         start_time = time.time()
@@ -84,12 +90,13 @@ class Workspace(object):
         eval_step = eval_frequency # evaluate if step>eval_step
         update_step = num_seed_steps
         env = self.env
-
+        batch_size = self.cfg.agent.batch_size
         # reset agent and env
         self.agent.reset()
         obs = env.reset()
         episode, episode_step, episode_reward, done = 0, 0, 0.0, False
-
+        
+        # training loop
         while self.step < num_train_steps:
             # sample action for data collection
             if self.step < num_seed_steps:
@@ -99,28 +106,12 @@ class Workspace(object):
             else:
                 with evalMode(self.agent):
                     action = self.agent.act(obs, sample=True)
-            # run training update
-            # if self.step >= self.cfg.num_seed_steps:
-            #     self.agent.update(self.replay_buffer, self.logger, self.step)
-            
-            # if self.step >= num_seed_steps and self.step % 128 == 0:
-            #     try:
-            #         env.pause()
-            #     except Exception:
-            #         pass
-            #     for k in range(4):
-            #         self.agent.update(self.replay_buffer,
-            #                      self.logger, self.step)
-            #     try:
-            #         env.resume()
-            #     except Exception:
-            #         pass
 
             next_obs, reward, done, _ = env.step(action)
-
             # allow infinite bootstrap
             done = float(done)
             done_no_max = 0 if episode_step + 1 == env._max_episode_steps else done
+
             episode_reward += reward
 
             self.replay_buffer.add(obs, action, reward, next_obs, done,
@@ -128,22 +119,23 @@ class Workspace(object):
             obs = next_obs
             episode_step += 1
             self.step += 1
-
+                            
             if done:
                 self.logger.log('train/duration',
                                 time.time() - start_time, self.step)
                 
-                if self.step >= num_seed_steps and self.step > update_step: # agent update
-                    num_updates = (self.step-update_step)//32
+                if self.step >= num_seed_steps and self.step >=batch_size and self.step > update_step: # agent update
+                    num_updates = (self.step-update_step)//8
                     update_step = self.step
-                    print(f"#update:{num_updates}")
                     try:
                         env.pause()
                     except Exception:
                         pass
+                    t1 = time.time()
                     for k in range(num_updates):
                         self.agent.update(self.replay_buffer,self.logger, self.step)
-                        
+                    print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
+
                 self.logger.log('train/episode_reward',
                                 episode_reward, self.step)
                 self.logger.log('train/episode', episode, self.step)
@@ -153,20 +145,31 @@ class Workspace(object):
                 if self.step > eval_step:
                     eval_step += eval_frequency
                     self.logger.log('eval/episode', episode, self.step)
-                    self.evaluate()
+                    average_episode_reward = self.evaluate()
+                    
+                    # save the model
+                    t1 = time.time()
+                    self.agent.save(f"{self.model_dir}//{self.step}_{average_episode_reward:.0f}.chpt")
+                    print(f"model_save dt={time.time()-t1}")
                 
-                start_time = time.time()
                 # reset agent and env
+                episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
                 self.agent.reset()
                 obs = env.reset()
-                episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
-
+                start_time = time.time()
+                
 @hydra.main(config_path=".", config_name='train')
 def main(cfg):
 
     print(torch.cuda.device_count())
     workspace = Workspace(cfg)
-    workspace.run()
+    if "load_model" in  cfg:
+        workspace.agent.load(cfg.load_model)
+    if "train" in cfg and cfg.train:
+        workspace.run()
+    else:
+        workspace.evaluate()
+    
 
 
 if __name__ == '__main__':

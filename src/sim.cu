@@ -156,38 +156,38 @@ __global__ void updateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 #ifdef GRAPHICS
 
 // update vertex positions
-__global__ void updateVertices(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
+__global__ void updateVertices(VERTEX_DATA* __restrict__ gl_ptr, const Vec3d* __restrict__  pos, const int num_mass) {
 	// https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
 	// https://devblogs.nvidia.com/cuda-pro-tip-optimize-pointer-aliasing/
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		Vec3d pos_i = pos[i];
-		int k = NUM_PER_VERTEX * i; //x,y,z
+
+		auto& v = gl_ptr[i]; // vertex_i
 		// update positions
-		gl_ptr[k] = (GLfloat)pos_i.x;
-		gl_ptr[k + 1] = (GLfloat)pos_i.y;
-		gl_ptr[k + 2] = (GLfloat)pos_i.z;
+		v.pos.x = (GLfloat)pos_i.x;
+		v.pos.y = (GLfloat)pos_i.y;
+		v.pos.z = (GLfloat)pos_i.z;
 		// zero vertex normals, must run before update normals
-		k += VERTEX_NORMAL_OFFSET;
-		gl_ptr[k] = 0.f;
-		gl_ptr[k + 1] = 0.f;
-		gl_ptr[k + 2] = 0.f;
+		v.normal.x = 0.f;
+		v.normal.y = 0.f;
+		v.normal.z = 0.f;
 	}
 }
 
 // update color rgb
-__global__ void updateColors(GLfloat* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
+__global__ void updateColors(VERTEX_DATA* __restrict__ gl_ptr, const Vec3d* __restrict__ color, const int num_mass) {
 	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_mass; i += blockDim.x * gridDim.x) {
 		Vec3d color_i = color[i];
-		int k = NUM_PER_VERTEX * i + 3; // x,y,z, r,g,b
-		gl_ptr[k] = (GLfloat)color_i.x;
-		gl_ptr[k + 1] = (GLfloat)color_i.y;
-		gl_ptr[k + 2] = (GLfloat)color_i.z;
+		auto& ptr_color_i = gl_ptr[i].color;
+		ptr_color_i.x = (GLfloat)color_i.x;
+		ptr_color_i.y = (GLfloat)color_i.y;
+		ptr_color_i.z = (GLfloat)color_i.z;
 	}
 }
 
 // update vertex normals from triangles, should run after updateVertices
 __global__ void updateTriangleVertexNormal(
-	GLfloat* __restrict__ gl_ptr,
+	VERTEX_DATA* __restrict__ gl_ptr,
 	const Vec3d* __restrict__  pos, // vertex positions
 	const Vec3i* __restrict__ triangle, // triangle indices
 	const int num_triangles
@@ -204,29 +204,20 @@ __global__ void updateTriangleVertexNormal(
 		float ny = (float)no.y;
 		float nz = (float)no.z;
 
-		int k = NUM_PER_VERTEX * t.x + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
-		atomicAdd(&gl_ptr[k], nx);
-		atomicAdd(&gl_ptr[k + 1], ny);
-		atomicAdd(&gl_ptr[k + 2], nz);
-		//gl_ptr[k] += nx;
-		//gl_ptr[k + 1] += ny;
-		//gl_ptr[k + 2] += nz;
+		auto& n0 = gl_ptr[t.x].normal;
+		atomicAdd(&n0.x, nx);
+		atomicAdd(&n0.y, ny);
+		atomicAdd(&n0.z, nz);
 
-		k = NUM_PER_VERTEX * t.y + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
-		atomicAdd(&gl_ptr[k], nx);
-		atomicAdd(&gl_ptr[k + 1], ny);
-		atomicAdd(&gl_ptr[k + 2], nz);
-		//gl_ptr[k] += nx;
-		//gl_ptr[k + 1] += ny;
-		//gl_ptr[k + 2] += nz;
+		auto& n1 = gl_ptr[t.y].normal;
+		atomicAdd(&n1.x, nx);
+		atomicAdd(&n1.y, ny);
+		atomicAdd(&n1.z, nz);
 
-		k = NUM_PER_VERTEX * t.z + VERTEX_NORMAL_OFFSET; // x,y,z, r,g,b,nx,ny,nz
-		atomicAdd(&gl_ptr[k], nx);
-		atomicAdd(&gl_ptr[k + 1], ny);
-		atomicAdd(&gl_ptr[k + 2], nz);
-		//gl_ptr[k] += nx;
-		//gl_ptr[k + 1] += ny;
-		//gl_ptr[k + 2] += nz;
+		auto& n2 = gl_ptr[t.z].normal;
+		atomicAdd(&n2.x, nx);
+		atomicAdd(&n2.y, ny);
+		atomicAdd(&n2.z, nz);
 	}
 }
 
@@ -588,7 +579,7 @@ void Simulation::updateUdpMessage() {
 
 	gpuErrchk(cudaSetDevice(device)); // set cuda device
 
-	constexpr int step = 4; // saving every n step
+	constexpr int udp_step = 4; // saving every n step
 	auto msg_send = udp_server.msg_send;//copy constuct
 
 	while (!SHOULD_END) {
@@ -602,19 +593,19 @@ void Simulation::updateUdpMessage() {
 #endif //STRESS_TEST
 				));
 			if (UDP_INIT) {
-				for (int i = 1; i < NUM_UDP_MULTIPLIER * step; i++) { // replicate up to NUM_UDP_MULTIPLIER*step times
+				for (int i = 1; i < NUM_UDP_MULTIPLIER * udp_step; i++) { // replicate up to NUM_UDP_MULTIPLIER*udp_step times
 					msg_send.push_front(msg_send.front());
 					//printf("udp init # %d\n", udp_server.msg_send.size());
 				}
 				UDP_INIT = false;
 			}
-			while (msg_send.size() > NUM_UDP_MULTIPLIER * step) {
+			while (msg_send.size() > NUM_UDP_MULTIPLIER * udp_step) {
 				msg_send.pop_back();
 			}
 			// sending..
 			udp_server.msg_send.clear();// clearing first
 			for (int i = 0; i < NUM_UDP_MULTIPLIER; i++) { // replicate up to NUM_UDP_MULTIPLIER times
-				udp_server.msg_send.push_back(msg_send[i * step]);
+				udp_server.msg_send.push_back(msg_send[i * udp_step]);
 				//printf("udp init # %d\n", udp_server.msg_send.size());
 			}
 			udp_server.send();// send udp message
@@ -917,7 +908,7 @@ void Simulation::updateGraphics() {
 			//mass.CopyPosFrom(d_mass, id_oxyz_start,1,stream[CUDA_MEMORY_STREAM]);
 			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
-			double t_lerp = 0.02;
+			double t_lerp = 0.01;
 			double speed_multiplier = 0.1;
 			double pos_multiplier = 0.05;
 
@@ -1079,14 +1070,14 @@ void Simulation::updateGraphics() {
 #ifdef GRAPHICS
 
 void Simulation::generateBuffers() {
-	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	createVBO(&vbo_vertex, &cuda_resource_vertex, mass.size() * sizeof(VERTEX_DATA), cudaGraphicsRegisterFlagsNone, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
 	createVBO(&vbo_edge, &cuda_resource_edge, spring.size() * sizeof(uint2), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 	createVBO(&vbo_triangle, &cuda_resource_triangle, triangle.size() * sizeof(uint3), cudaGraphicsRegisterFlagsNone, GL_ELEMENT_ARRAY_BUFFER);
 }
 
 void Simulation::resizeBuffers() {
 	////TODO>>>>>>
-	resizeVBO(&vbo_vertex, mass.size() * sizeof(GLfloat) * NUM_PER_VERTEX, GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
+	resizeVBO(&vbo_vertex, mass.size() * sizeof(VERTEX_DATA), GL_ARRAY_BUFFER);//TODO CHANGE TO WRITE ONLY
 	resizeVBO(&vbo_edge, spring.size() * sizeof(uint2), GL_ELEMENT_ARRAY_BUFFER);
 	resizeVBO(&vbo_triangle, triangle.size() * sizeof(uint3), GL_ELEMENT_ARRAY_BUFFER);
 	resize_buffers = false;
@@ -1144,7 +1135,7 @@ void Simulation::draw() {
 		3,                  // size
 		GL_FLOAT,           // type
 		GL_FALSE,           // normalized?
-		NUM_PER_VERTEX * sizeof(GL_FLOAT),// stride
+		sizeof(VERTEX_DATA),// stride
 		(void*)0            // array buffer offset
 	);
 	glEnableVertexAttribArray(0);
@@ -1155,8 +1146,8 @@ void Simulation::draw() {
 		3,                                // size
 		GL_FLOAT,                         // type
 		GL_FALSE,                         // normalized?
-		NUM_PER_VERTEX * sizeof(GL_FLOAT),   // stride
-		(GLvoid*)(VERTEX_COLOR_OFFSET * sizeof(GL_FLOAT))   // array buffer offset
+		sizeof(VERTEX_DATA),              // stride
+		(GLvoid*)(sizeof(VERTEX_DATA::pos))   // array buffer offset
 	);
 	glEnableVertexAttribArray(1);
 
@@ -1165,8 +1156,8 @@ void Simulation::draw() {
 		3,                                // size
 		GL_FLOAT,                         // type
 		GL_FALSE,                         // normalized?
-		NUM_PER_VERTEX * sizeof(GL_FLOAT),   // stride
-		(GLvoid*)(VERTEX_NORMAL_OFFSET * sizeof(GL_FLOAT))   // array buffer offset
+		sizeof(VERTEX_DATA),              // stride
+		(GLvoid*)(sizeof(VERTEX_DATA::pos) + sizeof(VERTEX_DATA::color))   // array buffer offset
 	);
 	glEnableVertexAttribArray(2);
 
@@ -1361,9 +1352,6 @@ void Simulation::createGLFWWindow() {
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 	// reset window color
 	glClearColor(clear_color.x, 0.0f, 0.0f, 0.0f);
-
-
-
 }
 
 #endif

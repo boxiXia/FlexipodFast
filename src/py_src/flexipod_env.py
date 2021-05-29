@@ -87,7 +87,7 @@ class FlexipodEnv(gym.Env):
         self, 
         dof = 12, 
         num_observation=5,
-        num_sensors = 64, # num of spring strain sensors
+        num_sensors = 0, # num of spring strain sensors
         normalize = True,
         max_joint_vel = 10, # maximum joint velocity rad/s
         ip_local = "127.0.0.1", port_local = 32000,
@@ -101,11 +101,13 @@ class FlexipodEnv(gym.Env):
         self.remote_address = (ip_remote, port_remote)
         
         self.dof = dof # num joints
+        self.joint_pos = np.empty(dof,dtype=np.float32) # joint position [rad]
         self.num_observation = num_observation
         self.normalize = normalize
         
-        self._max_episode_steps = np.inf
-        
+        self._max_episode_steps = 10000#np.inf
+        self.episode_steps = 0 # curret step in an episode
+
         # name of the returned message
         REC_NAME = np.array([
             # name,         size,      min,          max
@@ -129,13 +131,21 @@ class FlexipodEnv(gym.Env):
         
         self.ID =defaultdict(None,{name: k  for k,(name,_,_,_) in enumerate(REC_NAME)})
         
+        self.ID_t = self.ID['t']
+        self.ID_actuation = self.ID['actuation']
+        self.ID_orientation = self.ID['orientation']
+        self.ID_joint_pos = self.ID['joint_pos']
+        self.ID_com_pos = self.ID['com_pos']
+        self.ID_com_vel = self.ID['com_vel']
+        
         OBS_NAME = ("joint_pos","joint_vel","actuation","orientation",
                     "ang_vel","com_acc","com_vel","spring_strain","com_pos")
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
-        state_size = np.sum([REC_NAME[self.ID[name]]["size"] for name in OBS_NAME])-2
         
         # action min-max
-        max_action = 0.04 # [rad], delta position control
+        # max_action = 0.025 # [rad], delta position control
+        max_action = 5 # [rad/s], velocity control
+
         # raw min/max action
         self.raw_min_act = - max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
         self.raw_max_act =   max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
@@ -198,46 +208,63 @@ class FlexipodEnv(gym.Env):
             cmd_action = np.asarray(action,dtype=np.float32)
             if self.normalize:
                 cmd_action = cmd_action*self.to_raw_act_k + self.to_raw_act_m
-            # # position difference control
-            cmd_action += self.joint_pos # the actual position
+            # # # position difference control
+            # cmd_action += self.joint_pos # the actual position
+            
             # if len(self.cd.getContactPoints(cmd_action))>0:
-            step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
-            # step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
+            # step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
+            step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
             num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
         msg_rec = self.receive()
+        self.episode_steps+=1 # update episodic step counter
         return self._processRecMsg(msg_rec)
 
     def _processRecMsg(self,msg_rec):
         """processed received message to state action pair"""
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
 #         observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
-        msg_rec_i = msg_rec[0]
-        orientation_z = msg_rec_i[self.ID['orientation']][2]
-        actuation = msg_rec_i[self.ID['actuation']] # actuation (size=dof) of the latest observation
-        # com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
-        com_z = msg_rec_i[self.ID['com_pos']][2]
-        # joint position (sin,cos->rad)
-        joint_pos = msg_rec_i[self.ID['joint_pos']]
-        self.joint_pos = np.arctan2(joint_pos[1::2],joint_pos[::2]).astype(np.float32) # convert to rad
-        # print(f"self.joint_pos ={self.joint_pos}")
-        id_com_pos = self.ID['com_pos']
 
+
+        
+        
+        msg_rec_i = msg_rec[0]
+        orientation_z = msg_rec_i[self.ID_orientation][2]
+        actuation = msg_rec_i[self.ID_actuation] # actuation (size=dof) of the latest observation
+        # com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
+        com_z = msg_rec_i[self.ID_com_pos][2]
+        # joint position (sin,cos->rad)
+        joint_pos = msg_rec_i[self.ID_joint_pos]
+        _ = np.arctan2(joint_pos[1::2],joint_pos[::2],self.joint_pos,dtype=np.float32)
+        # print(f"self.joint_pos ={self.joint_pos}")
+        
+
+        
         observation = np.stack(
-            [np.hstack(msg_i[2:-1]+[msg_i[id_com_pos][2]]).astype(np.float32) 
+            [np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]]).astype(np.float32) 
                 for msg_i in msg_rec] )
+        
+        
+        # com_vel_xy = np.stack([msg_i[self.ID_com_vel][:2] for msg_i in msg_rec])
+        # com_vel_xy = np.linalg.norm(com_vel_xy.mean(axis=0))
+        
+        # x velocity
+        com_vel_xy = np.mean([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])
+        vel_cost = 0.2*com_vel_xy+0.8
         if self.flatten_obs:
             observation = observation.ravel()
         if self.normalize: # normalize the observation
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
-        uph_cost = orientation_z + com_z-0.15
-        quad_ctrl_cost  = 0.1 * np.square(actuation).sum() # quad control cost
-        reward =  uph_cost - quad_ctrl_cost
+        uph_cost = orientation_z + com_z-0.8
+        quad_ctrl_cost = (1-0.2 * np.square(actuation).sum()) # quad control cost
+        reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.6)or(com_z<0.2) else False
-        t = msg_rec_i[self.ID['t']]
+        done = True if (orientation_z<0.6)or(com_z<0.2)or(self.episode_steps>=self._max_episode_steps) else False
+        # done = True if self.episode_steps>=self._max_episode_steps else False # done when exceeding max steps
+        
+        t = msg_rec_i[self.ID_t]
         info = {'t':t}
         # if done:
 #             print(orientation_z,com_z)
@@ -249,6 +276,7 @@ class FlexipodEnv(gym.Env):
         self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
         time.sleep(1/10)
         msg_rec = self.receive()
+        self.episode_steps = 0
         observation,reward,done,info =  self._processRecMsg(msg_rec)
         self.episode_start_time = info['t']
         # print([m[self.ID['t']] for m in msg_rec])

@@ -268,122 +268,96 @@ void Ball::draw() {
 
 #ifdef GRAPHICS
 
-constexpr int const CONTACT_PLANE_RADIUS = 100;// radius [unit] of the plane
-constexpr int const CONTACT_PLANE_GL_DRAW_SIZE = (CONTACT_PLANE_RADIUS+1)* (CONTACT_PLANE_RADIUS+1)*4*6;
-// total 50*50*4*6=60000 points 
+constexpr int const CONTACT_PLANE_RADIUS = 10;// radius [unit] of the plane
+// total number of points
+constexpr int const CONTACT_PLANE_GL_DRAW_SIZE = (2*CONTACT_PLANE_RADIUS)* (2*CONTACT_PLANE_RADIUS)*6;
 
-void ContactPlane::generateBuffers() {
+struct VERTEX_DATA {
+    glm::vec3 pos; // 0: vertex position
+    glm::vec3 color; // 1: vertex color
+    glm::vec3 normal; //3: vertex normal
+};
 
-    //const int CONTACT_PLANE_RADIUS = 20; 
-    
+void ContactPlane::generateBuffers() {    
     // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
-    std::vector<GLfloat> vertex_data;
-    std::vector<GLfloat> color_data;
-    std::vector<GLfloat> normal_data(CONTACT_PLANE_GL_DRAW_SIZE*3);// vertex normals
+
+    std::vector<VERTEX_DATA> vertex_data(CONTACT_PLANE_GL_DRAW_SIZE);
 
     GLfloat s = 0.5f;// scale
-    for (int i = -CONTACT_PLANE_RADIUS; i <= CONTACT_PLANE_RADIUS; i++)
+
+    glm::vec3 square[6] = { //vertices of a square
+        glm::vec3(0,0,0),glm::vec3(s,0,0),glm::vec3(s,s,0),
+        glm::vec3(0,0,0),glm::vec3(s,s,0),glm::vec3(0,s,0),
+    };
+
+    glm::vec3 glm_normal = glm::vec3(_normal.x, _normal.y, _normal.z);
+    auto quat_rot = glm::rotation(glm::vec3(0, 0, 1), glm_normal);
+    glm::vec3 glm_offset = (float)_offset * glm_normal;
+
+#pragma omp parallel for
+    for (int i = 0; i < 2*CONTACT_PLANE_RADIUS; i++)
     {
-        for (int j = -CONTACT_PLANE_RADIUS; j <= CONTACT_PLANE_RADIUS; j++)
+        for (int j = 0; j < 2*CONTACT_PLANE_RADIUS; j++)
         {
-            GLfloat x = i*s;
-            GLfloat y = j*s;
-            vertex_data.insert(vertex_data.end(), {
-                x,y,0,
-                x+s,y,0,
-                x + s,y + s,0,
-                x,y,0,
-                x + s,y + s,0,
-                x,y+s,0});//2 triangles of a quad
+            GLfloat x = (i - CONTACT_PLANE_RADIUS)*s;
+            GLfloat y = (j - CONTACT_PLANE_RADIUS)*s;
+            int start = 6 * ((2 * CONTACT_PLANE_RADIUS) * i + j);
             // pick one color
-            glm::vec3 c = (i + j) % 2 == 0? glm::vec3(0.729f, 0.78f, 0.655f): glm::vec3(0.533f, 0.62f, 0.506f);
-            color_data.insert(color_data.end(), {
-                c[0],c[1],c[2],
-                c[0],c[1],c[2],
-                c[0],c[1],c[2],
-                c[0],c[1],c[2],
-                c[0],c[1],c[2],
-                c[0],c[1],c[2]});
+            glm::vec3 c = (i + j) % 2 == 0 ? glm::vec3(0.729f, 0.78f, 0.655f) : glm::vec3(0.533f, 0.62f, 0.506f);
+            for (int k = 0; k < 6; k++) //2 triangles of a quad
+            {   
+                vertex_data[start+k].pos = glm::rotate(quat_rot, glm::vec3(x, y, 0) + square[k]) + glm_offset;
+                vertex_data[start + k].normal = glm_normal;
+                vertex_data[start + k].color = c;
+            }
         }
     }
 
-    glm::vec3 glm_normal = glm::vec3(_normal[0], _normal[1], _normal[2]);
-    auto quat_rot = glm::rotation(glm::vec3(0, 0, 1), glm_normal);
-
-    glm::vec3 glm_offset = (float)_offset*glm_normal;
-
-    #pragma omp parallel for
-    for (int i = 0; i < vertex_data.size()/3; i++)
-    {
-        glm::vec3 v(vertex_data[3 * i], vertex_data[3 * i+1], vertex_data[3 * i+2]);
-        v = glm::rotate(quat_rot, v) + glm_offset;
-        vertex_data[3 * i] = v[0];
-        vertex_data[3 * i+1] = v[1];
-        vertex_data[3 * i+2] = v[2];
-        normal_data[3 * i] = (GLfloat)_normal.x;
-        normal_data[3 * i+1] = (GLfloat)_normal.y;
-        normal_data[3 * i+2] = (GLfloat)_normal.z;
-
-    }
 
     glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)* vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
-
-
-    glGenBuffers(1, &color_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * color_data.size(), color_data.data(), GL_STATIC_DRAW);
-
-    glGenBuffers(1, &normal_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * normal_data.size(), normal_data.data(), GL_STATIC_DRAW);
-
+    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA)* vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
     _initialized = true;
 }
 
 void ContactPlane::draw() {
-    // 1st attribute buffer : vertices
-   
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    // 1st attribute buffer : vertices
     glVertexAttribPointer(
             0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
             3,                  // size
             GL_FLOAT,           // type
             GL_FALSE,           // normalized?
-            0,                  // stride
+            sizeof(VERTEX_DATA),// stride
             (void*)0            // array buffer offset
     );
     glEnableVertexAttribArray(0);
    
-    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
+    //color;
     glVertexAttribPointer(
             1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
             3,                                // size
             GL_FLOAT,                         // type
             GL_FALSE,                         // normalized?
-            0,                                // stride
-            (void*)0                          // array buffer offset
+            sizeof(VERTEX_DATA),              // stride
+            (void*)(sizeof(VERTEX_DATA::pos)) // array buffer offset
     );
     glEnableVertexAttribArray(1);
 
-    glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
+    // normal;
     glVertexAttribPointer(
         2,                                // attribute. No particular reason for 1, but must match the layout in the shader.
         3,                                // size
         GL_FLOAT,                         // type
         GL_FALSE,                         // normalized?
-        0,                                // stride
-        (void*)0                          // array buffer offset
+        sizeof(VERTEX_DATA),              // stride
+        (void*)(sizeof(VERTEX_DATA::pos)+ (sizeof(VERTEX_DATA::color)))// array buffer offset
     );
     glEnableVertexAttribArray(2);
 
     // Draw the triangle !
     glDrawArrays(GL_TRIANGLES, 0, CONTACT_PLANE_GL_DRAW_SIZE); // number of vertices
     
-    // Todo: this won't work when the plane is shifted
-    //glDrawElements(GL_LINES, 12*6, GL_UNSIGNED_INT, (void*)0); // 3 indices starting at 0 -> 1 triangle
-
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);

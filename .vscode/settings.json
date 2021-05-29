@@ -1,3 +1,6 @@
 {
-    "python.analysis.extraPaths": ["src\\py_src","src\\py_src\\pytorch_sac"]
+    "python.analysis.extraPaths": [
+        "src\\py_src",
+        "src\\py_src\\pytorch_sac"
+    ],
 }

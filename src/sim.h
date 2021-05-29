@@ -598,26 +598,34 @@ struct JointControl {
 				vel_error[i] = vel_desired[i] - vel[i];
 
 				pos_desired[i] += vel_desired[i] * ndt;
-				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
 				pos_error[i] = pos_desired[i] - pos[i];
+				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
 				cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
+
+				vel_desired[i] = 0.98 * vel_desired[i];
 				break;
 			case JointControlMode::pos:
 				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
 				pos_error[i] = pos_desired[i] - pos[i];
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
-				
 				double vel_desired_proxy = pos_error[i] / ndt; // reach the destination at 1 control step
 				double dv = max_acc * ndt;
 				clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
 				clampInplace(vel_desired_proxy, -max_vel, max_vel);
+				// calcuate settling time based ob velocity change
+				double ndt_proxy = (vel_desired_proxy - vel_desired[i]) / max_acc;
 				vel_desired[i] = vel_desired_proxy;
 
+				ndt_proxy = abs(pos_error[i] / max_vel)*2.0;
+				if (ndt_proxy < ndt) { ndt_proxy = ndt; }
+
 				vel_error[i] = vel_desired[i] - vel[i];
-				cmd[i] = k_vel * vel_error[i] + k_pos / ndt * pos_error[i];
+				//cmd[i] = k_vel * vel_error[i] +k_pos / ndt * pos_error[i];
+				cmd[i] = k_pos / ndt_proxy * pos_error[i];
+
 				break;
 			}
 			clampInplace(cmd[i], -max_vel, max_vel);
@@ -789,7 +797,7 @@ public:
 		orientation[5] = body.rot.m21;
 
 #ifdef STRESS_TEST
-		constexpr int NUM_SPRING_STRAIN = 64;
+		constexpr int NUM_SPRING_STRAIN = 0;
 		if (id_selected_edges.size() > 0) { // only update if there selected edges exists
 			int step_spring_strain = id_selected_edges.size() / NUM_SPRING_STRAIN;
 			spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
@@ -832,10 +840,12 @@ typedef WsaUdpServer< DataReceive, std::deque<DataSend>> UdpServer;
 
 
 #ifdef GRAPHICS
-constexpr int NUM_PER_VERTEX = 9; // number of float per vertex;
-constexpr int VERTEX_COLOR_OFFSET = 3; // offset for the vertex color
-constexpr int VERTEX_NORMAL_OFFSET = 6; // offset for the vertex normal
 // vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
+struct VERTEX_DATA {
+	glm::vec3 pos; // 0: vertex position
+	glm::vec3 color; // 1: vertex color
+	glm::vec3 normal; //3: vertex normal
+};
 #endif // GRAPHICS
 
 
@@ -1040,7 +1050,7 @@ private:
 
 	/*------------- vertex buffer object and their device pointers--------------------*/
 	GLuint vbo_vertex; // handle for vertexbuffer: for vertex position,color, vertex normal update
-	GLfloat* dptr_vertex = nullptr;// used in updateBuffers(), device pointer,stores positions of the vertices
+	VERTEX_DATA* dptr_vertex = nullptr;// used in updateBuffers(), device pointer,stores positions of the vertices
 	struct cudaGraphicsResource* cuda_resource_vertex;
 
 	GLuint vbo_edge; // handle for elementbuffer (spring)

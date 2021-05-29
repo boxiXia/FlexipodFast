@@ -126,16 +126,12 @@ struct ContactPlane : public Constraint {
 #ifdef GRAPHICS
     ~ContactPlane() {
         glDeleteBuffers(1, &vertex_buffer);
-        glDeleteBuffers(1, &color_buffer);
     }
 
     void generateBuffers();
     void draw();
 
     GLuint vertex_buffer;
-    GLuint color_buffer;
-    GLuint normal_buffer;
-
 
 #endif
 };

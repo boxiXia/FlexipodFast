@@ -7,19 +7,24 @@ seed: 1
 
 agent:
     critic_cfg:
-        hidden_dim: 512
-        hidden_depth: 3
+        hidden_dim: 256
+        hidden_depth: 4
     actor_cfg:
-        hidden_dim: 512
-        hidden_depth: 3
-    batch_size: 1024
+        hidden_dim: 256
+        hidden_depth: 4
+    batch_size: 512
     # batch_size: 256
+
+# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\2021.05.27.2238_sac_test_exp\\model\\903306_13233.chpt
+train: True
+# train: False
 
 
 num_seed_steps: 10000
 # num_seed_steps: 512
+# num_seed_steps: 0
 
-# num_seed_steps: ${agent.batch_size}
+
 # env:
 #     _target_: dmc2gym.make
 #     domain_name: cheetah
@@ -36,8 +41,8 @@ experiment: test_exp
 num_train_steps: 1e6
 replay_buffer_capacity: ${num_train_steps}
 
+# eval_frequency: 1000
 
-# eval_frequency: 512
 eval_frequency: 10000
 num_eval_episodes: 3
 
