@@ -392,7 +392,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 					std::chrono::steady_clock::time_point ct_end = std::chrono::steady_clock::now();
 					float diff = std::chrono::duration_cast<std::chrono::milliseconds>(ct_end - ct_begin).count();
 					if (diff >= 1 || msg_received) {
-						udp_server.send();// send udp message
+						SHOULD_SEND_UDP = true;// send udp message
 						ct_begin = ct_end;
 					}
 #endif // UDP
@@ -579,33 +579,37 @@ void Simulation::updateUdpMessage() {
 
 	gpuErrchk(cudaSetDevice(device)); // set cuda device
 
-	constexpr int udp_step = 4; // saving every n step
-	auto msg_send = udp_server.msg_send;//copy constuct
+	auto _msg_send = udp_server.msg_send;//copy constuct
+	double _T = -1; // time at last send
 
 	while (!SHOULD_END) {
 		if (SHOULD_SEND_UDP) {
 			SHOULD_SEND_UDP = false;
-			body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS * dt);
-			msg_send.emplace_front(
-				DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
+			if (_T != T) {
+				_T = T; // update time last send
+				body.update(mass, id_oxyz_start, NUM_QUEUED_KERNELS * dt);
+				_msg_send.emplace_front(
+					DataSend(UDP_HEADER::ROBOT_STATE_REPORT, T, joint_control, body
 #ifdef STRESS_TEST	
-					, id_selected_edges, mass, spring
+						, id_selected_edges, mass, spring
 #endif //STRESS_TEST
-				));
+					));
+			}
+
 			if (UDP_INIT) {
-				for (int i = 1; i < NUM_UDP_MULTIPLIER * udp_step; i++) { // replicate up to NUM_UDP_MULTIPLIER*udp_step times
-					msg_send.push_front(msg_send.front());
+				for (int i = 1; i < udp_num_obs * udp_step; i++) { // replicate up to udp_num_obs*udp_step times
+					_msg_send.push_front(_msg_send.front());
 					//printf("udp init # %d\n", udp_server.msg_send.size());
 				}
 				UDP_INIT = false;
 			}
-			while (msg_send.size() > NUM_UDP_MULTIPLIER * udp_step) {
-				msg_send.pop_back();
+			while (_msg_send.size() > udp_num_obs * udp_step) {
+				_msg_send.pop_back();
 			}
 			// sending..
 			udp_server.msg_send.clear();// clearing first
-			for (int i = 0; i < NUM_UDP_MULTIPLIER; i++) { // replicate up to NUM_UDP_MULTIPLIER times
-				udp_server.msg_send.push_back(msg_send[i * udp_step]);
+			for (int i = 0; i < udp_num_obs; i++) { // replicate up to udp_num_obs times
+				udp_server.msg_send.push_back(_msg_send[i * udp_step]);
 				//printf("udp init # %d\n", udp_server.msg_send.size());
 			}
 			udp_server.send();// send udp message

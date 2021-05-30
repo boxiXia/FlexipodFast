@@ -867,7 +867,9 @@ public:
 	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 	int NUM_UPDATE_PER_ROTATION = 3; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
-	int NUM_UDP_MULTIPLIER = 5;// udp update is decreased by this factor
+	int udp_num_obs = 5;// send udp_num_obs at once (number of observations)
+	int udp_step = 4; // udp observations is stepped by this factor
+
 	bool UDP_INIT = true; // bool to inform the udp thread to initialize
 #endif
 	// host
