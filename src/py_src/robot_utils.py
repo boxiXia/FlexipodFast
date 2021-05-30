@@ -1213,10 +1213,14 @@ class RobotDescription(nx.OrderedDiGraph):
         return: 
             the updated graph
         """
-        if t is None:
-            t = np.eye(4)
         rn = self.rootNode
-        self.nodes[rn]["world_transform"] = t
+        
+        
+        if "world_transform" not in self.nodes[rn]:
+            if t is None:
+                t = np.eye(4)
+        if t is not None:
+            self.nodes[rn]["world_transform"] = t
         for e in nx.edge_bfs(self, source=rn):
             parent_node = self.nodes[e[0]]
             child_node = self.nodes[e[1]]

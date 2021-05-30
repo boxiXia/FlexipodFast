@@ -240,7 +240,7 @@ class FlexipodEnv(gym.Env):
         
         # x velocity
         com_vel_xy = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
-        vel_cost = 0.4*com_vel_xy+0.6
+        vel_cost = 0.4*np.clip(com_vel_xy,0,10)+0.6
         if self.flatten_obs:
             observation = observation.ravel()
         if self.normalize: # normalize the observation
@@ -255,7 +255,7 @@ class FlexipodEnv(gym.Env):
         reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.6)or(com_z<0.2)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<0.6)or(com_z<0.3)or(self.episode_steps>=self._max_episode_steps) else False
         # done = True if self.episode_steps>=self._max_episode_steps else False # done when exceeding max steps
         
         t = msg_rec_i[self.ID_t]
