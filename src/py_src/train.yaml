@@ -13,9 +13,10 @@ agent:
         hidden_dim: 256
         hidden_depth: 4
     batch_size: 512
+    discount: 0.999
     # batch_size: 256
 
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\2021.05.27.2238_sac_test_exp\\model\\903306_13233.chpt
+# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1391031_11777.chpt
 train: True
 # train: False
 
@@ -38,7 +39,7 @@ env:
 # this needs to be specified manually
 experiment: test_exp
 
-num_train_steps: 1e6
+num_train_steps: 4e6
 replay_buffer_capacity: ${num_train_steps}
 
 # eval_frequency: 1000
@@ -62,6 +63,6 @@ hydra:
         # name: sac
         name: ${agent.name}
     run:
-        dir: ./exp/${now:%Y.%m.%d.%H%M}_${agent.name}_${experiment}
+        dir: ./exp/${now:%Y.%m.%d.%H%M}_${experiment}
     searchpath:
         - pkg://pytorch_sac/config

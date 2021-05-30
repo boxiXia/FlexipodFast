@@ -222,42 +222,36 @@ class FlexipodEnv(gym.Env):
     def _processRecMsg(self,msg_rec):
         """processed received message to state action pair"""
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
-#         observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
-
-
-        
+        # observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
         
         msg_rec_i = msg_rec[0]
         orientation_z = msg_rec_i[self.ID_orientation][2]
         actuation = msg_rec_i[self.ID_actuation] # actuation (size=dof) of the latest observation
-        # com_vel = np.linalg.norm(msg_rec_i[self.ID['com_vel']])
         com_z = msg_rec_i[self.ID_com_pos][2]
         # joint position (sin,cos->rad)
         joint_pos = msg_rec_i[self.ID_joint_pos]
         _ = np.arctan2(joint_pos[1::2],joint_pos[::2],self.joint_pos,dtype=np.float32)
         # print(f"self.joint_pos ={self.joint_pos}")
         
-
         
-        observation = np.stack(
-            [np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]]).astype(np.float32) 
-                for msg_i in msg_rec] )
+        observation = np.stack([np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]])
+                for msg_i in msg_rec] ).astype(np.float32) 
         
-        
-        # com_vel_xy = np.stack([msg_i[self.ID_com_vel][:2] for msg_i in msg_rec])
-        # com_vel_xy = np.linalg.norm(com_vel_xy.mean(axis=0))
         
         # x velocity
-        com_vel_xy = np.mean([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])
-        vel_cost = 0.2*com_vel_xy+0.8
+        com_vel_xy = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
+        vel_cost = 0.4*com_vel_xy+0.6
         if self.flatten_obs:
             observation = observation.ravel()
         if self.normalize: # normalize the observation
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
-        uph_cost = orientation_z + com_z-0.8
-        quad_ctrl_cost = (1-0.2 * np.square(actuation).sum()) # quad control cost
+        uph_cost = orientation_z*(np.clip((com_z/0.42),0,1))
+        # print(com_z)
+        # print(msg_rec_i[self.ID_orientation])
+        
+        quad_ctrl_cost = (1-0.1 * sum(np.square(actuation))) # quad control cost
         reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
