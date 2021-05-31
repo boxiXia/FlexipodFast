@@ -947,8 +947,8 @@ public:
 	//Todo
 public:
 	std::string ip_remote = "127.0.0.1"; // remote ip
-	int port_remote = 32000; // remote port
-	int port_local = 32001;
+	int port_remote = 33300; // remote port
+	int port_local = 33301;
 
 	UdpServer udp_server;
 

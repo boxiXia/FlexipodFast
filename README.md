@@ -40,11 +40,12 @@ vcpkg install --triplet x64-windows --head imgui[glfw-binding,opengl3-glew-bindi
 ### 3. Clone the repo
 either to clone (ssh):
 ```bash
-git clone git@github.com:boxiXia/FlexipodFast.git
+git clone --recurse-submodules git@github.com:boxiXia/FlexipodFast.git
+
 ```
 or to clone (HTTPS):
 ```bash
-git clone https://github.com/boxiXia/FlexipodFast.git
+git clone --recurse-submodules https://github.com/boxiXia/FlexipodFast.git
 ```
 ### 4. Modify the [CMakeLists.txt](./CMakeLists.txt) file
 find these lines, and modify according to your GPU architecture

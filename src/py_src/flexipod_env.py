@@ -90,8 +90,8 @@ class FlexipodEnv(gym.Env):
         num_sensors = 0, # num of spring strain sensors
         normalize = True,
         max_joint_vel = 10, # maximum joint velocity rad/s
-        ip_local = "127.0.0.1", port_local = 32000,
-        ip_remote = "127.0.0.1",port_remote = 32001):
+        ip_local = "127.0.0.1", port_local = 33300,
+        ip_remote = "127.0.0.1",port_remote = 33301):
         
         super(FlexipodEnv,self).__init__()
         
@@ -188,7 +188,7 @@ class FlexipodEnv(gym.Env):
         self.resume_cmd_b = self.packer.pack([self.UDP_RESUME,0,[0,0,0,0]])
         self.close_cmd_b = self.packer.pack([self.UDP_TERMINATE,0,[0,0,0,0]])
         self.BUFFER_LEN = 32768  # in bytes
-        self.TIMEOUT = 0.1 #timeout duration
+        self.TIMEOUT = 0.2 #timeout duration
         
 #         self.startSimulation()
 #         gc.collect()
@@ -247,7 +247,8 @@ class FlexipodEnv(gym.Env):
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
-        uph_cost = orientation_z*(np.clip((com_z/0.42),0,1))
+        # 75 deg - 90 deg : 1
+        uph_cost = max(orientation_z*1.035,1)*max(com_z/0.42,1)
         # print(com_z)
         # print(msg_rec_i[self.ID_orientation])
         

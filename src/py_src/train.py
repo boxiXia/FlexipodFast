@@ -96,6 +96,12 @@ class Workspace(object):
         obs = env.reset()
         episode, episode_step, episode_reward, done = 0, 0, 0.0, False
         
+        # ref: replay buffer emphasizing recent experience
+        # https://arxiv.org/abs/1906.04009
+        eta_0 = 1
+        eta_T = 0.996
+        min_sample_size = batch_size*10
+        
         # training loop
         while self.step < num_train_steps:
             # sample action for data collection
@@ -132,7 +138,14 @@ class Workspace(object):
                     except Exception:
                         pass
                     t1 = time.time()
+                    
+                    # compute the annealed eta
+                    eta = eta_0 + (eta_T-eta_0)* self.step/num_train_steps
+                    
                     for k in range(num_updates):
+                        # update using the most recent num_recent samples
+                        self.replay_buffer.num_recent = int(max(self.step*eta**(k*1000.0/num_updates),min_sample_size))
+                        # print(self.replay_buffer.num_recent)
                         self.agent.update(self.replay_buffer,self.logger, self.step)
                     print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
 

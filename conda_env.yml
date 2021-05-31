@@ -31,6 +31,7 @@ dependencies:
   - pytorch
   - torchaudio
   - torchvision
+  - termcolor
   - rtree=0.9.4
   - scikit-learn
   - seaborn
