@@ -247,13 +247,12 @@ class FlexipodEnv(gym.Env):
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
-        # 75 deg - 90 deg : 1
-        uph_cost = max(orientation_z*1.035,1)*max(com_z/0.42,1)
+        uph_cost = max(0,orientation_z)*max(com_z/0.42,1)
         # print(com_z)
         # print(msg_rec_i[self.ID_orientation])
         
-        quad_ctrl_cost = (1-0.1 * sum(np.square(actuation))) # quad control cost
-        reward =  uph_cost*quad_ctrl_cost*vel_cost
+        quad_ctrl_cost = max(0,1-0.05 * sum(np.square(actuation))) # quad control cost
+        reward =  uph_cost*quad_ctrl_cost#*vel_cost
         
 #         reward = orientation_z
         done = True if (orientation_z<0.6)or(com_z<0.3)or(self.episode_steps>=self._max_episode_steps) else False
