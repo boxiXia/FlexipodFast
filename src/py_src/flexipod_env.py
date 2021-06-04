@@ -27,7 +27,7 @@ class BulletCollisionDetect:
         """
         load urdf and init the collision detection
         """
-        urdf_path="../../data/urdf/test/robot.urdf"
+        urdf_path="../../data/urdf/12dof/robot.urdf"
         urdf_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),urdf_path)
         # print(os.path.abspath(urdf_path))
         # loading using bullet_client
@@ -240,7 +240,7 @@ class FlexipodEnv(gym.Env):
         
         # x velocity
         com_vel_xy = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
-        vel_cost = 0.4*np.clip(com_vel_xy,0,10)+0.6
+        vel_cost = 0.3*np.clip(com_vel_xy,0,1)+0.7
         if self.flatten_obs:
             observation = observation.ravel()
         if self.normalize: # normalize the observation
@@ -252,7 +252,7 @@ class FlexipodEnv(gym.Env):
         # print(msg_rec_i[self.ID_orientation])
         
         quad_ctrl_cost = max(0,1-0.05 * sum(np.square(actuation))) # quad control cost
-        reward =  uph_cost*quad_ctrl_cost#*vel_cost
+        reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
         done = True if (orientation_z<0.65)or(com_z<0.3)or(self.episode_steps>=self._max_episode_steps) else False
