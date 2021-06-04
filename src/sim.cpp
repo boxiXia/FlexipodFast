@@ -170,7 +170,7 @@ void Simulation::runImgui() {
 		// measure simulation speed
 		auto t = std::chrono::steady_clock::now();
 		float duration = (float)std::chrono::duration_cast<std::chrono::milliseconds>(t - t_prev).count() / 1000.;//[seconds]
-		if (duration > 0.5) {
+		if (duration > 0.3) {
 			float sim_duration = T - t_sim_prev;
 			sim_speed = sim_duration / duration;
 			rec_fps = (float(udp_server.counter_rec - counter_rec)) / sim_duration; // frame per simulation seconds
@@ -241,6 +241,7 @@ void Simulation::runImgui() {
 			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
 			const char* elem_name = (joint_control.mode == JointControlMode::vel)?  "vel":"pos";
 			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
+			ImGui::Text("com pos %+4.2f %+4.2f %+4.2f", body.pos.x, body.pos.y, body.pos.z);
 		}
 
 		ImGui::Checkbox("draw mesh ", &show_triangle);
