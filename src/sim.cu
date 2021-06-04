@@ -764,7 +764,7 @@ void Simulation::backupState() {
 }
 /*restore the robot mass/spring/joint state to the backedup state *///TODO check if other variable needs resetting
 void Simulation::resetState() {//TODO...fix bug
-	cudaDeviceSynchronize();
+	cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
 	d_mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM]);
 	mass.copyFrom(backup_mass, stream[CUDA_MEMORY_STREAM_ALT]);
 
@@ -777,7 +777,7 @@ void Simulation::resetState() {//TODO...fix bug
 	joint_control.reset(backup_mass, backup_joint);
 	//joint_control.update(backup_mass, backup_joint, dt);
 	body.init(backup_mass, id_oxyz_start); // init body frame
-	cudaDeviceSynchronize();
+	cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
 
 #ifdef UDP
 	UDP_INIT = true; // tell the udp thread to initiailze

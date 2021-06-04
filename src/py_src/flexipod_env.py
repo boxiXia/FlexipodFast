@@ -247,7 +247,7 @@ class FlexipodEnv(gym.Env):
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
-        uph_cost = max(0,orientation_z)*max(com_z/0.42,1)
+        uph_cost = max(0,orientation_z)*min(com_z+0.55,1)
         # print(com_z)
         # print(msg_rec_i[self.ID_orientation])
         
@@ -255,7 +255,7 @@ class FlexipodEnv(gym.Env):
         reward =  uph_cost*quad_ctrl_cost#*vel_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.6)or(com_z<0.3)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<0.65)or(com_z<0.3)or(self.episode_steps>=self._max_episode_steps) else False
         # done = True if self.episode_steps>=self._max_episode_steps else False # done when exceeding max steps
         
         t = msg_rec_i[self.ID_t]

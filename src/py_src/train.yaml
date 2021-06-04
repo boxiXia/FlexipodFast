@@ -17,7 +17,7 @@ agent:
     # batch_size: 256
 
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1391031_11777.chpt
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\3590240_5811.chpt
+# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1576903_9999.chpt
 train: True
 # train: False
 
