@@ -9,6 +9,7 @@ import sys
 import numpy as np
 import torch
 import hydra
+from omegaconf import DictConfig, OmegaConf
 
 # from pytorch_sac.train import Workspace
 
@@ -57,6 +58,7 @@ class Workspace(object):
         self.video_recorder = VideoRecorder(
             self.work_dir if cfg.save_video else None)
         self.step = 0
+        print(OmegaConf.to_yaml(cfg))
 
     def evaluate(self):
         average_episode_reward = 0

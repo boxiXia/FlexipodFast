@@ -15,6 +15,8 @@ agent:
     batch_size: 512
     discount: 0.999
     # batch_size: 256
+    critic_target_update_frequency: 1
+
 
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1391031_11777.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1576903_9999.chpt
