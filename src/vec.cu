@@ -48,6 +48,10 @@ CUDA_CALLABLE_MEMBER Vec3d lerp(Vec3d p0, Vec3d p1, double t) {
 	return p_lerp;
 }
 
+float lerp(float a, float b, float f)
+{
+	return a + f * (b - a);
+}
 
 CUDA_CALLABLE_MEMBER Vec3d slerp(Vec3d p0, Vec3d p1, double t) {
 	double w = angleBetween(p0, p1);//total angle

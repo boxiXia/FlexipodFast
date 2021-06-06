@@ -376,6 +376,7 @@ struct MY_ALIGN(8) Vec3d {
 	friend CUDA_CALLABLE_MEMBER Vec3d slerp(Vec3d p0, Vec3d p1, double t);
 };
 
+float lerp(float a, float b, float f);
 
 
 
