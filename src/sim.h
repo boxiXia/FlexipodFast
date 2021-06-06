@@ -839,16 +839,6 @@ typedef WsaUdpServer< DataReceive, std::deque<DataSend>> UdpServer;
 #endif // UDP
 
 
-#ifdef GRAPHICS
-// vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
-struct VERTEX_DATA {
-	glm::vec3 pos; // 0: vertex position
-	glm::vec3 color; // 1: vertex color
-	glm::vec3 normal; //3: vertex normal
-};
-#endif // GRAPHICS
-
-
 class Simulation {
 public:
 	int device;
@@ -1025,9 +1015,10 @@ public:
 
 	DirectionLight light; // directional light
 
-	glm::mat4 MVP; //model-view-projection matrix
-	glm::mat4 View; //view matrix
-	glm::mat4 Projection; //projection matrix
+	glm::mat4 MVP; // model-view-projection matrix
+	glm::mat4 model_matrix;// model_matrix matrix
+	glm::mat4 view_matrix; // view matrix
+	glm::mat4 projection_matrix; // projection matrix
 
 	// for projection matrix 
 	Vec3d camera_pos;// camera position

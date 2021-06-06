@@ -1017,7 +1017,12 @@ void Simulation::updateGraphics() {
 			/*---- 2. render scene as normal using the generated depth/shadow map--*/
 			shader.use(); // use the shader
 			light.set(shader.ID, "light"); // set the light uniform
-			shader.setMat4("MVP", MVP); // set MVP
+			//shader.setMat4("MVP", MVP); // set MVP
+			shader.setMat4("model", model_matrix); // set model matrix
+			shader.setMat4("view", view_matrix);// set view matrix
+			shader.setMat4("projection", projection_matrix); // set projection matrix
+
+
 			shader.setVec3("viewPos", // set view position
 				(float)camera_pos.x, (float)camera_pos.y, (float)camera_pos.z);
 			shader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
@@ -1212,13 +1217,14 @@ void Simulation::computeMVP(bool update_view) {
 	if (is_resized) {// window is resized but not iconified
 		framebuffer_width = width;
 		framebuffer_height = height;
-		// Projection matrix : 70 deg Field of View, width:height ratio, display range : 0.01 unit <-> 100 units
-		this->Projection = glm::perspective(glm::radians(70.0f), (float)framebuffer_width / (float)framebuffer_height, 0.01f, 100.0f);
+		// projection_matrix matrix : 70 deg Field of view_matrix, width:height ratio, display range : 0.01 unit <-> 100 units
+		this->projection_matrix = glm::perspective(glm::radians(70.0f), (float)framebuffer_width / (float)framebuffer_height, 0.01f, 100.0f);
 	}
 
 	if (update_view) {
+		model_matrix = glm::mat4(1.0f);// model matrix
 		// Camera matrix
-		this->View = glm::lookAt(
+		this->view_matrix = glm::lookAt(
 			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // camera position in World Space
 			glm::vec3(camera_pos.x + camera_dir.x,
 				camera_pos.y + camera_dir.y,
@@ -1226,7 +1232,7 @@ void Simulation::computeMVP(bool update_view) {
 			glm::vec3(camera_up.x, camera_up.y, camera_up.z));  // camera up vector (set to 0,-1,0 to look upside-down)
 	}
 	if (is_resized || update_view) {
-		this->MVP = Projection * View; // Remember, matrix multiplication is the other way around
+		this->MVP = model_matrix*projection_matrix * view_matrix; // Remember, matrix multiplication is the other way around
 	}
 }
 

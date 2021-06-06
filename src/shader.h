@@ -6,8 +6,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #ifndef shader_hpp
 #define shader_hpp
 
-
-
 #include <GL/glew.h>// Include GLEW
 #include <GLFW/glfw3.h>// Include GLFW
 #include <glm/glm.hpp>// Include GLM
@@ -16,6 +14,46 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <fstream>
 #include <sstream>
 #include <iostream>
+
+
+// vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
+struct VERTEX_DATA {
+    glm::vec3 pos; // 0: vertex position
+    glm::vec3 color; // 1: vertex color
+    glm::vec3 normal; //3: vertex normal
+};
+
+
+// renderQuad() renders a 1x1 XY quad in NDC
+class NdcQuad {
+public:
+    unsigned int quadVAO = 0;
+    unsigned int quadVBO;
+    NdcQuad() {
+        float quadVertices[] = {
+            // positions        // texture Coords
+            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+             1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+             1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    void render() {
+        glBindVertexArray(quadVAO);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+    }
+};
 
 /* directional light*/
 class DirectionLight { 

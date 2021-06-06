@@ -9,7 +9,6 @@ layout(location = 3) in vec4 fragPosLightSpace; //fragment position in light spa
 out vec3 color;
 
 // Values that stay constant for the whole mesh.
-uniform mat4 MVP;
 uniform vec3 viewPos;//view position
 
 uniform sampler2D shadowMap;
@@ -142,6 +141,7 @@ void main() {
     //interpolated between all 3 surrounding vertices
     color = light.color*fragColor*ratio;
 
+    // color = normal;
     // float depth = LinearizeDepth(gl_FragCoord.z) / far; // divide by far for demonstration
     // color = vec3(depth);
 }
