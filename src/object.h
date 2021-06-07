@@ -110,7 +110,10 @@ struct ContactPlane : public Constraint {
     double _FRICTION_K; // kinectic friction coefficient
     double _FRICTION_S; // static friction coefficient
 
-    ContactPlane(const Vec3d & normal, double offset) {
+
+
+    ContactPlane(const Vec3d & normal, double offset,
+        float square_size = 0.5f, float plane_radius = 5) {
         _normal = normal / normal.norm();
         _offset = offset;
 
@@ -119,6 +122,10 @@ struct ContactPlane : public Constraint {
 
 #ifdef GRAPHICS
         _initialized = false;
+        s = square_size;// per square scale (square size [m])
+        this->plane_radius = plane_radius; //radius the contact plane 
+        nr = int(plane_radius / s);// normalized radius of the plane
+
 #endif
     }
 
@@ -132,6 +139,13 @@ struct ContactPlane : public Constraint {
     void draw();
 
     GLuint vertex_buffer;
+    GLuint triangle_buffer;//index buffer
+
+    float s;// per square scale (square size [m])
+    float plane_radius; //radius the contact plane
+    bool draw_back_face = true;
+    int nr;// normalized radius of the plane
+    int gl_draw_size; // total number of points
 
 #endif
 };

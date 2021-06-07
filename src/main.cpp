@@ -284,6 +284,8 @@ int main(int argc, char* argv[])
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
 	sim.createPlane(Vec3d(0, 0, 1), 0, 0.9, 0.8);
+	sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.1f,0.1f);
+
 	//sim.createBall(Vec3d(1, 1, 1), 0.5);
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 

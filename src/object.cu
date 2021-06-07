@@ -271,9 +271,6 @@ void Ball::draw() {
 
 #ifdef GRAPHICS
 
-constexpr int const CONTACT_PLANE_RADIUS = 10;// radius [unit] of the plane
-// total number of points
-constexpr int const CONTACT_PLANE_GL_DRAW_SIZE = (2*CONTACT_PLANE_RADIUS)* (2*CONTACT_PLANE_RADIUS)*6;
 
 struct VERTEX_DATA {
     glm::vec3 pos; // 0: vertex position
@@ -284,42 +281,68 @@ struct VERTEX_DATA {
 void ContactPlane::generateBuffers() {    
     // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
 
-    std::vector<VERTEX_DATA> vertex_data(CONTACT_PLANE_GL_DRAW_SIZE);
+    int num_square = 2 * nr * 2 * nr;
+    int num_vertex = num_square * 4;
+    gl_draw_size = num_square * 6 *(draw_back_face? 2:1);
+    
+    std::vector<VERTEX_DATA> vertex_data(num_vertex);
+    std::vector<GLuint> triangle(gl_draw_size);//triangle indices
 
-    GLfloat s = 0.5f;// scale
-
-    glm::vec3 square[6] = { //vertices of a square
-        glm::vec3(0,0,0),glm::vec3(s,0,0),glm::vec3(s,s,0),
-        glm::vec3(0,0,0),glm::vec3(s,s,0),glm::vec3(0,s,0),
+    glm::vec3 square[4] = { //vertices of a square
+        glm::vec3(0,0,0),
+        glm::vec3(s,0,0),
+        glm::vec3(s,s,0),
+        glm::vec3(0,s,0),
     };
+
+    GLuint square_triangle[6] = { 0,1,2,0,2,3 };//indices of a square counterclockwise
 
     glm::vec3 glm_normal = glm::vec3(_normal.x, _normal.y, _normal.z);
     auto quat_rot = glm::rotation(glm::vec3(0, 0, 1), glm_normal);
     glm::vec3 glm_offset = (float)_offset * glm_normal;
 
+	int nd = 2 * nr; // normalized plane diameter
+
 #pragma omp parallel for
-    for (int i = 0; i < 2*CONTACT_PLANE_RADIUS; i++)
-    {
-        for (int j = 0; j < 2*CONTACT_PLANE_RADIUS; j++)
+	for (int idx = 0; idx < num_square; idx++)
+	{
+		int i = idx / nd;
+		int j = idx % nd;
+		GLfloat x = (i - nr) * s;
+		GLfloat y = (j - nr) * s;
+		int vert_start = 4 * idx; // start index of the vertex
+		// pick one color
+		glm::vec3 c = (i + j) % 2 == 0 ? glm::vec3(0.729f, 0.78f, 0.655f) : glm::vec3(0.533f, 0.62f, 0.506f);
+		for (int k = 0; k < 4; k++) //2 triangles of a quad
+		{
+			int vid = vert_start + k; //vertex index
+			vertex_data[vid].pos = glm::rotate(quat_rot, glm::vec3(x, y, 0) + square[k]) + glm_offset;
+			vertex_data[vid].normal = glm_normal;
+			vertex_data[vid].color = c;
+		}
+		// triangles
+		int triag_start = 6 * idx;
+		for (int k = 0; k < 6; k++) //2 triangles of a quad
+		{
+			triangle[triag_start + k] = vert_start + square_triangle[k];
+		}
+    }
+    if (draw_back_face) {//draw front and back
+        int offset = gl_draw_size / 2;
+        for (int i = 0; i < offset; i++)
         {
-            GLfloat x = (i - CONTACT_PLANE_RADIUS)*s;
-            GLfloat y = (j - CONTACT_PLANE_RADIUS)*s;
-            int start = 6 * ((2 * CONTACT_PLANE_RADIUS) * i + j);
-            // pick one color
-            glm::vec3 c = (i + j) % 2 == 0 ? glm::vec3(0.729f, 0.78f, 0.655f) : glm::vec3(0.533f, 0.62f, 0.506f);
-            for (int k = 0; k < 6; k++) //2 triangles of a quad
-            {   
-                vertex_data[start+k].pos = glm::rotate(quat_rot, glm::vec3(x, y, 0) + square[k]) + glm_offset;
-                vertex_data[start + k].normal = glm_normal;
-                vertex_data[start + k].color = c;
-            }
+            triangle[offset + i] = triangle[offset - i-1];
         }
     }
-
 
     glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA)* vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
+    
+    glGenBuffers(1, &triangle_buffer); // buffer for the triangle
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint) * triangle.size(), triangle.data(), GL_STATIC_DRAW);
+    
     _initialized = true;
 }
 
@@ -359,8 +382,10 @@ void ContactPlane::draw() {
     glEnableVertexAttribArray(2);
 
     // Draw the triangle !
-    glDrawArrays(GL_TRIANGLES, 0, CONTACT_PLANE_GL_DRAW_SIZE); // number of vertices
-    
+    //glDrawArrays(GL_TRIANGLES, 0, gl_draw_size); // number of vertices
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
+    glDrawElements(GL_TRIANGLES, gl_draw_size, GL_UNSIGNED_INT, (void*)0);
+
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);

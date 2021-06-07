@@ -109,8 +109,8 @@ public:
     glm::vec3 up;// camera up vector
     
     float yaw = 0;  // rotation angle of the vector from target to camera about camera_up vector
-    float h_offset = 1.f; // distance b/w target and camera in plane normal to camera_up vector 
-    float up_offset = 1.f; // distance b/w target and camera in camera_up direction
+    float h_offset = 0.5f; // distance b/w target and camera in plane normal to camera_up vector 
+    float up_offset = 0.5f; // distance b/w target and camera in camera_up direction
 
     Camera() {};
     Camera(

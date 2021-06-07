@@ -162,10 +162,10 @@ void Simulation::runImgui() {
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		//bool show_demo_window = true;
-		//ImGui::ShowDemoWindow(&show_demo_window);
-		//ImGui::ShowMetricsWindow();
-		//ImGui::ShowStyleEditor();
+		bool show_demo_window = true;
+		ImGui::ShowDemoWindow(&show_demo_window);
+		ImGui::ShowMetricsWindow();
+		ImGui::ShowStyleEditor();
 
 		// measure simulation speed
 		auto t = std::chrono::steady_clock::now();
@@ -203,6 +203,7 @@ void Simulation::runImgui() {
 			ImGui::DragScalarN("gravity", ImGuiDataType_Double, &global_acc, 3, 0.1,&gravity_min, &gravity_max, "%.2f");
 		}
 
+		//ImGui::PlotLines
 		// joint control
 		if (joint_control.size() > 0 && ImGui::CollapsingHeader("joint control")) {
 

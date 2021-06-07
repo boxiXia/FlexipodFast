@@ -629,9 +629,10 @@ void Simulation::freeGPU() {
 
 
 // creates half-space ax + by + cz < d
-void Simulation::createPlane(const Vec3d& abc, const double d, const double FRICTION_K, const double FRICTION_S) { // creates half-space ax + by + cz < d
+void Simulation::createPlane(const Vec3d& abc, const double d, const double FRICTION_K, const double FRICTION_S,
+	float square_size, float plane_radius) { // creates half-space ax + by + cz < d
 	if (ENDED) { throw std::runtime_error("The simulation has ended. New objects cannot be created."); }
-	ContactPlane* new_plane = new ContactPlane(abc, d);
+	ContactPlane* new_plane = new ContactPlane(abc, d, square_size, plane_radius);
 	assert(FRICTION_K >= 0);// make sure the friction coefficient are meaningful values
 	assert(FRICTION_S >= 0);
 	new_plane->_FRICTION_K = FRICTION_K;
@@ -880,14 +881,14 @@ void Simulation::updateGraphics() {
 	if (error != GL_NO_ERROR)
 		std::cerr << "OpenGL Error " << error << std::endl;
 
-	auto t_end = std::chrono::steady_clock::now();
-	auto t_start = t_end - std::chrono::milliseconds(1000/60);
-	//printf("T:%.2f", T);
+	auto dt_graphic = std::chrono::nanoseconds(int(1e9 / 60.0));
+	auto  refresh_time = std::chrono::steady_clock::now();
 	while (!SHOULD_END) {
-		t_end = std::chrono::steady_clock::now();
-		if ((int)std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count() > 1e9 / 60.0)
+		auto t_now = std::chrono::steady_clock::now();
+		if (t_now >= refresh_time)
 		{
-			t_start = t_end;
+			refresh_time = t_now + dt_graphic;
+
 			// graphics update loop
 			if (resize_buffers) {
 				resizeBuffers(); // needs to be run from GPU thread

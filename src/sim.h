@@ -915,7 +915,8 @@ public:
 	void setMass();
 	// Global constraints (can be rendered)
 	// creates half-space ax + by + cz < d
-	void createPlane(const Vec3d& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0);
+	void createPlane(const Vec3d& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0, 
+		/*rendering:*/float square_size = 0.5f, float plane_radius = 5);
 	void createBall(const Vec3d& center, const double r); // creates ball with radius r at position center
 	void clearConstraints(); // clears global constraints only
 
