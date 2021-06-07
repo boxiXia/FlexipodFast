@@ -244,7 +244,10 @@ void Simulation::runImgui() {
 			ImGui::Text("com pos %+4.2f %+4.2f %+4.2f", body.pos.x, body.pos.y, body.pos.z);
 		}
 
-		ImGui::Checkbox("draw mesh ", &show_triangle);
+		if (ImGui::CollapsingHeader("options")) {
+			ImGui::Checkbox("draw mesh ", &show_triangle);
+		}
+		
 
 		ImGui::End();
 

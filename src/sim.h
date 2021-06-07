@@ -37,6 +37,7 @@ For external library that works with cpp but not with .cu, wrap host code with
 #include <GLFW/glfw3.h>// Include GLFW
 #include <glm/glm.hpp>// Include GLM
 #include <glm/gtc/matrix_transform.hpp>
+#include<glm/gtx/rotate_vector.hpp>
 #include <cuda_gl_interop.h>
 
 #endif
@@ -174,8 +175,8 @@ struct MASS {
 	Vec3d* pos = nullptr;
 	Vec3d* vel = nullptr;
 	Vec3d* acc = nullptr;
-	Vec3d* force = nullptr;
-	Vec3d* force_extern = nullptr;
+	Vec3d* force = nullptr; // total force
+	Vec3d* force_extern = nullptr; // external force
 	Vec3d* color = nullptr;
 	bool* fixed = nullptr;
 	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
@@ -991,8 +992,8 @@ private:
 
 #ifdef GRAPHICS
 public:
-	void setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector);
-	void moveViewport(const Vec3d& displacement);
+	void setViewport(const glm::vec3& camera_position, const glm::vec3& target_location, const glm::vec3& up_vector);
+	void moveViewport(const glm::vec3& displacement);
 	
 	glm::vec4 clear_color = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f); // rgba, clearing window color when calling glClearColor 
 	int contex_version_major = 4; // for GLFW_CONTEXT_VERSION_MAJOR
@@ -1020,15 +1021,8 @@ public:
 	glm::mat4 view_matrix; // view matrix
 	glm::mat4 projection_matrix; // projection matrix
 
-	// for projection matrix 
-	Vec3d camera_pos;// camera position
-	Vec3d camera_dir;//camera look at direction
-	Vec3d camera_up;// camera up
+	Camera camera;
 
-	Vec3d camera_href_dir;// camera horizontal reference direction, initialized in setViewport()
-	double camera_h_offset = 0.5;// distance b/w target and camera in plane normal to camera_up vector 
-	double camera_up_offset = 0.5; // distance b/w target and camera in camera_up direction
-	double camera_yaw = 0; // rotation angle of the vector from target to camera about camera_up vector
 
 	void computeMVP(bool update_view = true); // compute MVP
 

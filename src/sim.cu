@@ -102,7 +102,7 @@ __global__ void updateMass(
 			Vec3d force = mass.force[i];
 			force += mass.force_extern[i];// add spring force and external force [N]
 
-			/*if (mass.constrain)*/ {
+			if (mass.constrain) { //only apply to constrain set of masses
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
 					c.d_planes[j].applyForce(force, pos, vel); // todo fix this 
 				}
@@ -130,23 +130,13 @@ __global__ void updateMass(
 __global__ void updateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.points.num) {
-
-		int anchor_id = joint.points.anchorId[i];
 		int mass_id = joint.points.massId[i];
+		int anchor_id = joint.points.anchorId[i];
 		Vec2i anchor_edge = joint.anchors.edge[anchor_id]; // mass id of the achor edge point
 		mass_pos[mass_id] = AxisAngleRotaion(
 			mass_pos[anchor_edge.x],
 			mass_pos[anchor_edge.y], mass_pos[mass_id],
 			joint.anchors.theta[anchor_id] * joint.points.dir[i]);
-
-		//Vec3d anchor_left = mass_pos[joint.anchors.left[anchor_id]];
-		//Vec3d anchor_right = mass_pos[joint.anchors.right[anchor_id]];
-		////Vec3d dir = 
-		///*double3*/
-		//Vec3d dir = (mass_pos[joint.anchors.right[anchor_id]] - mass_pos[joint.anchors.left[anchor_id]]).normalize();
-
-		//mass_pos[mass_id] = AxisAngleRotaion(dir, mass_pos[mass_id],
-		//	joint.anchors.theta[anchor_id] * joint.points.dir[i], mass_pos[joint.anchors.left[anchor_id]]);
 	}
 }
 
@@ -891,7 +881,8 @@ void Simulation::updateGraphics() {
 		std::cerr << "OpenGL Error " << error << std::endl;
 
 	auto t_end = std::chrono::steady_clock::now();
-	auto t_start = t_end - std::chrono::seconds(1);
+	auto t_start = t_end - std::chrono::milliseconds(1000/60);
+	//printf("T:%.2f", T);
 	while (!SHOULD_END) {
 		t_end = std::chrono::steady_clock::now();
 		if ((int)std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count() > 1e9 / 60.0)
@@ -907,12 +898,8 @@ void Simulation::updateGraphics() {
 			}
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 
-			// copy only the position
-			//mass.CopyPosFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
-			//mass.CopyPosFrom(d_mass, id_oxyz_start,1,stream[CUDA_MEMORY_STREAM]);
-			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
-			double t_lerp = 0.01;
+
 			double speed_multiplier = 0.1;
 			double pos_multiplier = 0.05;
 
@@ -960,21 +947,17 @@ void Simulation::updateGraphics() {
 				joint_control.reset(mass, joint);
 			}
 
+			// copy only the position
+			//mass.CopyPosFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
+			//mass.CopyPosFrom(d_mass, id_oxyz_start,1,stream[CUDA_MEMORY_STREAM]);
+			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
 
-			// https://en.wikipedia.org/wiki/Slerp
-			//mass.pos[id_oxyz_start].print();
+			// Interpolate half way from original view to the new.
+			float interp_factor = T < 2.0 ? 1 : 0.01; // 0.0 == original, 1.0 == new
 
+			glm::vec3 target_pos = glm::vec3(com_pos.x, com_pos.y, com_pos.z);
 
-			Vec3d camera_rotation_anchor = com_pos + (camera_up_offset - com_pos.dot(camera_up)) * camera_up;
-
-			Vec3d camera_pos_desired = AxisAngleRotaion(camera_up, camera_href_dir * camera_h_offset, camera_yaw, Vec3d()) + camera_rotation_anchor;
-
-			camera_pos = lerp(camera_pos, camera_pos_desired, t_lerp);
-
-			Vec3d camera_dir_desired = (com_pos - camera_pos).normalize();
-
-			// spherical linear interpolation from camera_dir to camera_dir_new by factor t_lerp
-			camera_dir = slerp(camera_dir, camera_dir_desired, t_lerp).normalize();
+			camera.follow(target_pos, interp_factor);
 
 			computeMVP(true); // update MVP, also update camera matrix //todo
 
@@ -996,7 +979,7 @@ void Simulation::updateGraphics() {
 			glm::mat4 lightView = glm::lookAt(
 				light_pos, // camera position in World Space
 				glm::vec3(com_pos.x, com_pos.y, com_pos.z),// look at position
-				glm::vec3(0., 1.0, 0.0));  // camera up vector (set to 0,-1,0 to look upside-down)
+				glm::vec3(0, 1.0, 0.0));  // camera up vector (set to 0,-1,0 to look upside-down)
 
 			glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 			// render scene from light's point of view
@@ -1021,10 +1004,7 @@ void Simulation::updateGraphics() {
 			shader.setMat4("model", model_matrix); // set model matrix
 			shader.setMat4("view", view_matrix);// set view matrix
 			shader.setMat4("projection", projection_matrix); // set projection matrix
-
-
-			shader.setVec3("viewPos", // set view position
-				(float)camera_pos.x, (float)camera_pos.y, (float)camera_pos.z);
+			shader.setVec3("viewPos", camera.pos); // set view position
 			shader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, depthMap);
@@ -1190,20 +1170,20 @@ void Simulation::draw() {
 	}
 }
 
-void Simulation::setViewport(const Vec3d& camera_position, const Vec3d& target_location, const Vec3d& up_vector) {
-	this->camera_pos = camera_position;
-	this->camera_dir = (target_location - camera_position).normalize();
-	this->camera_up = up_vector;
+void Simulation::setViewport(const glm::vec3& camera_position, const glm::vec3& target_location, const glm::vec3& up_vector) {
+	camera.pos = camera_position;
+	camera.dir = camera_position;
+	camera.up = up_vector;
 
-	// initialized the camera_horizontal reference direction
-	camera_href_dir = Vec3d(1, 0, 0);
-	if (abs(camera_href_dir.dot(camera_up)) > 0.9) { camera_href_dir = Vec3d(0, 1, 0); }
-	camera_href_dir = camera_href_dir.decompose(camera_up).normalize();
+	//// initialized the camera_horizontal reference direction
+	//camera_href_dir = Vec3d(1, 0, 0);
+	//if (abs(camera_href_dir.dot(camera_up)) > 0.9) { camera_href_dir = Vec3d(0, 1, 0); }
+	//camera_href_dir = camera_href_dir.decompose(camera_up).normalize();
 
 	if (STARTED) { computeMVP(); }
 }
-void Simulation::moveViewport(const Vec3d& displacement) {
-	this->camera_pos += displacement;
+void Simulation::moveViewport(const glm::vec3& displacement) {
+	camera.pos += displacement;
 	if (STARTED) { computeMVP(); } // compute perspective projection matrix
 }
 void Simulation::computeMVP(bool update_view) {
@@ -1224,12 +1204,7 @@ void Simulation::computeMVP(bool update_view) {
 	if (update_view) {
 		model_matrix = glm::mat4(1.0f);// model matrix
 		// Camera matrix
-		this->view_matrix = glm::lookAt(
-			glm::vec3(camera_pos.x, camera_pos.y, camera_pos.z), // camera position in World Space
-			glm::vec3(camera_pos.x + camera_dir.x,
-				camera_pos.y + camera_dir.y,
-				camera_pos.z + camera_dir.z),	// look at position
-			glm::vec3(camera_up.x, camera_up.y, camera_up.z));  // camera up vector (set to 0,-1,0 to look upside-down)
+		this->view_matrix = camera.getViewMatrix();
 	}
 	if (is_resized || update_view) {
 		this->MVP = model_matrix*projection_matrix * view_matrix; // Remember, matrix multiplication is the other way around
@@ -1287,12 +1262,7 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 			sim.show_imgui = !sim.show_imgui;
 		}
 	}
-	if (key == GLFW_KEY_W) { sim.camera_h_offset -= 0.05; }//camera moves closer
-	else if (key == GLFW_KEY_S) { sim.camera_h_offset += 0.05; }//camera moves away
-	else if (key == GLFW_KEY_A) { sim.camera_yaw -= 0.05; } //camera moves left
-	else if (key == GLFW_KEY_D) { sim.camera_yaw += 0.05; }//camera moves right
-	else if (key == GLFW_KEY_Q) { sim.camera_up_offset -= 0.05; } // camera moves down
-	else if (key == GLFW_KEY_E) { sim.camera_up_offset += 0.05; }// camera moves up
+	sim.camera.processKeyboard(key);
 }
 
 

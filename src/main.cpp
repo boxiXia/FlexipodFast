@@ -276,7 +276,7 @@ int main(int argc, char* argv[])
 #ifdef GRAPHICS
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
 	//sim.setViewport(Vec3d(0.6, 0, 0.3), Vec3d(0, 0, 0.2), Vec3d(0, 0, 1));
-	sim.setViewport(Vec3d(1.75, -2.5, 1.0), Vec3d(1.75, 0, 0.1), Vec3d(0, 0, 1));
+	sim.setViewport(glm::vec3(1, -0, 1.0), glm::vec3(0, 0, 0.4), glm::vec3(0, 0, 1));
 #endif // GRAPHICS
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
@@ -284,6 +284,7 @@ int main(int argc, char* argv[])
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
 	sim.createPlane(Vec3d(0, 0, 1), 0, 0.9, 0.8);
+	//sim.createBall(Vec3d(1, 1, 1), 0.5);
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 

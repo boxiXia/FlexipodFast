@@ -18,16 +18,19 @@ agent:
     critic_target_update_frequency: 1
 
 
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1391031_11777.chpt
+load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\9460682_617.chpt
+# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\7980571_640.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1576903_9999.chpt
-train: True
-# train: False
+# train: True
+train: False
 
 
 num_seed_steps: 10000
 # num_seed_steps: 512
 # num_seed_steps: 0
 
+eval_frequency: 10000
+num_eval_episodes: 10
 
 # env:
 #     _target_: dmc2gym.make
@@ -45,10 +48,6 @@ experiment: test_exp
 num_train_steps: 4e6
 replay_buffer_capacity: ${num_train_steps}
 
-# eval_frequency: 1000
-
-eval_frequency: 10000
-num_eval_episodes: 3
 
 device: "cuda"
 

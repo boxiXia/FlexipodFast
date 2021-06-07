@@ -75,32 +75,35 @@ __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, con
 #else
     if (disp < 0) {// if inside the plane
 #endif
-        ////Vec3d f_normal = _normal.dot(force) * _normal; // normal force (only if infinite stiff)
-        Vec3d fn_ground = -disp * _normal * K_NORMAL; // ground reaction force normal to the ground, ground spring model
-        double fn_ground_norm = fn_ground.norm(); // ground reaction force scalar
-        Vec3d vn = _normal.dot(vel) * _normal; // velocity normal to the plane
-            Vec3d vt = vel - vn; // velocity tangential to the plane
-            double vt_norm = vt.norm();
-            if (vt_norm > 1e-8) { // kinetic friction domain
-                //      <----friction magnitude------>   <-friction direction->
-                force -= _FRICTION_K * fn_ground_norm / vt_norm * vt;
-            }
-            else { // static friction
-                Vec3d fn = force.dot(_normal) * _normal; // force normal to the plane
-                Vec3d ft = force - fn; // force tangential to the plain
-                float ft_norm = ft.norm();//force tangential to the plain (mangitude)
-                if (_FRICTION_S * fn_ground_norm > ft_norm) {
-                    force -= ft;
-                }
-                else {// kinetic friction again
-                    //       <----friction magnitude------> <- friction direction->
-                    force -= _FRICTION_K * fn_ground_norm / ft_norm * ft;
-                }
-            }
-        force -= disp * _normal * K_NORMAL;// displacement force
-        force -= vn * DAMPING_NORMAL;
-    }
-    }
+		////Vec3d f_normal = _normal.dot(force) * _normal; // normal force (only if infinite stiff)
+		Vec3d fn_ground = -disp * _normal * K_NORMAL; // ground reaction force normal to the ground, ground spring model
+		double fn_ground_norm = fn_ground.norm(); // ground reaction force scalar
+		Vec3d vn = _normal.dot(vel) * _normal; // velocity normal to the plane
+		Vec3d vt = vel - vn; // velocity tangential to the plane
+		double vt_norm = vt.norm();
+        Vec3d fc(0,0,0); // constraint force
+		if (vt_norm > 1e-8) { // kinetic friction domain
+			//      <----friction magnitude------>   <-friction direction->
+            fc -= _FRICTION_K * fn_ground_norm / vt_norm * vt;
+		}
+		else { // static friction
+			Vec3d fn = force.dot(_normal) * _normal; // force normal to the plane
+			Vec3d ft = force - fn; // force tangential to the plain
+			float ft_norm = ft.norm();//force tangential to the plain (mangitude)
+			if (_FRICTION_S * fn_ground_norm > ft_norm) {
+                fc -= ft;
+			}
+			else {// kinetic friction again
+				//       <----friction magnitude------> <- friction direction->
+                fc -= _FRICTION_K * fn_ground_norm / ft_norm * ft;
+			}
+		}
+
+		fc -= disp * _normal * K_NORMAL;// displacement force
+		fc -= vn * DAMPING_NORMAL;
+        force += fc;
+	}
+}
 
 
 

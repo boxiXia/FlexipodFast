@@ -9,12 +9,14 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <GL/glew.h>// Include GLEW
 #include <GLFW/glfw3.h>// Include GLFW
 #include <glm/glm.hpp>// Include GLM
+#include <glm/gtx/norm.hpp>
+#include<glm/gtx/rotate_vector.hpp>
 
 #include <string>
 #include <fstream>
 #include <sstream>
 #include <iostream>
-
+#include <math.h>
 
 // vertex gl buffer: x,y,z,r,g,b,nx,ny,nz
 struct VERTEX_DATA {
@@ -22,6 +24,9 @@ struct VERTEX_DATA {
     glm::vec3 color; // 1: vertex color
     glm::vec3 normal; //3: vertex normal
 };
+
+// spherical linear interpolation
+glm::vec3 slerp(glm::vec3 p0, glm::vec3 p1, float t);
 
 
 // renderQuad() renders a 1x1 XY quad in NDC
@@ -91,6 +96,51 @@ private:
 	GLuint id_ambient;
 	GLuint id_diffuse;
 	GLuint id_specular;
+};
+
+
+
+/* camera */
+class Camera {
+public:
+    // for projection matrix 
+    glm::vec3 pos;// camera position
+    glm::vec3 dir;//camera look at direction (front)
+    glm::vec3 up;// camera up vector
+    
+    float yaw = 0;  // rotation angle of the vector from target to camera about camera_up vector
+    float h_offset = 1.f; // distance b/w target and camera in plane normal to camera_up vector 
+    float up_offset = 1.f; // distance b/w target and camera in camera_up direction
+
+    Camera() {};
+    Camera(
+        glm::vec3 camera_position,
+        glm::vec3 target_position,
+        glm::vec3 camera_up = glm::vec3(0.0f, 1.0f, 0.0f)) {
+        pos = camera_position;
+        dir = glm::normalize(target_position - camera_position);
+        up = camera_up;
+    }
+    // returns the view matrix calculated using Euler Angles and the LookAt Matrix
+    glm::mat4 getViewMatrix()
+    {   // ref: https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/gluLookAt.xml
+        return glm::lookAt(pos/*camera position*/,pos + dir/*look at position*/,up);
+    }
+
+    void follow(const glm::vec3& target, const float interp_factor);
+
+    /*process keyboard*/
+    void processKeyboard(int key,float vel=0.05) {
+        if (key == GLFW_KEY_W) { h_offset -= vel; }//camera moves closer
+        else if (key == GLFW_KEY_S) { h_offset += vel; }//camera moves away
+        else if (key == GLFW_KEY_A) { yaw -= vel; } //camera moves left
+        else if (key == GLFW_KEY_D) { yaw += vel; }//camera moves right
+        else if (key == GLFW_KEY_Q) { up_offset -= vel; } // camera moves down
+        else if (key == GLFW_KEY_E) { up_offset += vel; }// camera moves up
+    }
+
+private:
+    glm::vec3 getHorizontalDirection();
 };
 
 /* 
