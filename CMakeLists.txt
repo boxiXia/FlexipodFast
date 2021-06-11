@@ -89,6 +89,8 @@ add_definitions(-DROTATION) # enable this to support rotation in dynamics update
 #add_definitions(-DDEBUG_ENERGY) # enable this to debug energy
 #add_subdirectory(src/Titan)
 add_definitions(-DSTRESS_TEST) # enable stress testing (spring info)
+add_definitions(-DMEASURE_CONSTRAINT) # enable constraint measurement
+
 
 
 # macro to create a symbolic link

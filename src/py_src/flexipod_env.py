@@ -268,7 +268,7 @@ class FlexipodEnv(gym.Env):
     
     def reset(self):
         self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
-        time.sleep(1/10)
+        time.sleep(1/50)
         msg_rec = self.receive()
         self.episode_steps = 0
         observation,reward,done,info =  self._processRecMsg(msg_rec)

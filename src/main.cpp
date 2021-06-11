@@ -94,9 +94,11 @@ int main(int argc, char* argv[])
 	constexpr double scale_soft = 2.0; // scaling factor soft
 	constexpr double scale_rot_spring = 2.0; // stiffness scale for rotation spring
 
-	constexpr double scale_joint_k = 3.0; // scaling factor for the joint spring constant
 	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
-	constexpr double scale_joint_damping = 3.0; // scaling factor for the joint spring damping
+	//constexpr double scale_joint_k = 2.5; // scaling factor for the joint spring constant
+	//constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
+	constexpr double scale_joint_k = 2.5; // scaling factor for the joint spring constant
+	constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
@@ -114,7 +116,7 @@ int main(int argc, char* argv[])
 	const double m_probe = m * scale_probe;//mass for the probe
 	const double spring_constant_probe_anchor = spring_constant * scale_probe*2.0; // spring constant for coordiates anchor springs
 	const double spring_constant_probe_self = spring_constant * scale_probe*2.0; // spring constant for coordiates self springs
-	const double spring_damping_probe = spring_damping * scale_probe* 2.0;
+	const double spring_damping_probe = spring_damping * scale_probe;
 
 //ref: https://bisqwit.iki.fi/story/howto/openmp/
 //#pragma omp parallel for
@@ -283,8 +285,10 @@ int main(int argc, char* argv[])
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.9, 0.8);
-	sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.1f,0.1f);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.7, 0.7);
+
+	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
+	//sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.05f,0.1f);
 
 	//sim.createBall(Vec3d(1, 1, 1), 0.5);
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);

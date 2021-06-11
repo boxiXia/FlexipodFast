@@ -175,8 +175,9 @@ struct MASS {
 	Vec3d* pos = nullptr;
 	Vec3d* vel = nullptr;
 	Vec3d* acc = nullptr;
-	Vec3d* force = nullptr; // total force
-	Vec3d* force_extern = nullptr; // external force
+	Vec3d* force = nullptr; // (measured) total force
+	Vec3d* force_extern = nullptr; // (input) external force
+	Vec3d* force_constraint = nullptr;// (measured) constrain force
 	Vec3d* color = nullptr;
 	bool* fixed = nullptr;
 	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
@@ -200,6 +201,7 @@ struct MASS {
 		allocateMemory((void**)&acc, num * sizeof(Vec3d));
 		allocateMemory((void**)&force, num * sizeof(Vec3d));
 		allocateMemory((void**)&force_extern, num * sizeof(Vec3d));
+		allocateMemory((void**)&force_constraint, num * sizeof(Vec3d));
 		allocateMemory((void**)&color, num * sizeof(Vec3d));
 		allocateMemory((void**)&fixed, num * sizeof(bool));
 		allocateMemory((void**)&constrain, num * sizeof(bool));
@@ -223,6 +225,7 @@ struct MASS {
 		cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(force, other.force, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(force_constraint, other.force_constraint, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream);
@@ -242,7 +245,9 @@ struct MASS {
 		assert(index+range<=num);//"index out of range"
 		cudaMemcpyAsync(pos+index*sizeof(Vec3d), other.pos + index * sizeof(Vec3d), sizeof(Vec3d)*range, cudaMemcpyDefault, stream);
 	}
-
+	void CopyConstraintForceFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
+		cudaMemcpyAsync(force_constraint, other.force_constraint, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	}
 };
 
 struct SPRING {
@@ -856,7 +861,7 @@ public:
 
 	// cuda and udp update parameters (should be constant during the simualtion)
 	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
-	int NUM_UPDATE_PER_ROTATION = 3; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
+	int NUM_UPDATE_PER_ROTATION = 2; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
 	int udp_num_obs = 5;// send udp_num_obs at once (number of observations)
 	int udp_step = 4; // udp observations is stepped by this factor
@@ -885,7 +890,11 @@ public:
 #ifdef STRESS_TEST
 	std::vector<int> id_selected_edges;
 #endif //STRESS_TEST
-
+	
+#ifdef MEASURE_CONSTRAINT
+	Vec3d force_constraint;
+#endif //MEASURE_CONSTRAINT
+	
 	void backupState();//backup the robot mass/spring/joint state
 	void resetState();// restore the robot mass/spring/joint state to the backedup state
 

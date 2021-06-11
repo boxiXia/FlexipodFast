@@ -162,10 +162,10 @@ void Simulation::runImgui() {
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		bool show_demo_window = true;
-		ImGui::ShowDemoWindow(&show_demo_window);
-		ImGui::ShowMetricsWindow();
-		ImGui::ShowStyleEditor();
+		//bool show_demo_window = true;
+		//ImGui::ShowDemoWindow(&show_demo_window);
+		//ImGui::ShowMetricsWindow();
+		//ImGui::ShowStyleEditor();
 
 		// measure simulation speed
 		auto t = std::chrono::steady_clock::now();
@@ -184,6 +184,9 @@ void Simulation::runImgui() {
 		// simulation time | simulation speed | rendering FPS
 		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed,ImGui::GetIO().Framerate);
 		ImGui::Text("UDP rec %.2f FPSS", rec_fps); 
+
+		ImGui::Text("constraint force %+4.2f %+4.2f %+4.2f", force_constraint.x, force_constraint.y, force_constraint.z);
+
 
 		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
 		ImGui::SameLine();
@@ -204,6 +207,8 @@ void Simulation::runImgui() {
 		}
 
 		//ImGui::PlotLines
+		// 
+
 		// joint control
 		if (joint_control.size() > 0 && ImGui::CollapsingHeader("joint control")) {
 

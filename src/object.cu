@@ -76,13 +76,14 @@ __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, con
     if (disp < 0) {// if inside the plane
 #endif
 		////Vec3d f_normal = _normal.dot(force) * _normal; // normal force (only if infinite stiff)
-		Vec3d fn_ground = -disp * _normal * K_NORMAL; // ground reaction force normal to the ground, ground spring model
-		double fn_ground_norm = fn_ground.norm(); // ground reaction force scalar
-		Vec3d vn = _normal.dot(vel) * _normal; // velocity normal to the plane
+        // fc is the constraint force
+        Vec3d fc = -disp * _normal * K_NORMAL; // first part: ground reaction force normal to the ground, ground spring model
+        double fn_ground_norm = fc.norm(); // ground reaction force scalar
+        double vn_s = _normal.dot(vel); // velocity (scalar) normal to the plane
+		Vec3d vn = vn_s * _normal; // velocity normal to the plane
 		Vec3d vt = vel - vn; // velocity tangential to the plane
 		double vt_norm = vt.norm();
-        Vec3d fc(0,0,0); // constraint force
-		if (vt_norm > 1e-8) { // kinetic friction domain
+		if (vt_norm > 1e-13) { // kinetic friction domain
 			//      <----friction magnitude------>   <-friction direction->
             fc -= _FRICTION_K * fn_ground_norm / vt_norm * vt;
 		}
@@ -98,9 +99,7 @@ __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, con
                 fc -= _FRICTION_K * fn_ground_norm / ft_norm * ft;
 			}
 		}
-
-		fc -= disp * _normal * K_NORMAL;// displacement force
-		fc -= vn * DAMPING_NORMAL;
+		fc -= (vn_s < 0)*vn * DAMPING_NORMAL;//TODO damping may be greater than total force
         force += fc;
 	}
 }

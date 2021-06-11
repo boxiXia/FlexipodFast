@@ -43,7 +43,7 @@ __global__ void updateSpring(
 		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
 
-		s_vec /= (length > 1e-12 ? length : 1e-12);// normalized to unit vector (direction), check instablility for small length
+		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
 		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
@@ -69,7 +69,7 @@ __global__ void updateSpringAndReset(
 		Vec2i e = spring.edge[i];
 		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-		s_vec /= (length > 1e-12 ? length : 1e-12);// normalized to unit vector (direction), check instablility for small length
+		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
 		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
@@ -101,19 +101,22 @@ __global__ void updateMass(
 
 			Vec3d force = mass.force[i];
 			force += mass.force_extern[i];// add spring force and external force [N]
+			force += global_acc*m;// add global accleration
 
 			if (mass.constrain) { //only apply to constrain set of masses
+				Vec3d _force(force);
 				for (int j = 0; j < c.num_planes; j++) { // global constraints
 					c.d_planes[j].applyForce(force, pos, vel); // todo fix this 
 				}
 				for (int j = 0; j < c.num_balls; j++) {
 					c.d_balls[j].applyForce(force, pos);
 				}
+				mass.force_constraint[i] = force - _force;
 			}
 
 			// euler integration
 			force /= m;// force is now acceleration
-			force += global_acc;// add global accleration
+			//force += global_acc;// add global accleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
 			mass.vel[i] = vel; // update velocity
@@ -476,6 +479,8 @@ void Simulation::updatePhysics() { // repeatedly start next
 
 		//mass.CopyPosVelAccFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]);
 		mass.CopyPosFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]);
+		mass.CopyConstraintForceFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]); // copy force_constraint
+
 		cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
 
 
@@ -584,6 +589,18 @@ void Simulation::updateUdpMessage() {
 						, id_selected_edges, mass, spring
 #endif //STRESS_TEST
 					));
+
+#ifdef MEASURE_CONSTRAINT
+				Vec3d _force_constraint;
+				
+				for (int i = 0; i < mass.size(); i++)
+				{
+					if(mass.constrain[i])
+						_force_constraint += mass.force_constraint[i];
+				}
+				force_constraint = _force_constraint;
+#endif //MEASURE_CONSTRAINT
+
 			}
 
 			if (UDP_INIT) {
