@@ -6,17 +6,18 @@ seed: 1
 
 agent:
     critic_cfg:
-        hidden_dim: 512
+        hidden_dim: 256
         hidden_depth: 4
     actor_cfg:
-        hidden_dim: 512
+        hidden_dim: 256
         hidden_depth: 4
     # batch_size: 512
     batch_size: 1024
     discount: 0.999
     # batch_size: 256
-    critic_target_update_frequency: 1
+    critic_target_update_frequency: 2
 
+update_frequency: 16 #num of update is devided by this number
 
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\9460682_617.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\7980571_640.chpt
@@ -43,7 +44,7 @@ env:
 experiment: test_exp
 
 num_train_steps: 1e7
-replay_buffer_capacity: 1e6
+replay_buffer_capacity: 2e6
 # replay_buffer_capacity: ${num_train_steps}
 
 

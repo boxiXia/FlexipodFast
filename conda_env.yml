@@ -13,6 +13,7 @@ dependencies:
   - cython 
   - embree
   - gym
+  - imageio
   - joblib
   - lxml
   - matplotlib

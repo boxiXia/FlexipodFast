@@ -93,6 +93,7 @@ class Workspace(object):
         update_step = num_seed_steps
         env = self.env
         batch_size = self.cfg.agent.batch_size
+        update_frequency = self.cfg.update_frequency
         # reset agent and env
         self.agent.reset()
         obs = env.reset()
@@ -133,7 +134,7 @@ class Workspace(object):
                                 time.time() - start_time, self.step)
                 
                 if self.step >= num_seed_steps and self.step >=batch_size and self.step > update_step: # agent update
-                    num_updates = (self.step-update_step)//8
+                    num_updates = (self.step-update_step)//update_frequency
                     update_step = self.step
                     try:
                         env.pause()

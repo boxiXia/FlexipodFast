@@ -255,7 +255,7 @@ class FlexipodEnv(gym.Env):
         reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.65)or(com_z<0.3)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<0.65)or(com_z<0.35)or(self.episode_steps>=self._max_episode_steps) else False
         # done = True if self.episode_steps>=self._max_episode_steps else False # done when exceeding max steps
         
         t = msg_rec_i[self.ID_t]
