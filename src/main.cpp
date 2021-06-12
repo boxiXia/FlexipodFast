@@ -97,8 +97,8 @@ int main(int argc, char* argv[])
 	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
 	//constexpr double scale_joint_k = 2.5; // scaling factor for the joint spring constant
 	//constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
-	constexpr double scale_joint_k = 2.5; // scaling factor for the joint spring constant
-	constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
+	constexpr double scale_joint_k = 3.0; // scaling factor for the joint spring constant
+	constexpr double scale_joint_damping = 3.0; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probing points, e.g. coordinates
@@ -290,7 +290,7 @@ int main(int argc, char* argv[])
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 	//sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.05f,0.1f);
 
-	//sim.createBall(Vec3d(1, 1, 1), 0.5);
+	//sim.createBall(Vec3d(-0.2, 0, 0.5), 0.1);
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.4, 0.35);
 
 

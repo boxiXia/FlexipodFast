@@ -59,10 +59,6 @@ struct Ball : public Constraint {
         _center = center;
         _radius = radius;
 
-#ifdef GRAPHICS
-        _initialized = false;
-#endif
-
     }
 
     double _radius;
@@ -71,21 +67,21 @@ struct Ball : public Constraint {
 #ifdef GRAPHICS
     ~Ball() {
         glDeleteBuffers(1, &vertex_buffer);
-        glDeleteBuffers(1, &color_buffer);
-        glDeleteBuffers(1, &normal_buffer);
+        glDeleteBuffers(1, &triangle_buffer);
     }
+
+    bool _initialized = false;
+    int gl_draw_size;
+    int subdivisions = 4;
+
     GLuint vertex_buffer;
-    GLuint color_buffer;
-    GLuint normal_buffer;
+    GLuint triangle_buffer;//index buffer
 
     void generateBuffers();
     void draw();
 
-    void subdivide(GLfloat * arr, GLfloat *v1, GLfloat *v2, GLfloat *v3, int depth);
-    void writeTriangle(GLfloat * arr, GLfloat *v1, GLfloat *v2, GLfloat *v3);
-    void normalize(GLfloat * v);
 
-    int depth = 2;
+    
 
 
 #endif
@@ -96,7 +92,7 @@ struct CudaBall {
     //CUDA_CALLABLE_MEMBER CudaBall(const Vec3d & center, double radius);
     //CUDA_CALLABLE_MEMBER CudaBall(const Ball & b);
 
-    __device__ void applyForce(Vec3d& force, const Vec3d& pos);
+    __device__ void applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel);
 
     double _radius;
     Vec3d _center;
@@ -133,6 +129,7 @@ struct ContactPlane : public Constraint {
 #ifdef GRAPHICS
     ~ContactPlane() {
         glDeleteBuffers(1, &vertex_buffer);
+        glDeleteBuffers(1, &triangle_buffer);
     }
 
     void generateBuffers();

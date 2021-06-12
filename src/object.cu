@@ -24,6 +24,12 @@ const glm::vec3 PURPLE(0.5, 0.2, 0.5);
 const glm::vec3 DARKSEAGREEN(0.45, 0.84, 0.5);
 const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 
+struct VERTEX_DATA {
+    glm::vec3 pos; // 0: vertex position
+    glm::vec3 color; // 1: vertex color
+    glm::vec3 normal; //3: vertex normal
+};
+
 #include<glm/gtx/quaternion.hpp> // for rotation
 #endif
 
@@ -32,38 +38,23 @@ const glm::vec3 OLIVEDRAB(0.42, 0.56, 0.14);
 __device__ const double K_NORMAL = 800; // normal force coefficient for contact constraints
 __device__ const double DAMPING_NORMAL = 1; // normal damping coefficient per kg mass
 
-//CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Vec3d & center, double radius) {
-//    _center = center;
-//    _radius = radius;
-//}
-//
-//CUDA_CALLABLE_MEMBER CudaBall::CudaBall(const Ball & b) {
-//    _center = b._center;
-//    _radius = b._radius;
-//}
 
-__device__ void CudaBall::applyForce(Vec3d& force, const Vec3d& pos) {
-    double dist = (pos - _center).norm();
-    if (dist < _radius) {
-        force += K_NORMAL * (pos - _center) / dist;
+__device__ void CudaBall::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
+    Vec3d d = (pos - _center);
+    double d_norm = d.norm();
+    double disp = d_norm - _radius;
+
+    if (disp < 0) {
+        Vec3d _normal = d / d_norm; //todo too small case?
+        Vec3d fc= -disp * _normal * K_NORMAL;
+
+        double vn_s = _normal.dot(vel); // velocity (scalar) normal to the sphere
+        Vec3d vn = vn_s * _normal; // velocity normal to the sphere
+
+        fc -= (vn_s < 0) * vn * DAMPING_NORMAL;//TODO damping may be greater than total force
+        force += fc;
     }
 }
-
-//CUDA_CALLABLE_MEMBER CudaContactPlane::CudaContactPlane(const Vec3d & normal, double offset) {
-//    _normal = normal / normal.norm();
-//    _offset = offset;
-//    _FRICTION_S = 0.0;
-//    _FRICTION_K = 0.0;
-//}
-//
-//CudaContactPlane::CudaContactPlane(const ContactPlane & p) {
-//    _normal = p._normal;
-//    _offset = p._offset;
-//
-//    _FRICTION_S = p._FRICTION_S;
-//    _FRICTION_K = p._FRICTION_K;
-//}
-
 
 
 __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
@@ -108,158 +99,174 @@ __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, con
 
 #ifdef GRAPHICS
 
-void Ball::normalize(GLfloat * v) {
-    GLfloat norm = (GLfloat)sqrt(pow(v[0], 2) + pow(v[1], 2) + pow(v[2],2)) / _radius;
+using TriangleList = std::vector<glm::uvec3>; // triangle indices
+using VertexList = std::vector<glm::vec3>;
 
-    for (int i = 0; i < 3; i++) {
-        v[i] /= norm;
-    }
+/*start with a hard-coded indexed-mesh representation of the icosahedron
+ref: https://schneide.blog/2016/07/15/generating-an-icosphere-in-c/
+*/
+namespace icosahedron
+{
+    const float X = .525731112119133606f;
+    const float Z = .850650808352039932f;
+    const float N = 0.f;
+
+    static const VertexList vertex =
+    {
+      {-X,N,Z}, {X,N,Z}, {-X,N,-Z}, {X,N,-Z},
+      {N,Z,X}, {N,Z,-X}, {N,-Z,X}, {N,-Z,-X},
+      {Z,X,N}, {-Z,X, N}, {Z,-X,N}, {-Z,-X, N}
+    };
+
+    static const TriangleList triangle =
+    {
+      {0,4,1},{0,9,4},{9,5,4},{4,5,8},{4,8,1},
+      {8,10,1},{8,3,10},{5,3,8},{5,2,3},{2,7,3},
+      {7,10,3},{7,6,10},{7,11,6},{11,0,6},{0,1,6},
+      {6,1,10},{9,0,11},{9,11,2},{9,2,5},{7,2,11}
+    };
 }
 
-void Ball::writeTriangle(GLfloat * arr, GLfloat *v1, GLfloat *v2, GLfloat *v3) {
-    for (int j = 0; j < 3; j++) {
-        arr[j] = v1[j] + _center[j];
+using Lookup = std::map<std::pair<int, int>, int>;
+/*Each edge in the old model is subdivided and the resulting vertex is moved on
+  to the unit sphere by normalization. The key here is to not duplicate the newly
+  created vertices. This is done by keeping a lookup of the edge to the new vertex
+  it generates. Note that the orientation of the edge does not matter here, so we
+  need to normalize the edge direction for the lookup. We do this by forcing the
+  lower index first. Here’s the code that either creates or reused the vertex for
+  a single edge*/
+int vertexForEdge(Lookup& lookup, VertexList& vertices, int first, int second)
+{
+    Lookup::key_type key(first, second);
+    if (key.first > key.second)
+        std::swap(key.first, key.second);
+
+    auto inserted = lookup.insert({ key, vertices.size() });
+    if (inserted.second)
+    {
+        auto& edge0 = vertices[first];
+        auto& edge1 = vertices[second];
+        auto point = glm::normalize(edge0 + edge1);
+        vertices.push_back(point);
     }
 
-    arr += 3;
-
-    for (int j = 0; j < 3; j++) {
-        arr[j] = v2[j] + _center[j];
-    }
-
-    arr += 3;
-
-    for (int j = 0; j < 3; j++) {
-        arr[j] = v3[j] + _center[j];
-    }
+    return inserted.first->second;
 }
 
-void Ball::subdivide(GLfloat * arr, GLfloat *v1, GLfloat *v2, GLfloat *v3, int depth) {
-    GLfloat v12[3], v23[3], v31[3];
+TriangleList subdivide(VertexList& vertices, TriangleList triangles)
+{
+    Lookup lookup;
+    TriangleList result;
 
-    if (depth == 0) {
-        writeTriangle(arr, v1, v2, v3);
-        return;
+    for (auto&& each : triangles)
+    {
+        std::array<int, 3> mid;
+        for (int edge = 0; edge < 3; ++edge)
+        {
+            mid[edge] = vertexForEdge(lookup, vertices,
+                each[edge], each[(edge + 1) % 3]);
+        }
+
+        result.push_back({ each[0], mid[0], mid[2] });
+        result.push_back({ each[1], mid[1], mid[0] });
+        result.push_back({ each[2], mid[2], mid[1] });
+        result.push_back({ mid[0], mid[1], mid[2] });
     }
 
-    for (int i = 0; i < 3; i++) {
-        v12[i] = v1[i]+v2[i];
-        v23[i] = v2[i]+v3[i];
-        v31[i] = v3[i]+v1[i];
+    return result;
+}
+
+using IndexedMesh = std::pair<VertexList, TriangleList>;
+
+IndexedMesh makeIcosphere(int subdivisions)
+{
+    VertexList vertex = icosahedron::vertex;
+    TriangleList triangle = icosahedron::triangle;
+
+    for (int i = 0; i < subdivisions; ++i)
+    {
+        triangle = subdivide(vertex, triangle);
     }
-
-    normalize(v12);
-    normalize(v23);
-    normalize(v31);
-
-    subdivide(arr, v1, v12, v31, depth - 1);
-    arr += 3 * 3 * (int) pow(4, depth - 1);
-    subdivide(arr, v2, v23, v12, depth - 1);
-    arr += 3 * 3 * (int) pow(4, depth - 1);
-    subdivide(arr, v3, v31, v23, depth - 1);
-    arr += 3 * 3 * (int) pow(4, depth - 1);
-    subdivide(arr, v12, v23, v31, depth - 1);
+    return{ vertex, triangle };
 }
 
 
 void Ball::generateBuffers() {
-    glm::vec3 color = {0.22f, 0.71f, 0.0f};
+    glm::vec3 color = { 0.22f, 0.71f, 0.0f };
 
-    GLfloat * vertex_data = new GLfloat[20 * 3 * 3 * (int) pow(4, depth)]; // times 4 for subdivision
+    //int subdivisions = 4;
+    VertexList vertex = icosahedron::vertex;
+    TriangleList triangle = icosahedron::triangle;
 
-    GLfloat X = (GLfloat) _radius * .525731112119133606;
-    GLfloat Z = (GLfloat) _radius * .850650808352039932;
-
-    static GLfloat vdata[12][3] = {
-            {-X, 0.0, Z}, {X, 0.0, Z}, {-X, 0.0, -Z}, {X, 0.0, -Z},
-            {0.0, Z, X}, {0.0, Z, -X}, {0.0, -Z, X}, {0.0, -Z, -X},
-            {Z, X, 0.0}, {-Z, X, 0.0}, {Z, -X, 0.0}, {-Z, -X, 0.0}
-    };
-    static GLuint tindices[20][3] = {
-            {0,4,1}, {0,9,4}, {9,5,4}, {4,5,8}, {4,8,1},
-            {8,10,1}, {8,3,10}, {5,3,8}, {5,2,3}, {2,7,3},
-            {7,10,3}, {7,6,10}, {7,11,6}, {11,0,6}, {0,1,6},
-            {6,1,10}, {9,0,11}, {9,11,2}, {9,2,5}, {7,2,11} };
-
-    int num_div = 3 * (int)pow(4, depth);
-    int num_triangle = 20 * num_div; // number of triangles
-    int num_vertex = 3 * num_div; // number of vertices
-    
-
-    for (int i = 0; i < 20; i++) {
-        subdivide(&vertex_data[3*num_div * i], vdata[tindices[i][0]], vdata[tindices[i][1]], vdata[tindices[i][2]], depth);
+    for (int i = 0; i < subdivisions; ++i)
+    {
+        triangle = subdivide(vertex, triangle);
     }
+
+    int num_vertex = vertex.size();
+    std::vector<VERTEX_DATA> vertex_data(num_vertex);
+
+    glm::vec3 center = { _center.x, _center.y, _center.z };
+    float radius = (float)_radius;
+    for (int i = 0; i < num_vertex; i++)
+    {
+        vertex_data[i].pos = radius*vertex[i] + center;
+        vertex_data[i].color = color;
+        vertex_data[i].normal = vertex[i];
+    }
+
+    gl_draw_size = triangle.size() * 3;
 
     glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, num_vertex * sizeof(GLfloat), vertex_data, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA) * vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
 
-    GLfloat * color_data = new GLfloat[num_vertex]; // TODO constant length array
-    GLfloat* normal_data = new GLfloat[num_vertex];
-
-    for (int i = 0; i < num_triangle; i++) {
-        color_data[3*i] = color[0];
-        color_data[3*i + 1] = color[1];
-        color_data[3*i + 2] = color[2];
-        
-        // vertex normals, not normalized
-		normal_data[3 * i] = vertex_data[3 * i] - (GLfloat)_center.x;
-		normal_data[3 * i + 1] = vertex_data[3 * i + 1] - (GLfloat)_center.y;
-		normal_data[3 * i + 2] = vertex_data[3 * i + 2] - (GLfloat)_center.z;
-    }
-
-    glGenBuffers(1, &color_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
-    glBufferData(GL_ARRAY_BUFFER, num_vertex * sizeof(GLfloat), color_data, GL_STATIC_DRAW);
-
-    glGenBuffers(1, &normal_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
-    glBufferData(GL_ARRAY_BUFFER, num_vertex * sizeof(GLfloat), normal_data, GL_STATIC_DRAW);
-
-    delete [] color_data;
-    delete [] vertex_data;
-    delete[] normal_data;
+    glGenBuffers(1, &triangle_buffer); // buffer for the triangle
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(decltype(triangle)) * triangle.size(), triangle.data(), GL_STATIC_DRAW);
 
     _initialized = true;
 }
 
 void Ball::draw() {
-    glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-
+    // 1st attribute buffer : vertices
     glVertexAttribPointer(
-            0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
-            3,                  // size
-            GL_FLOAT,           // type
-            GL_FALSE,           // normalized?
-            0,                  // stride
-            (void*)0            // array buffer offset
+        0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
+        3,                  // size
+        GL_FLOAT,           // type
+        GL_FALSE,           // normalized?
+        sizeof(VERTEX_DATA),// stride
+        (void*)0            // array buffer offset
     );
+    glEnableVertexAttribArray(0);
 
+    //color;
+    glVertexAttribPointer(
+        1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
+        3,                                // size
+        GL_FLOAT,                         // type
+        GL_FALSE,                         // normalized?
+        sizeof(VERTEX_DATA),              // stride
+        (void*)(sizeof(VERTEX_DATA::pos)) // array buffer offset
+    );
     glEnableVertexAttribArray(1);
-    glBindBuffer(GL_ARRAY_BUFFER, color_buffer);
-    glVertexAttribPointer(
-            1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
-            3,                                // size
-            GL_FLOAT,                         // type
-            GL_FALSE,                         // normalized?
-            0,                                // stride
-            (void*)0                          // array buffer offset
-    );
 
-    glEnableVertexAttribArray(2);
-    glBindBuffer(GL_ARRAY_BUFFER, normal_buffer);
+    // normal;
     glVertexAttribPointer(
         2,                                // attribute. No particular reason for 1, but must match the layout in the shader.
         3,                                // size
         GL_FLOAT,                         // type
         GL_FALSE,                         // normalized?
-        0,                                // stride
-        (void*)0                          // array buffer offset
+        sizeof(VERTEX_DATA),              // stride
+        (void*)(sizeof(VERTEX_DATA::pos) + (sizeof(VERTEX_DATA::color)))// array buffer offset
     );
+    glEnableVertexAttribArray(2);
 
     // Draw the triangle !
-    glDrawArrays(GL_TRIANGLES, 0, 20 * 3 * (int) pow(4, depth)); // 12*3 indices starting at 0 -> 12 triangles
+    //glDrawArrays(GL_TRIANGLES, 0, gl_draw_size); // number of vertices
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
+    glDrawElements(GL_TRIANGLES, gl_draw_size, GL_UNSIGNED_INT, (void*)0);
 
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
@@ -271,11 +278,7 @@ void Ball::draw() {
 #ifdef GRAPHICS
 
 
-struct VERTEX_DATA {
-    glm::vec3 pos; // 0: vertex position
-    glm::vec3 color; // 1: vertex color
-    glm::vec3 normal; //3: vertex normal
-};
+
 
 void ContactPlane::generateBuffers() {    
     // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
@@ -287,12 +290,8 @@ void ContactPlane::generateBuffers() {
     std::vector<VERTEX_DATA> vertex_data(num_vertex);
     std::vector<GLuint> triangle(gl_draw_size);//triangle indices
 
-    glm::vec3 square[4] = { //vertices of a square
-        glm::vec3(0,0,0),
-        glm::vec3(s,0,0),
-        glm::vec3(s,s,0),
-        glm::vec3(0,s,0),
-    };
+    //vertices of a square
+    glm::vec3 square[4] = {{0,0,0},{s,0,0},{s,s,0},{0,s,0}};
 
     GLuint square_triangle[6] = { 0,1,2,0,2,3 };//indices of a square counterclockwise
 

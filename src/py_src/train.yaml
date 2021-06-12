@@ -15,7 +15,8 @@ agent:
     batch_size: 1024
     discount: 0.999
     # batch_size: 256
-    critic_target_update_frequency: 2
+    critic_target_update_frequency: 1
+    critic_tau: 0.004
 
 update_frequency: 16 #num of update is devided by this number
 
@@ -43,8 +44,8 @@ env:
 # this needs to be specified manually
 experiment: test_exp
 
-num_train_steps: 1e7
-replay_buffer_capacity: 2e6
+num_train_steps: 2e7
+replay_buffer_capacity: 1e7
 # replay_buffer_capacity: ${num_train_steps}
 
 

@@ -109,7 +109,7 @@ __global__ void updateMass(
 					c.d_planes[j].applyForce(force, pos, vel); // todo fix this 
 				}
 				for (int j = 0; j < c.num_balls; j++) {
-					c.d_balls[j].applyForce(force, pos);
+					c.d_balls[j].applyForce(force, pos, vel);
 				}
 				mass.force_constraint[i] = force - _force;
 			}
