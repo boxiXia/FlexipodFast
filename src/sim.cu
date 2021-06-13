@@ -10,29 +10,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #include "sim.h"
 
 
-
-#ifdef STRESS_TEST
-__global__ void updtateSpringStrain(
-	const MASS mass,
-	const SPRING spring,
-	double* strain,//selected strains (deformation/rest_length) of the spring
-	const int start,//start index (inclusive), must<spring.size()
-	const int end, // end index (exclusive), must<=spring.size()
-	const int step // step size
-) {
-	int k = blockIdx.x * blockDim.x + threadIdx.x;
-	int i = start + k * step;
-	if (i < end) {
-		Vec2i e = spring.edge[i];
-		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
-		double length = s_vec.norm(); // current spring length
-		strain[i] = (length - spring.rest[i]) / spring.rest[i];
-	}
-}
-#endif //STRESS_TEST
-
-
-
 __global__ void updateSpring(
 	const MASS mass,
 	const SPRING spring
@@ -50,12 +27,6 @@ __global__ void updateSpring(
 
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
 		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
-
-//#ifdef ROTATION
-//		if (spring.resetable[i]) {
-//			spring.rest[i] = length;//reset the spring rest length if this spring is restable
-//		}
-//#endif // ROTATION
 	}
 
 }
@@ -77,11 +48,12 @@ __global__ void updateSpringAndReset(
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
 		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
 
-#ifdef ROTATION
-		if (spring.resetable[i]) {
-			spring.rest[i] = length;//reset the spring rest length if this spring is restable
-		}
-#endif // ROTATION
+//#ifdef ROTATION
+//		if (spring.resetable[i]) {
+//			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
+//			spring.rest[i] = spring.rest[i]*0.9+0.1*length;//reset the spring rest length if this spring is restable
+//		}
+//#endif // ROTATION
 	}
 
 }
@@ -132,14 +104,30 @@ __global__ void updateMass(
 // roate the mass of the joint directly
 __global__ void updateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < joint.points.num) {
-		int mass_id = joint.points.massId[i];
-		int anchor_id = joint.points.anchorId[i];
-		Vec2i anchor_edge = joint.anchors.edge[anchor_id]; // mass id of the achor edge point
-		mass_pos[mass_id] = AxisAngleRotaion(
+	if (i < joint.vert_num) {
+		int vert_id = joint.vert_id[i];
+		int vert_joint_id = joint.vert_joint_id[i];
+		Vec2i anchor_edge = joint.anchor[vert_joint_id]; // mass id of the achor edge point
+		mass_pos[vert_id] = AxisAngleRotaion(
 			mass_pos[anchor_edge.x],
-			mass_pos[anchor_edge.y], mass_pos[mass_id],
-			joint.anchors.theta[anchor_id] * joint.points.dir[i]);
+			mass_pos[anchor_edge.y], mass_pos[vert_id],
+			joint.theta[vert_joint_id] * joint.vert_dir[i]);
+	}
+}
+
+__global__ void updateJointSpring(double* __restrict__ spring_rest, const JOINT joint) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < joint.num) {
+		double delta = joint.pos_desired[i] - joint.pos[i];
+		clampPeroidicInplace(delta, -M_PI, M_PI);
+		joint.pos[i] = joint.pos[i] + 0.02*delta;
+	}
+	if (i < joint.edge_num) {
+		Vec3d c = joint.edge_c[i]; // joint edge constant
+		double joint_pos = joint.pos[joint.edge_joint_id[i]];
+		int edge_id = joint.edge_id[i];
+		spring_rest[edge_id] = sqrt(c.x + c.y * cos(joint_pos + c.z));
+		//spring_rest[edge_id] = 0.99*spring_rest[edge_id]+0.01*sqrt(c.x + c.y * cos(joint_pos + c.z));
 	}
 }
 
@@ -451,18 +439,23 @@ void Simulation::updatePhysics() { // repeatedly start next
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
 		// update joint speed
 
-		for (int i = 0; i < joint.anchors.num; i++) { // compute joint angles and angular velocity
-			joint.anchors.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.cmd[i] * dt;// update joint speed
+		for (int i = 0; i < joint.size(); i++) { // compute joint angles and angular velocity
+			joint.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.cmd[i] * dt;// update joint speed
+			joint.pos_desired[i] = joint_control.pos_desired[i];
 		}
-		d_joint.anchors.copyThetaFrom(joint.anchors, stream[CUDA_DYNAMICS_STREAM]);
+		d_joint.copyThetaFrom(joint, stream[CUDA_DYNAMICS_STREAM]);
+		//d_joint.copyPosFrom(joint, stream[CUDA_DYNAMICS_STREAM]);
+		cudaMemcpyAsync(d_joint.pos_desired, joint.pos_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 
 		// invoke cuda kernel for dynamics update
 		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
 #ifdef ROTATION
 			if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
 				k_rot = 0; // reset counter
-				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+				//updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
 				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+
 			}
 			else {
 				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
@@ -713,7 +706,8 @@ double Simulation::energy() { // compute total energy of the system
 */
 int Simulation::computeGridSize(int block_size, int num) {
 	int grid_size = (num - 1 + block_size) / block_size;// Round up according to array size 
-	assert(grid_size <= MAX_BLOCKS);//TODO: kernel has a hard limit on MAX_BLOCKS
+	if (grid_size < 1 || (grid_size > MAX_BLOCKS))  // kernel has a hard limit on MAX_BLOCKS
+		throw std::exception("computeGridSize():grid size excpetion!"); 
 	return grid_size;
 }
 
@@ -727,7 +721,10 @@ void Simulation::updateCudaParameters() {
 	mass_grid_size = computeGridSize(mass_block_size, mass.size());
 
 	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &joint_block_size, updateJoint, 0, 0);
-	joint_grid_size = computeGridSize(joint_block_size, joint.points.size());
+	joint_grid_size = computeGridSize(joint_block_size, joint.vert_num);
+
+	// joint edge
+	joint_edge_grid_size = computeGridSize(joint_edge_block_size, joint.edge_num);
 
 #ifdef GRAPHICS
 	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &triangle_block_size, updateTriangleVertexNormal, 0, 0);
@@ -743,6 +740,7 @@ void Simulation::updateCudaParameters() {
 void Simulation::setAll() {//copy form cpu
 	d_mass.copyFrom(mass, stream[CUDA_MEMORY_STREAM]);
 	d_spring.copyFrom(spring, stream[CUDA_MEMORY_STREAM]);
+	d_joint.copyFrom(joint, stream[CUDA_MEMORY_STREAM]);
 #ifdef GRAPHICS
 	d_triangle.copyFrom(triangle, stream[CUDA_MEMORY_STREAM]);
 #endif //GRAPHICS
@@ -752,15 +750,11 @@ void Simulation::setAll() {//copy form cpu
 void Simulation::getAll() {//copy from gpu
 	mass.copyFrom(d_mass, stream[CUDA_MEMORY_STREAM]); // mass
 	spring.copyFrom(d_spring, stream[CUDA_MEMORY_STREAM]);// spring
+	joint.copyFrom(d_joint, stream[CUDA_MEMORY_STREAM]);
 #ifdef GRAPHICS
 	triangle.copyFrom(d_triangle, stream[CUDA_MEMORY_STREAM]);// triangle
 #endif //GRAPHICS
 	//cudaDeviceSynchronize();
-}
-
-
-void Simulation::setMass() {
-	d_mass.copyFrom(mass, stream[NUM_CUDA_STREAM - 1]);
 }
 
 
@@ -837,6 +831,9 @@ void Simulation::updateGraphics() {
 	createGLFWWindow(); // create a window with  width and height
 	startupImgui(); // Setup Dear ImGui
 
+	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
+	glBindVertexArray(VertexArrayID);
+
 	//int glDeviceId;// todo:this output wrong number, maybe it is a cuda bug...
 	//unsigned int glDeviceCount;
 	//cudaGLGetDevices(&glDeviceCount, &glDeviceId, 1u, cudaGLDeviceListAll);
@@ -857,8 +854,7 @@ void Simulation::updateGraphics() {
 		program_dir + "\\shader\\shadow_mapping_depth_fragment.glsl");
 	//simpleDepthShader.use();
 
-	glGenVertexArrays(1, &VertexArrayID);//GLuint VertexArrayID;
-	glBindVertexArray(VertexArrayID);
+
 
 	/*------------------- configure depth map FBO ----------------------------*/
 	glGenFramebuffers(1, &depthMapFBO);
@@ -882,11 +878,10 @@ void Simulation::updateGraphics() {
 
 	computeMVP(); // compute perspective projection matrix
 
-	generateBuffers(); // generate buffers for all masses and springs
-
 	for (Constraint* c : constraints) { // generate buffers for constraint objects
 		c->generateBuffers();
 	}
+	generateBuffers(); // generate buffers for all masses and springs
 
 	//updateBuffers();//Todo might not need?
 	cudaDeviceSynchronize();//sync before while loop
@@ -918,8 +913,8 @@ void Simulation::updateGraphics() {
 
 
 
-			double speed_multiplier = 0.1;
-			double pos_multiplier = 0.05;
+			double speed_multiplier = 0.2;
+			double pos_multiplier = 0.1;
 
 			if (glfwGetKey(window, GLFW_KEY_UP)) {
 				for (int i = 0; i < joint.size(); i++) {
@@ -1134,6 +1129,12 @@ void Simulation::deleteVBO(GLuint* vbo, struct cudaGraphicsResource* vbo_res, GL
 /*-----------------------end of GL buffer------------------------------*/
 
 void Simulation::draw() {
+
+	// draw constraints
+	for (Constraint* c : constraints) {
+		c->draw();
+	}
+
 	// ref: https://stackoverflow.com/questions/16380005/opengl-3-4-glvertexattribpointer-stride-and-offset-miscalculation
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
 	//glCheckError(); // check opengl error code
@@ -1181,11 +1182,6 @@ void Simulation::draw() {
 	glDisableVertexAttribArray(0);
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(2);
-
-	// draw constraints
-	for (Constraint* c : constraints) {
-		c->draw();
-	}
 }
 
 void Simulation::setViewport(const glm::vec3& camera_position, const glm::vec3& target_location, const glm::vec3& up_vector) {

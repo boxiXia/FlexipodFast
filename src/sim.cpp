@@ -162,6 +162,7 @@ void Simulation::runImgui() {
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
+		//// ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
 		//bool show_demo_window = true;
 		//ImGui::ShowDemoWindow(&show_demo_window);
 		//ImGui::ShowMetricsWindow();
@@ -185,7 +186,7 @@ void Simulation::runImgui() {
 		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed,ImGui::GetIO().Framerate);
 		ImGui::Text("UDP rec %.2f FPSS", rec_fps); 
 
-		ImGui::Text("constraint force %+4.2f %+4.2f %+4.2f", force_constraint.x, force_constraint.y, force_constraint.z);
+		ImGui::Text("F_constraint: %+6.1f %+6.1f %+6.1f N", force_constraint.x, force_constraint.y, force_constraint.z);
 
 
 		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
@@ -247,11 +248,12 @@ void Simulation::runImgui() {
 			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
 			const char* elem_name = (joint_control.mode == JointControlMode::vel)?  "vel":"pos";
 			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
-			ImGui::Text("com pos %+4.2f %+4.2f %+4.2f", body.pos.x, body.pos.y, body.pos.z);
+			ImGui::Text("com pos %+6.2f %+6.2f %+6.2f", body.pos.x, body.pos.y, body.pos.z);
 		}
 
 		if (ImGui::CollapsingHeader("options")) {
 			ImGui::Checkbox("draw mesh ", &show_triangle);
+			ImGui::Checkbox("camera follow ", &camera.should_follow);
 		}
 		
 

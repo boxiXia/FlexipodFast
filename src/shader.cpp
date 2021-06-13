@@ -29,18 +29,20 @@ glm::vec3 slerp(glm::vec3 p0, glm::vec3 p1, float t) {
 }
 
 void Camera::follow(const glm::vec3& target, const float interp_factor) {
-    // desired camera position
-    glm::vec3 href = getHorizontalDirection();
-    glm::vec3 pos_desired = target +
-        h_offset * glm::rotate(href, yaw, up) + up_offset * up;
+    if (should_follow) {
+        // desired camera position
+        glm::vec3 href = getHorizontalDirection();
+        glm::vec3 pos_desired = target +
+            h_offset * glm::rotate(href, yaw, up) + up_offset * up;
 
-    // interpolate position
-    pos = glm::mix(pos, pos_desired, interp_factor);
+        // interpolate position
+        pos = glm::mix(pos, pos_desired, interp_factor);
 
-    
-    // interpolate the orientation // https://en.wikipedia.org/wiki/Slerp
-    glm::vec3 dir_desired = glm::normalize(target - pos);
-    dir = glm::normalize(slerp(dir, dir_desired, interp_factor));
+
+        // interpolate the orientation // https://en.wikipedia.org/wiki/Slerp
+        glm::vec3 dir_desired = glm::normalize(target - pos);
+        dir = glm::normalize(slerp(dir, dir_desired, interp_factor));
+    }
 }
 
 glm::vec3 Camera::getHorizontalDirection() {

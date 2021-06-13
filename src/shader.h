@@ -112,6 +112,8 @@ public:
     float h_offset = 0.5f; // distance b/w target and camera in plane normal to camera_up vector 
     float up_offset = 0.5f; // distance b/w target and camera in camera_up direction
 
+    bool should_follow=true; // whether to update its position when calling follow()
+
     Camera() {};
     Camera(
         glm::vec3 camera_position,

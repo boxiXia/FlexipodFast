@@ -72,7 +72,7 @@ struct Ball : public Constraint {
 
     bool _initialized = false;
     int gl_draw_size;
-    int subdivisions = 4;
+
 
     GLuint vertex_buffer;
     GLuint triangle_buffer;//index buffer
@@ -140,7 +140,7 @@ struct ContactPlane : public Constraint {
 
     float s;// per square scale (square size [m])
     float plane_radius; //radius the contact plane
-    bool draw_back_face = true;
+    bool draw_back_face = false; //wether to draw the back face
     int nr;// normalized radius of the plane
     int gl_draw_size; // total number of points
 

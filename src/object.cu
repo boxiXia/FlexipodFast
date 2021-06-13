@@ -15,6 +15,9 @@ a frictional force.
 #include "object.h"
 #include <cmath>
 
+// for unordered map with pair as hash
+#include <unordered_map>
+#include <functional>
 
 #ifdef GRAPHICS
 const glm::vec3 RED(1.0, 0.2, 0.2);
@@ -118,16 +121,46 @@ namespace icosahedron
       {Z,X,N}, {-Z,X, N}, {Z,-X,N}, {-Z,-X, N}
     };
 
+    //static const TriangleList triangle =
+    //{
+    //  {0,4,1},{0,9,4},{9,5,4},{4,5,8},{4,8,1},
+    //  {8,10,1},{8,3,10},{5,3,8},{5,2,3},{2,7,3},
+    //  {7,10,3},{7,6,10},{7,11,6},{11,0,6},{0,1,6},
+    //  {6,1,10},{9,0,11},{9,11,2},{9,2,5},{7,2,11}
+    //}; // if front face is clockwise
     static const TriangleList triangle =
     {
-      {0,4,1},{0,9,4},{9,5,4},{4,5,8},{4,8,1},
-      {8,10,1},{8,3,10},{5,3,8},{5,2,3},{2,7,3},
-      {7,10,3},{7,6,10},{7,11,6},{11,0,6},{0,1,6},
-      {6,1,10},{9,0,11},{9,11,2},{9,2,5},{7,2,11}
-    };
+      {0,1,4},{0,4,9},{9,4,5},{4,8,5},{4,1,8},
+      {8,1,10},{8,10,3},{5,8,3},{5,3,2},{2,3,7},
+      {7,3,10},{7,10,6},{7,6,11},{11,6,0},{0,6,1},
+      {6,10,1},{9,11,0},{9,2,11},{9,5,2},{7,11,2}
+    }; // if front face is counterclockwise
 }
 
-using Lookup = std::map<std::pair<int, int>, int>;
+
+/* from boost::hash_combine
+ref: https://stackoverflow.com/questions/2590677/how-do-i-combine-hash-values-in-c0x */
+template <class T>
+inline void hash_combine(std::size_t& seed, const T& v)
+{
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+/* A hash function used to hash a pair of any kind 
+ref: https://stackoverflow.com/questions/32685540/why-cant-i-compile-an-unordered-map-with-a-pair-as-key */
+struct pair_hash {
+    template <class T1, class T2>
+    size_t operator()(const std::pair<T1, T2>& p) const
+    {
+        std::size_t h1 = std::hash<T1>{}(p.first);
+        hash_combine(h1, p.second);
+        return h1;
+    }
+};
+
+//using Lookup = std::map<std::pair<int, int>, int>; // less efficient than unordered_map
+using Lookup = std::unordered_map<std::pair<int, int>, int, pair_hash>;
 /*Each edge in the old model is subdivided and the resulting vertex is moved on
   to the unit sphere by normalization. The key here is to not duplicate the newly
   created vertices. This is done by keeping a lookup of the edge to the new vertex
@@ -166,13 +199,11 @@ TriangleList subdivide(VertexList& vertices, TriangleList triangles)
             mid[edge] = vertexForEdge(lookup, vertices,
                 each[edge], each[(edge + 1) % 3]);
         }
-
         result.push_back({ each[0], mid[0], mid[2] });
         result.push_back({ each[1], mid[1], mid[0] });
         result.push_back({ each[2], mid[2], mid[1] });
         result.push_back({ mid[0], mid[1], mid[2] });
     }
-
     return result;
 }
 
@@ -190,11 +221,11 @@ IndexedMesh makeIcosphere(int subdivisions)
     return{ vertex, triangle };
 }
 
-
 void Ball::generateBuffers() {
+
+    int subdivisions = 3;
     glm::vec3 color = { 0.22f, 0.71f, 0.0f };
 
-    //int subdivisions = 4;
     VertexList vertex = icosahedron::vertex;
     TriangleList triangle = icosahedron::triangle;
 
@@ -219,11 +250,15 @@ void Ball::generateBuffers() {
 
     glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA) * vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA) * vertex_data.size(), vertex_data.data(), GL_DYNAMIC_DRAW);
 
     glGenBuffers(1, &triangle_buffer); // buffer for the triangle
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(decltype(triangle)) * triangle.size(), triangle.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(decltype(triangle)) * triangle.size(), triangle.data(), GL_DYNAMIC_DRAW);
+
+    // (optional) unbind to avoid accidental modification of the buffers
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
     _initialized = true;
 }
@@ -268,17 +303,17 @@ void Ball::draw() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
     glDrawElements(GL_TRIANGLES, gl_draw_size, GL_UNSIGNED_INT, (void*)0);
 
+    // (optional) unbind to avoid accidental modification of the buffers
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
 }
-
 #endif
 
 #ifdef GRAPHICS
-
-
-
 
 void ContactPlane::generateBuffers() {    
     // refer to: http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
@@ -335,12 +370,16 @@ void ContactPlane::generateBuffers() {
 
     glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA)* vertex_data.size(), vertex_data.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA)* vertex_data.size(), vertex_data.data(), GL_DYNAMIC_DRAW);
     
     glGenBuffers(1, &triangle_buffer); // buffer for the triangle
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint) * triangle.size(), triangle.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint) * triangle.size(), triangle.data(), GL_DYNAMIC_DRAW);
     
+    // (optional) unbind to avoid accidental modification of the buffers
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
     _initialized = true;
 }
 
@@ -383,6 +422,10 @@ void ContactPlane::draw() {
     //glDrawArrays(GL_TRIANGLES, 0, gl_draw_size); // number of vertices
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
     glDrawElements(GL_TRIANGLES, gl_draw_size, GL_UNSIGNED_INT, (void*)0);
+
+    // (optional) unbind to avoid accidental modification of the buffers
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
