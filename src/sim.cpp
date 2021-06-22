@@ -186,9 +186,6 @@ void Simulation::runImgui() {
 		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed,ImGui::GetIO().Framerate);
 		ImGui::Text("UDP rec %.2f FPSS", rec_fps); 
 
-		ImGui::Text("F_constraint: %+6.1f %+6.1f %+6.1f N", force_constraint.x, force_constraint.y, force_constraint.z);
-
-
 		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
 		ImGui::SameLine();
 
@@ -250,6 +247,21 @@ void Simulation::runImgui() {
 			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
 			ImGui::Text("com pos %+6.2f %+6.2f %+6.2f", body.pos.x, body.pos.y, body.pos.z);
 		}
+
+		if (ImGui::CollapsingHeader("constraint")) {
+			static std::vector<float> arr = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60};
+			static int values_offset = 0;
+			ImGui::Text("fc: %+6.1f %+6.1f %+6.1f N", force_constraint.x, force_constraint.y, force_constraint.z);
+			ImGui::Text("fc_max: %+6.1f N", fc_max);
+
+			//ImGui::SliderInt("values_offset", &values_offset, 0, arr.size()-1);
+			//ImGui::PlotLines("fx",arr.data(), arr.size(), values_offset,NULL, -0.0f, 60.0f, ImVec2(0, 80.0f));
+			ImGui::PlotLines("fc_x", fc_arr_x.data(), fc_arr_x.size(), fc_arr_idx, NULL, -20, 20, ImVec2(0, 80.0f));
+			ImGui::PlotLines("fc_y", fc_arr_y.data(), fc_arr_y.size(), fc_arr_idx, NULL, -20, 20, ImVec2(0, 80.0f));
+			ImGui::PlotLines("fc_z", fc_arr_z.data(), fc_arr_z.size(), fc_arr_idx, NULL, -200, 200, ImVec2(0, 80.0f));
+
+		}
+
 
 		if (ImGui::CollapsingHeader("options")) {
 			ImGui::Checkbox("draw mesh ", &show_triangle);

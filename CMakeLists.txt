@@ -77,7 +77,7 @@ find_package(imgui CONFIG REQUIRED) # GUI
 find_package(msgpack CONFIG REQUIRED)
 find_package(clipp CONFIG REQUIRED)
 #find_package(asio CONFIG REQUIRED)
-find_package(ghc_filesystem CONFIG REQUIRED)
+#find_package(ghc_filesystem CONFIG REQUIRED)
 
 # include directories
 set(CMAKE_INCLUDE_CURRENT_DIR ON)

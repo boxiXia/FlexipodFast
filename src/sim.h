@@ -914,6 +914,11 @@ public:
 	
 #ifdef MEASURE_CONSTRAINT
 	Vec3d force_constraint;
+	float fc_max = 0; // maximum force constraint
+	std::array<float, 1000> fc_arr_x{};
+	std::array<float, 1000> fc_arr_y{};
+	std::array<float, 1000> fc_arr_z{};
+	int fc_arr_idx = 0;
 #endif //MEASURE_CONSTRAINT
 	
 	void backupState();//backup the robot mass/spring/joint state

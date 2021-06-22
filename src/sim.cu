@@ -48,12 +48,12 @@ __global__ void updateSpringAndReset(
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
 		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
 
-//#ifdef ROTATION
-//		if (spring.resetable[i]) {
-//			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
-//			spring.rest[i] = spring.rest[i]*0.9+0.1*length;//reset the spring rest length if this spring is restable
-//		}
-//#endif // ROTATION
+#ifdef ROTATION
+		if (spring.resetable[i]) {
+			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
+			spring.rest[i] = spring.rest[i]*0.9+0.1*length;//reset the spring rest length if this spring is restable
+		}
+#endif // ROTATION
 	}
 
 }
@@ -452,9 +452,9 @@ void Simulation::updatePhysics() { // repeatedly start next
 #ifdef ROTATION
 			if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
 				k_rot = 0; // reset counter
-				//updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
 				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+				//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
 
 			}
 			else {
@@ -584,14 +584,25 @@ void Simulation::updateUdpMessage() {
 					));
 
 #ifdef MEASURE_CONSTRAINT
-				Vec3d _force_constraint;
+				Vec3d _fc;// constraint force
 				
 				for (int i = 0; i < mass.size(); i++)
 				{
-					if(mass.constrain[i])
-						_force_constraint += mass.force_constraint[i];
+					if (mass.constrain[i]) {
+						_fc += mass.force_constraint[i];
+					}
 				}
-				force_constraint = _force_constraint;
+
+				fc_arr_x[fc_arr_idx] = (float)_fc.x;
+				fc_arr_y[fc_arr_idx] = (float)_fc.y;
+				fc_arr_z[fc_arr_idx] = (float)_fc.z;
+
+				fc_arr_idx = (fc_arr_idx+1)%fc_arr_x.size();
+
+				float f_norm = (float)_fc.norm();
+				fc_max = std::max(fc_max, f_norm);
+
+				force_constraint = _fc;
 #endif //MEASURE_CONSTRAINT
 
 			}
