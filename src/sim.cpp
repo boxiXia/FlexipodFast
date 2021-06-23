@@ -245,9 +245,18 @@ void Simulation::runImgui() {
 			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
 			const char* elem_name = (joint_control.mode == JointControlMode::vel)?  "vel":"pos";
 			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
-			ImGui::Text("com pos %+6.2f %+6.2f %+6.2f", body.pos.x, body.pos.y, body.pos.z);
 		}
-
+		if (ImGui::CollapsingHeader("info")) {
+			ImGui::Text("com pos %+6.2f %+6.2f %+6.2f", body.pos.x, body.pos.y, body.pos.z);
+			ImGui::Text("com vel %+6.2f %+6.2f %+6.2f", body.vel.x, body.vel.y, body.vel.z);
+			ImGui::Text("com acc %+6.2f %+6.2f %+6.2f", body.acc.x, body.acc.y, body.acc.z);
+			ImGui::Text("body angular velocity %+6.2f %+6.2f %+6.2f", body.ang_vel.x, body.ang_vel.y, body.ang_vel.z);
+			auto& rot = body.rot;
+			ImGui::Text("body rotation: \n  %+6.2f %+6.2f %+6.2f\n  %+6.2f %+6.2f %+6.2f\n  %+6.2f %+6.2f %+6.2f",
+				rot.m00, rot.m01, rot.m02,
+				rot.m10, rot.m11, rot.m12,
+				rot.m20, rot.m21, rot.m22);
+		}
 		if (ImGui::CollapsingHeader("constraint")) {
 			static std::vector<float> arr = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60};
 			static int values_offset = 0;

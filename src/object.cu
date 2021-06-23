@@ -39,8 +39,8 @@ struct VERTEX_DATA {
 //__device__ const double K_NORMAL = 100; // normal force coefficient for contact constraints
 //__device__ const double DAMPING_NORMAL = 3; // normal damping coefficient per kg mass
 __device__ const double K_NORMAL = 800; // normal force coefficient for contact constraints
-//__device__ const double DAMPING_NORMAL = 1; // normal damping coefficient per kg mass
-__device__ const double DAMPING_NORMAL = 0; // normal damping coefficient per kg mass
+__device__ const double DAMPING_NORMAL = 1; // normal damping coefficient per kg mass
+//__device__ const double DAMPING_NORMAL = 0; // normal damping coefficient per kg mass
 
 
 __device__ void CudaBall::applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel) {
