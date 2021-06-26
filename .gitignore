@@ -27,3 +27,5 @@ src/python_src/exp/
 src/py_src/exp/
 
 src/py_src/runs/
+
+imgui.ini
