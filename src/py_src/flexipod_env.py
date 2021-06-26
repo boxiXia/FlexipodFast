@@ -237,14 +237,17 @@ class FlexipodEnv(gym.Env):
         observation = np.stack([np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]])
                 for msg_i in msg_rec] ).astype(np.float32) 
         
-        
-        # x velocity
-        com_vel_xy = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
-        vel_cost = 0.3*np.clip(com_vel_xy,0,1)+0.7
         if self.flatten_obs:
             observation = observation.ravel()
         if self.normalize: # normalize the observation
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
+        
+        # x velocity
+        com_vel_xy = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
+        # vel_cost = 0.3*np.clip(com_vel_xy,0,1)+0.7
+        vel_cost = 0.3*np.clip(com_vel_xy,-1,2)+0.7
+
+
 #         print(orientation_z,com_z)
         # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
         uph_cost = max(0,orientation_z)*min(com_z+0.55,1)
