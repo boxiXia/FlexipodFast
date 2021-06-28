@@ -142,10 +142,24 @@ inline cudaMallocFcnType allocateMemoryFcn(bool on_host) {// ref: https://www.cp
 	choose the appropriate device/host free memory function given a array pointer ptr
 	and its size (number)*/
 template<class T>
-cudaError_t __stdcall allocateMem(const bool on_host, const size_t size, T*& ptr) {
+cudaError_t __stdcall allocateMemory(const bool on_host, const size_t size, T*& ptr) {
 	// if allocateMemory = cudaMallocHost: allocate on host
 	if (on_host) { return cudaMallocHost((void**)&ptr, size * sizeof(T)); }
 	else { return cudaMalloc((void**)&ptr, size * sizeof(T)); }
+}
+
+/*
+helper function to set host/device memory
+Args:
+	on_host: if true, set host memory, else set device memory
+	value: Value to set for each byte of specified memory
+	size: number of <T> in the array
+	ptr: pointer to host/device memory
+*/
+template<class T>
+void __stdcall setMemory(const bool on_host, int value, const size_t size, T*& ptr) {
+	if (on_host) { memset(vel, value, size * sizeof(T)); }
+	else { cudaMemset(vel, value, size * sizeof(T)); }
 }
 
 
@@ -185,6 +199,7 @@ public:
 struct MASS {
 	double* m = nullptr;
 	Vec3d* pos = nullptr;
+	Vec3d* pos_prev = nullptr;
 	Vec3d* vel = nullptr;
 	Vec3d* acc = nullptr;
 	Vec3d* force = nullptr; // (measured) total force
@@ -206,16 +221,17 @@ struct MASS {
 		copyFrom(other, stream);
 	}
 	void init(int num, bool on_host = true) {
-		allocateMem(on_host, num, m);
-		allocateMem(on_host, num, pos);
-		allocateMem(on_host, num, vel);
-		allocateMem(on_host, num, acc);
-		allocateMem(on_host, num, force);
-		allocateMem(on_host, num, force_extern);
-		allocateMem(on_host, num, force_constraint);
-		allocateMem(on_host, num, color);
-		allocateMem(on_host, num, fixed);
-		allocateMem(on_host, num, constrain);
+		allocateMemory(on_host, num, m);
+		allocateMemory(on_host, num, pos);
+		allocateMemory(on_host, num, pos_prev);
+		allocateMemory(on_host, num, vel);
+		allocateMemory(on_host, num, acc);
+		allocateMemory(on_host, num, force);
+		allocateMemory(on_host, num, force_extern);
+		allocateMemory(on_host, num, force_constraint);
+		allocateMemory(on_host, num, color);
+		allocateMemory(on_host, num, fixed);
+		allocateMemory(on_host, num, constrain);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 		if (on_host) {// set vel,acc to 0
@@ -231,6 +247,7 @@ struct MASS {
 	void copyFrom(const MASS& other, cudaStream_t stream = (cudaStream_t)0) {
 		cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(pos_prev, other.pos_prev, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(force, other.force, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
@@ -261,12 +278,12 @@ struct MASS {
 };
 
 struct SPRING {
-	double* k = nullptr; // spring constant (N/m)
+	double* compliance = nullptr; // spring constant (N/m)
 	double* rest = nullptr; // spring rest length (meters)
 	double* damping = nullptr; // damping on the masses.
 	Vec2i* edge = nullptr;// (left,right) mass indices of the spring
 	bool* resetable = nullptr; // a flag indicating whether to reset every dynamic update
-	
+	double* lambda = nullptr; // lagrange multiplier 
 	int num = 0;
 	inline int size() { return num; }
 
@@ -281,20 +298,22 @@ struct SPRING {
 	}
 
 	void init(int num, bool on_host = true) { // initialize
-		allocateMem(on_host, num, k);
-		allocateMem(on_host, num, rest);
-		allocateMem(on_host, num, damping);
-		allocateMem(on_host, num, edge);
-		allocateMem(on_host, num, resetable);
+		allocateMemory(on_host, num, compliance);
+		allocateMemory(on_host, num, rest);
+		allocateMemory(on_host, num, damping);
+		allocateMemory(on_host, num, edge);
+		allocateMemory(on_host, num, resetable);
+		allocateMemory(on_host, num, lambda);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
 	void copyFrom(const SPRING& other, cudaStream_t stream = (cudaStream_t)0) { // assuming we have enough streams
-		cudaMemcpyAsync(k, other.k, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(compliance, other.compliance, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(lambda, other.lambda, num * sizeof(double), cudaMemcpyDefault, stream);
 		gpuErrchk(cudaPeekAtLastError());
 		//this->num = other.num;
 	}
@@ -316,7 +335,7 @@ struct TRIANGLE {
 		copyFrom(other, stream);
 	}
 	void init(int num, bool on_host = true) { // initialize
-		allocateMem(on_host, num, triangle);
+		allocateMemory(on_host, num, triangle);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
@@ -368,22 +387,22 @@ struct JOINT {
 	void init(int num,int vert_num,int edge_num, bool on_host) {
 		// joint
 		this->num = num;
-		allocateMem(on_host, num, anchor);
-		allocateMem(on_host, num, theta);
-		allocateMem(on_host, num, pos);
-		allocateMem(on_host, num, pos_desired);
-		allocateMem(on_host, num, left_coord);
-		allocateMem(on_host, num, right_coord);
+		allocateMemory(on_host, num, anchor);
+		allocateMemory(on_host, num, theta);
+		allocateMemory(on_host, num, pos);
+		allocateMemory(on_host, num, pos_desired);
+		allocateMemory(on_host, num, left_coord);
+		allocateMemory(on_host, num, right_coord);
 		// joint vertices
 		this->vert_num = vert_num;
-		allocateMem(on_host, vert_num, vert_id);
-		allocateMem(on_host, vert_num, vert_joint_id);
-		allocateMem(on_host, vert_num, vert_dir);
+		allocateMemory(on_host, vert_num, vert_id);
+		allocateMemory(on_host, vert_num, vert_joint_id);
+		allocateMemory(on_host, vert_num, vert_dir);
 		// joint edges (friction spring)
 		this->edge_num = edge_num;
-		allocateMem(on_host, edge_num, edge_id);
-		allocateMem(on_host, edge_num, edge_joint_id);
-		allocateMem(on_host, edge_num, edge_c);
+		allocateMemory(on_host, edge_num, edge_id);
+		allocateMemory(on_host, edge_num, edge_joint_id);
+		allocateMemory(on_host, edge_num, edge_c);
 		gpuErrchk(cudaPeekAtLastError());
 
 	}
@@ -548,13 +567,13 @@ struct JointControl {
 	}
 
 	void init(int num, bool on_host = true) { // initialize
-		allocateMem(on_host, num, pos);
-		allocateMem(on_host, num, vel);
-		allocateMem(on_host, num, pos_desired);
-		allocateMem(on_host, num, vel_desired);
-		allocateMem(on_host, num, vel_error);
-		allocateMem(on_host, num, pos_error);
-		allocateMem(on_host, num, cmd);
+		allocateMemory(on_host, num, pos);
+		allocateMemory(on_host, num, vel);
+		allocateMemory(on_host, num, pos_desired);
+		allocateMemory(on_host, num, vel_desired);
+		allocateMemory(on_host, num, vel_error);
+		allocateMemory(on_host, num, pos_error);
+		allocateMemory(on_host, num, cmd);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}

@@ -91,49 +91,34 @@ int main(int argc, char* argv[])
 	const double min_radius = radius_poisson * 0.5;
 
 	const double m = 0.09* radius_poisson;// mass per vertex
-	//const double m = 2.5/(double)num_mass;// mass per vertex
 
-	//const double spring_constant = m*6.5e6; //spring constant for silicone leg
-	//const double spring_damping = m*6.5e2; // damping for spring
-
-	const double spring_constant = m * 6.5e6; //spring constant for silicone leg
+	const double spring_compliance = 1/(m * 6.5e6); //spring constant for silicone leg
 	const double spring_damping = m * 6.5e2; // damping for spring
-
-	//const double spring_constant = m * 22e6; //spring constant for silicone leg
-	//const double spring_damping = m * 3e2; // damping for spring
-	//constexpr double scale_rigid = 1;// scaling factor rigid
-
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
 	constexpr double scale_soft = 2.0; // scaling factor soft
 	constexpr double scale_rot_spring = 1.0; // stiffness scale for rotation spring
-	//constexpr double scale_rot_spring = 0.0; // stiffness scale for rotation spring
-
 
 	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
-	//constexpr double scale_joint_k = 2.5; // scaling factor for the joint spring constant
-	//constexpr double scale_joint_damping = 2.5; // scaling factor for the joint spring damping
-	//constexpr double scale_joint_k = 3.0; // scaling factor for the joint spring constant
-	//constexpr double scale_joint_damping = 3.0; // scaling factor for the joint spring damping
-	constexpr double scale_joint_k = 1.5; // scaling factor for the joint spring constant
+	constexpr double scale_joint_compliance = 1.5; // scaling factor for the joint spring constant
 	constexpr double scale_joint_damping = 3; // scaling factor for the joint spring damping
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probs, e.g. coordinates
 
-	const double spring_constant_rigid = spring_constant * scale_rigid;//spring constant for rigid spring
-	const double spring_constant_soft = spring_constant * scale_soft;//spring constant for soft spring
+	const double spring_compliance_rigid = spring_compliance / scale_rigid;//spring constant for rigid spring
+	const double spring_compliance_soft = spring_compliance / scale_soft;//spring constant for soft spring
 
-	const double spring_constant_restable = spring_constant * scale_joint_k; // spring constant for resetable spring
+	const double spring_compliance_restable = spring_compliance / scale_joint_compliance; // spring constant for resetable spring
 	const double spring_damping_restable = spring_damping * scale_joint_damping; // spring damping for resetable spring
 
-	//const double spring_constant_restable = 0; // spring constant for resetable spring
+	//const double spring_compliance_restable = 0; // spring constant for resetable spring
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
 
 	// spring coefficient for the probing springs, e.g. coordinates
 	const double m_probe = m * scale_probe;//mass for the probe
-	const double spring_constant_probe_anchor = spring_constant * scale_probe*2.0; // spring constant for coordiates anchor springs
-	const double spring_constant_probe_self = spring_constant * scale_probe*2.0; // spring constant for coordiates self springs
+	const double spring_compliance_probe_anchor = spring_compliance / (scale_probe*2.0); // spring constant for coordiates anchor springs
+	const double spring_compliance_probe_self = spring_compliance / (scale_probe*2.0); // spring constant for coordiates self springs
 	const double spring_damping_probe = spring_damping * scale_probe * 2.0;
 
 //ref: https://bisqwit.iki.fi/story/howto/openmp/
@@ -162,10 +147,7 @@ int main(int argc, char* argv[])
 		spring.damping[i] = spring_damping; // spring constant
 		spring.rest[i] = (mass.pos[spring.edge[i].x] - mass.pos[spring.edge[i].y]).norm(); // spring rest length
 		// longer spring will have a smalller influence, https://ccrma.stanford.edu/~jos/pasp/Young_s_Modulus_Spring_Constant.html
-		spring.k[i] = spring_constant_soft * radius_knn / std::max(spring.rest[i], min_radius); // spring constant
-		//spring.k[i] = spring_constant_soft * std::max(spring.rest[i], min_radius)/ radius_knn; // spring constant
-
-		//spring.k[i] = spring_constant; // spring constant
+		spring.compliance[i] = spring_compliance_soft / radius_knn * std::max(spring.rest[i], min_radius); // spring constant
 		spring.resetable[i] = false; // set all spring as non-resetable
 	}
 
@@ -180,11 +162,11 @@ int main(int argc, char* argv[])
 		internal_vert[tri.z] = false;
 	}
 
-	double scale_internal_spring = 4.0 / scale_soft;
+	double scale_internal_spring = scale_soft/4.0; // multiplier for internal spring compliance
 	for (int i = 0; i < num_spring; i++) { // using rigid springs for internal constructions
 		auto e = spring.edge[i];
 		if ((internal_vert[e.x] && internal_vert[e.x])) {
-			spring.k[i] = spring.k[i] * scale_internal_spring;
+			spring.compliance[i] = spring.compliance[i] * scale_internal_spring;
 		}
 	}
 
@@ -214,26 +196,19 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	//// set higher spring constant for the robot body
-	//for (int i = bot.id_edges["part"][0]; i < bot.id_edges["part"][1]; i++)
-	//{
-	//	spring.k[i] = spring.k[i] * scale_rigid;
-	//}
-
 	// set higher spring constant for the rotational joints
 	for (int i = bot.id_edges.at("anchor").front(); i < bot.id_edges.at("anchor").back(); i++)
 	{
-		spring.k[i] = spring_constant_rigid; // joints anchors
-		//spring.k[i] = 0; // joints anchors
+		spring.compliance[i] = spring_compliance_rigid; // joints anchors
+		//spring.compliance[i] = 0; // joints anchors
 		//spring.damping[i] = 0;
-
 	}
 
 	for (int i = bot.id_edges.at("rot_spring").front(); i < bot.id_edges.at("rot_spring").back(); i++)
 	{
-		spring.k[i] = spring_constant*scale_rot_spring; // joints rotation spring
+		spring.compliance[i] = spring_compliance/scale_rot_spring; // joints rotation spring
 		spring.damping[i] = spring.damping[i] * scale_rot_spring; // joints rotation spring
-		//spring.k[i] =0; // joints rotation spring
+		//spring.compliance[i] =0; // joints rotation spring
 		//spring.damping[i] = 0;
 	}
 
@@ -241,9 +216,9 @@ int main(int argc, char* argv[])
 	sim.id_resetable_spring_end = bot.id_edges.at("fri_spring").back();
 	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
 	{
-		spring.k[i] = spring_constant_restable;// resetable spring, reset the rest length per dynamic update
+		spring.compliance[i] = spring_compliance_restable;// resetable spring, reset the rest length per dynamic update
 		spring.damping[i] = spring_damping_restable;
-		//spring.k[i] = 0;// resetable spring, reset the rest length per dynamic update
+		//spring.compliance[i] = 0;// resetable spring, reset the rest length per dynamic update
 		//spring.damping[i] = 0;
 
 		spring.resetable[i] = true;
@@ -261,12 +236,12 @@ int main(int argc, char* argv[])
 
 	for (int i = bot.id_edges.at("coord").front(); i < bot.id_edges.at("coord").back(); i++)
 	{
-		spring.k[i] = spring_constant_probe_self;// oxyz_self_springs
+		spring.compliance[i] = spring_compliance_probe_self;// oxyz_self_springs
 		spring.damping[i] = spring_damping_probe;
 	}
 	for (int i = bot.id_edges.at("coord_attach").front(); i < bot.id_edges.at("coord_attach").back(); i++)
 	{
-		spring.k[i] = spring_constant_probe_anchor;// oxyz_anchor_springs
+		spring.compliance[i] = spring_compliance_probe_anchor;// oxyz_anchor_springs
 		spring.damping[i] = spring_damping_probe;
 	}
 

@@ -108,6 +108,7 @@ class FlexipodEnv(gym.Env):
         self._max_episode_steps = 10000#np.inf
         self.episode_steps = 0 # curret step in an episode
 
+        self.info = False # bool flag to send info or not when processing messages
         # name of the returned message
         REC_NAME = np.array([
             # name,         size,      min,          max
@@ -139,7 +140,7 @@ class FlexipodEnv(gym.Env):
         self.ID_com_vel = self.ID['com_vel']
         
         OBS_NAME = ("joint_pos","joint_vel","actuation","orientation",
-                    "ang_vel","com_acc","com_vel","spring_strain","com_pos")
+                    "ang_vel","com_acc","com_vel","spring_strain")#,"com_pos")
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
         
         # action min-max
@@ -152,9 +153,9 @@ class FlexipodEnv(gym.Env):
         
         # observartion min-max
         self.raw_min_obs = np.hstack([ # raw max observation (from simulation)
-            np.ones(REC_SIZE[self.ID[name]])*REC_MIN[self.ID[name]]for name in OBS_NAME]).astype(np.float32)[:-2]
+            np.ones(REC_SIZE[self.ID[name]])*REC_MIN[self.ID[name]]for name in OBS_NAME]).astype(np.float32)#[:-2]
         self.raw_max_obs = np.hstack([ # raw min observation (from simulation)
-            np.ones(REC_SIZE[self.ID[name]])*REC_MAX[self.ID[name]]for name in OBS_NAME]).astype(np.float32)[:-2]
+            np.ones(REC_SIZE[self.ID[name]])*REC_MAX[self.ID[name]]for name in OBS_NAME]).astype(np.float32)#[:-2]
 
         # multiple observation per network input
         self.raw_min_obs = np.tile(self.raw_min_obs,(num_observation,1))
@@ -234,8 +235,9 @@ class FlexipodEnv(gym.Env):
         # print(f"self.joint_pos ={self.joint_pos}")
         
         
-        observation = np.stack([np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]])
-                for msg_i in msg_rec] ).astype(np.float32) 
+        # observation = np.stack([np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]])
+        observation = np.stack([np.hstack(msg_i[2:-1])
+                for msg_i in msg_rec]).astype(np.float32) 
         
         if self.flatten_obs:
             observation = observation.ravel()
@@ -243,26 +245,31 @@ class FlexipodEnv(gym.Env):
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
         
         # x velocity
-        com_vel_xy = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
+        com_vel_x = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
         # vel_cost = 0.3*np.clip(com_vel_xy,0,1)+0.7
-        vel_cost = 0.3*np.clip(com_vel_xy,-0.5,1)+0.7
-
-
+        vel_cost = 0.4*np.clip(com_vel_x,-0.5,1)+0.6
+        
 #         print(orientation_z,com_z)
-        # reward = orientation_z-0.8 + (com_z-0.3)-0.2*min(1.0,com_vel)
-        uph_cost = max(0,orientation_z)*min(com_z+0.55,1)
-        # print(com_z)
+        # uph_cost = max(0,orientation_z)*min(com_z+0.56,1)
+        uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+0.56,1)
+        # x = np.linspace(0,1,400)
+        # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
+        # plt.plot(x,y)
+        # print(com_z+0.56)
         # print(msg_rec_i[self.ID_orientation])
         
-        quad_ctrl_cost = max(0,1-0.05 * sum(np.square(actuation))) # quad control cost
+        quad_ctrl_cost = max(0,1-0.1 * sum(np.square(actuation))) # quad control cost
         reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.65)or(com_z<0.35)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<0.65)or(com_z<0.36)or(self.episode_steps>=self._max_episode_steps) else False
         # done = True if self.episode_steps>=self._max_episode_steps else False # done when exceeding max steps
         
         t = msg_rec_i[self.ID_t]
-        info = {'t':t}
+        if self.info:
+            info = {'t':t,'vel_cost':vel_cost,'uph_cost':uph_cost,'quad_ctrl_cost':quad_ctrl_cost}
+        else:
+            info = None
         # if done:
 #             print(orientation_z,com_z)
         # _ = [m[self.ID['t']] for m in msg_rec]

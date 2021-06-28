@@ -124,7 +124,7 @@ target_link_libraries(flexipod PUBLIC
     #ghcFilesystem::ghc_filesystem
 )
 
-#set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
 
 # create symbolic link for *.glsl and *.msgpack (this may require administrator privileges)
 file(GLOB msgpack_list CONFIGURE_DEPENDS 

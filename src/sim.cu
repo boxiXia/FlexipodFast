@@ -10,6 +10,19 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #include "sim.h"
 
 
+
+//__global__ void pbdStart(
+//	const MASS mass,
+//	const SPRING spring) {
+//	int i = blockIdx.x * blockDim.x + threadIdx.x;
+//	if (i < mass.num) {
+//
+//	}
+//
+//}
+
+
+
 __global__ void updateSpring(
 	const MASS mass,
 	const SPRING spring
@@ -22,7 +35,7 @@ __global__ void updateSpring(
 
 		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
-		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		Vec3d force = 1.0/spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
 
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
@@ -42,7 +55,7 @@ __global__ void updateSpringAndReset(
 		double length = s_vec.norm(); // current spring length
 		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
-		Vec3d force = spring.k[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		Vec3d force = 1.0/spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
 
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
@@ -705,7 +718,7 @@ double Simulation::energy() { // compute total energy of the system
 	}
 	for (int i = 0; i < spring.num; i++)
 	{
-		e_potential += 0.5 * spring.k[i] * pow((mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm() - spring.rest[i], 2);
+		e_potential += 0.5/spring.compliance[i] * pow((mass.pos[spring.left[i]] - mass.pos[spring.right[i]]).norm() - spring.rest[i], 2);
 	}
 	return e_potential + e_kinetic;
 }
