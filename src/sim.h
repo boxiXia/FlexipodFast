@@ -1053,7 +1053,7 @@ public:
 	void setViewport(const glm::vec3& camera_position, const glm::vec3& target_location, const glm::vec3& up_vector);
 	void moveViewport(const glm::vec3& displacement);
 	
-	glm::vec4 clear_color = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f); // rgba, clearing window color when calling glClearColor 
+	glm::vec4 clear_color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f); // rgba, clearing window color when calling glClearColor 
 	int contex_version_major = 4; // for GLFW_CONTEXT_VERSION_MAJOR
 	int contex_version_minor = 6; // for GLFW_CONTEXT_VERSION_MINOR
 

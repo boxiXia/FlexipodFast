@@ -90,11 +90,15 @@ class FlexipodEnv(gym.Env):
         num_sensors = 0, # num of spring strain sensors
         normalize = True,
         max_joint_vel = 10, # maximum joint velocity rad/s
+        humanoid_task = True, # if true, humanoid, else qurdurped
         ip_local = "127.0.0.1", port_local = 33300,
         ip_remote = "127.0.0.1",port_remote = 33301):
         
         super(FlexipodEnv,self).__init__()
         
+        self.humanoid_task = humanoid_task
+        
+        print(f"humanoid_task:{humanoid_task}")
         self.cd = BulletCollisionDetect() # collision detection with pybullet
         
         self.local_address = (ip_local, port_local)
@@ -226,7 +230,7 @@ class FlexipodEnv(gym.Env):
         # observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
         
         msg_rec_i = msg_rec[0]
-        orientation_z = msg_rec_i[self.ID_orientation][2]
+        
         actuation = msg_rec_i[self.ID_actuation] # actuation (size=dof) of the latest observation
         com_z = msg_rec_i[self.ID_com_pos][2]
         # joint position (sin,cos->rad)
@@ -251,7 +255,17 @@ class FlexipodEnv(gym.Env):
         
 #         print(orientation_z,com_z)
         # uph_cost = max(0,orientation_z)*min(com_z+0.56,1)
-        uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+0.56,1)
+        ori = msg_rec_i[self.ID_orientation]
+        
+        if self.humanoid_task:
+            orientation_z = ori[2] # z_z, local x vector projected to world z direction
+            uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+0.56,1)
+            com_z_min = 0.36
+        else:
+            orientation_z= ori[0]*ori[4] - ori[1]*ori[3] # z_z, local z vector projected to world z direction
+            uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+0.56,1)
+            com_z_min = 0.2
+        
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
         # plt.plot(x,y)
@@ -262,7 +276,7 @@ class FlexipodEnv(gym.Env):
         reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<0.65)or(com_z<0.36)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<0.65)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
         # done = True if self.episode_steps>=self._max_episode_steps else False # done when exceeding max steps
         
         t = msg_rec_i[self.ID_t]

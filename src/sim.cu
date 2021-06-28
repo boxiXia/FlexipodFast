@@ -1369,7 +1369,8 @@ void Simulation::createGLFWWindow() {
 	// Ensure we can capture the escape key being pressed below
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 	// reset window color
-	glClearColor(clear_color.x, 0.0f, 0.0f, 0.0f);
+	glClearColor(clear_color.r, clear_color.g, clear_color.b, clear_color.a);
+
 }
 
 #endif

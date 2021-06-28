@@ -39,6 +39,7 @@ num_eval_episodes: 3
 #     visualize_reward: True
 env:
     _target_: flexipod_env.make
+    humanoid_task: False
 
 
 # this needs to be specified manually
