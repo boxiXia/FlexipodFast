@@ -269,7 +269,7 @@ class FlexipodEnv(gym.Env):
         if self.info:
             info = {'t':t,'vel_cost':vel_cost,'uph_cost':uph_cost,'quad_ctrl_cost':quad_ctrl_cost}
         else:
-            info = None
+            info = {'t':t}
         # if done:
 #             print(orientation_z,com_z)
         # _ = [m[self.ID['t']] for m in msg_rec]
