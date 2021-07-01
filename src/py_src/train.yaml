@@ -29,7 +29,7 @@ train: True
 num_seed_steps: 20000
 
 eval_frequency: 10000
-num_eval_episodes: 3
+num_eval_episodes: 1
 
 # env:
 #     _target_: dmc2gym.make
