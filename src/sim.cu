@@ -44,13 +44,13 @@ __global__ void pbdSolveDist(
 		double delta_lambda = -c / (w + alpha_bar);
 		Vec3d p = delta_lambda * n;
 		
-		mass.pos[e.x].atomicVecAdd(-p  * w1);
-		mass.pos[e.y].atomicVecAdd(p * w2);
+		//mass.pos[e.x].atomicVecAdd(-p  * w1);
+		//mass.pos[e.y].atomicVecAdd(p * w2);
 
-		//Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0) * n;
+		Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0) * n;
 
-		//mass.pos[e.x].atomicVecAdd((-p + vn*dt) * w1);
-		//mass.pos[e.y].atomicVecAdd(( p - vn*dt) * w2);
+		mass.pos[e.x].atomicVecAdd((-p + vn*dt) * w1);
+		mass.pos[e.y].atomicVecAdd(( p - vn*dt) * w2);
 
 	}
 }
@@ -59,6 +59,7 @@ __global__ void pbdSolveDist(
 __global__ void pbdSolveContact(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
+	const Vec3d global_acc,
 	const double dt
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -75,6 +76,11 @@ __global__ void pbdSolveContact(
 			//mass.force_constraint[i] = force - _force;
 		}
 		mass.vel[i] = (mass.pos[i] - mass.pos_prev[i]) / dt;
+
+		mass.pos_prev[i] = mass.pos[i];
+		mass.vel[i] += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
+		mass.pos[i] += dt * mass.vel[i];
+
 	}
 }
 
@@ -561,11 +567,11 @@ void Simulation::updatePhysics() { // repeatedly start next
 
 
 		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-			pbdStart <<< mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, global_acc, dt);
+			//pbdStart <<< mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, global_acc, dt);
 			updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
 			pbdSolveDist <<<spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, d_spring, dt);
-			pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, dt);
-			pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
+			pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+			//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 		}
 
 

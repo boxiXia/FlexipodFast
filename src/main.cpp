@@ -140,6 +140,7 @@ int main(int argc, char* argv[])
 	for (int i = 0; i < num_mass; i++)
 	{
 		mass.pos[i] = bot.vertices[i]; // position (Vec3d) [m]
+		mass.pos_prev[i] = mass.pos[i];// previous pos
 		mass.color[i] = bot.colors[i]; // color (Vec3d) [0.0-1.0]
 		mass.inv_m[i] = inv_m; // mass [kg]
 		mass.constrain[i] = bot.is_surface[i];// set constraint to true for suface vertices, and false otherwise
