@@ -544,37 +544,37 @@ void Simulation::updatePhysics() { // repeatedly start next
 		cudaMemcpyAsync(d_joint.pos_desired, joint.pos_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 
 
-//		// invoke cuda kernel for dynamics update
-//		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-//#ifdef ROTATION
-//			if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
-//				k_rot = 0; // reset counter
-//				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
-//				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-//				//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
-//
-//			}
-//			else {
-//				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-//			}
-//#else
-//			updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-//#endif // ROTATION
-//			updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-//			//gpuErrchk(cudaPeekAtLastError());
-//			k_rot++;
-//		}
+		// invoke cuda kernel for dynamics update
 
-
-		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-			//pbdStart <<< mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, global_acc, dt);
-			updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
-			pbdSolveDist <<<spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, d_spring, dt);
-			pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-			//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
+		if (USE_PBD) {
+			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+				//pbdStart <<< mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, global_acc, dt);
+				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
+				pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+				//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
+			}
 		}
-
-
+		else{
+			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+#ifdef ROTATION
+				if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
+					k_rot = 0; // reset counter
+					updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+					updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+					//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+				}
+				else {
+					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+				}
+#else
+				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+#endif // ROTATION
+				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+				//gpuErrchk(cudaPeekAtLastError());
+				k_rot++;
+				}
+		}
 
 
 		T += NUM_QUEUED_KERNELS * dt;

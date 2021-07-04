@@ -273,8 +273,9 @@ void Simulation::runImgui() {
 
 
 		if (ImGui::CollapsingHeader("options")) {
-			ImGui::Checkbox("draw mesh ", &show_triangle);
-			ImGui::Checkbox("camera follow ", &camera.should_follow);
+			ImGui::Checkbox("draw mesh", &show_triangle);
+			ImGui::Checkbox("camera follow", &camera.should_follow);
+			ImGui::Checkbox("use PBD", &USE_PBD);
 		}
 		
 

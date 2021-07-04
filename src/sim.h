@@ -957,6 +957,7 @@ public:
 	bool SHOULD_RUN = true;
 	bool SHOULD_END = false;
 
+	bool USE_PBD = true;// flag to use position based dynamics
 
 	std::mutex mutex_running;
 	std::condition_variable cv_running;

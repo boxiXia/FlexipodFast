@@ -119,15 +119,16 @@ __device__  void CudaContactPlane::solveDist(
 		double dp_t_norm = dp_t.norm();
 		double  dp_t_fs = -disp * _FRICTION_S; // maximun friction correction
 		if (dp_t_fs > dp_t_norm) { // static friction
-			pos = pos - dp_t;
+			pos -= dp_t;
 		}
 		else { // dynamic friction
-			pos = pos - fmin(dp_t_norm, -0.5 * disp * _FRICTION_K) * dp_t / dp_t_norm;
+			//pos -= fmin(dp_t_norm, -0.5 * disp * _FRICTION_K) * dp_t / dp_t_norm;
+            pos -= fmin(dp_t_norm, - disp * _FRICTION_K) * dp_t / dp_t_norm;
 		}
-		pos = pos - disp * _normal; // move out of the ground
+		pos -= disp * _normal; // move out of the ground
 		double vn = vel.dot(_normal);
 		if (vn < 0) {
-			pos_prev = pos_prev + vn * 1.0 * dt * _normal; // restitution
+			pos_prev += vn * 1.0 * dt * _normal; // restitution
 		}
 	}
 }
