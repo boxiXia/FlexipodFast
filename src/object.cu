@@ -100,6 +100,37 @@ __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, con
 }
 
 
+__device__  void CudaContactPlane::solveDist(
+	Vec3d& force,
+	Vec3d& pos,
+	Vec3d& pos_prev,
+	Vec3d& vel,
+	const double dt
+) {
+	double disp = _normal.dot(pos) - _offset; // displacement into the plane
+#ifdef __CUDA_ARCH__
+	if (signbit(disp)) { // Determine whether the floating-point value a is negative:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1g2bd7d6942a8b25ae518636dab9ad78a7
+#else
+	if (disp < 0) {// if inside the plane
+#endif
+        Vec3d dp = pos - pos_prev; // delta pos
+		Vec3d dp_n = dp.dot(_normal) * _normal; // delta pos normal to plane
+		Vec3d dp_t = dp - dp_n; // delta pos tangential to plane
+		double dp_t_norm = dp_t.norm();
+		double  dp_t_fs = -disp * _FRICTION_S; // maximun friction correction
+		if (dp_t_fs > dp_t_norm) { // static friction
+			pos = pos - dp_t;
+		}
+		else { // dynamic friction
+			pos = pos - fmin(dp_t_norm, -0.5 * disp * _FRICTION_K) * dp_t / dp_t_norm;
+		}
+		pos = pos - disp * _normal; // move out of the ground
+		double vn = vel.dot(_normal);
+		if (vn < 0) {
+			pos_prev = pos_prev + vn * 1.0 * dt * _normal; // restitution
+		}
+	}
+}
 
 #ifdef GRAPHICS
 

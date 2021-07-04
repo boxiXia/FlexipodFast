@@ -197,7 +197,8 @@ public:
 
 
 struct MASS {
-	double* m = nullptr;
+	//double* m = nullptr;
+	double* inv_m = nullptr; // inverse mass
 	Vec3d* pos = nullptr;
 	Vec3d* pos_prev = nullptr;
 	Vec3d* vel = nullptr;
@@ -221,7 +222,8 @@ struct MASS {
 		copyFrom(other, stream);
 	}
 	void init(int num, bool on_host = true) {
-		allocateMemory(on_host, num, m);
+		//allocateMemory(on_host, num, m);
+		allocateMemory(on_host, num, inv_m);
 		allocateMemory(on_host, num, pos);
 		allocateMemory(on_host, num, pos_prev);
 		allocateMemory(on_host, num, vel);
@@ -245,7 +247,8 @@ struct MASS {
 	}
 
 	void copyFrom(const MASS& other, cudaStream_t stream = (cudaStream_t)0) {
-		cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
+		//cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(inv_m, other.inv_m, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos_prev, other.pos_prev, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);

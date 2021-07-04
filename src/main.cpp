@@ -91,9 +91,10 @@ int main(int argc, char* argv[])
 	const double min_radius = radius_poisson * 0.5;
 
 	const double m = 0.09* radius_poisson;// mass per vertex
+	const double inv_m = 1. / m;
 
 	const double spring_compliance = 1/(m * 6.5e6); //spring constant for silicone leg
-	const double spring_damping = m * 6.5e2; // damping for spring
+	const double spring_damping = m * 6.5e2*0; // damping for spring
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
 	constexpr double scale_soft = 2.0; // scaling factor soft
@@ -102,6 +103,9 @@ int main(int argc, char* argv[])
 	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
 	constexpr double scale_joint_compliance = 1.5; // scaling factor for the joint spring constant
 	constexpr double scale_joint_damping = 3; // scaling factor for the joint spring damping
+
+	const double inv_m_joint = inv_m / scale_joint_m; // inverse joint mass
+
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probs, e.g. coordinates
@@ -116,7 +120,7 @@ int main(int argc, char* argv[])
 	//const double spring_damping_restable = 0; // spring damping for resetable spring
 
 	// spring coefficient for the probing springs, e.g. coordinates
-	const double m_probe = m * scale_probe;//mass for the probe
+	const double inv_m_probe = 1./(m * scale_probe);//mass for the probe
 	const double spring_compliance_probe_anchor = spring_compliance / (scale_probe*2.0); // spring constant for coordiates anchor springs
 	const double spring_compliance_probe_self = spring_compliance / (scale_probe*2.0); // spring constant for coordiates self springs
 	const double spring_damping_probe = spring_damping * scale_probe * 2.0;
@@ -137,7 +141,7 @@ int main(int argc, char* argv[])
 	{
 		mass.pos[i] = bot.vertices[i]; // position (Vec3d) [m]
 		mass.color[i] = bot.colors[i]; // color (Vec3d) [0.0-1.0]
-		mass.m[i] = m; // mass [kg]
+		mass.inv_m[i] = inv_m; // mass [kg]
 		mass.constrain[i] = bot.is_surface[i];// set constraint to true for suface vertices, and false otherwise
 	}
 #pragma omp simd
@@ -174,12 +178,12 @@ int main(int argc, char* argv[])
 	 //// set higher mass value for robot body
 	 //for (int i = bot.idVertices[0]; i < bot.idVertices[1]; i++)
 	 //{
-	 //	mass.m[i] = m*1.8; // accounting for addional mass for electornics
+	 //	mass.inv_m[i] = 1./(m*1.8); // accounting for addional mass for electornics
 	 //}
 	 //// set lower mass value for leg
 	 //for (int i = bot.idVertices[1]; i < bot.idVertices[num_body]; i++)
 	 //{
-	 //	mass.m[i] = m * 0.3; // 80% infill,no skin
+	 //	mass.inv_m[i] = 1./(m * 0.3); // 80% infill,no skin
 	 //}
 
 	 // set the mass value for joint
@@ -188,11 +192,11 @@ int main(int argc, char* argv[])
 	{
 		for each (int j in bot.joints[i].left)
 		{
-			mass.m[j] = m * scale_joint_m;
+			mass.inv_m[j] = inv_m_joint;
 		}
 		for each (int j in bot.joints[i].right)
 		{
-			mass.m[j] = m * scale_joint_m;
+			mass.inv_m[j] = inv_m_joint;
 		}
 	}
 
@@ -231,7 +235,7 @@ int main(int argc, char* argv[])
 	// set lower mass for the anchored coordinate systems
 	for (int i = sim.id_oxyz_start; i < sim.id_oxyz_end; i++)
 	{
-		mass.m[i] = m_probe; // mass [kg]
+		mass.inv_m[i] = inv_m_probe; // mass [kg]
 	}
 
 	for (int i = bot.id_edges.at("coord").front(); i < bot.id_edges.at("coord").back(); i++)
@@ -250,15 +254,15 @@ int main(int argc, char* argv[])
 
 	// print out mass statistics
 	double total_mass = 0;
-//#pragma omp parallel for shared (total_mass,mass.m) reduction(+:total_mass)
-	for (int i = 0; i < num_mass; i++) { total_mass += mass.m[i]; }
+//#pragma omp parallel for shared (total_mass,mass.inv_m) reduction(+:total_mass)
+	for (int i = 0; i < num_mass; i++) { total_mass += 1./mass.inv_m[i]; }
 	printf("total mass:%.2f [kg]\n",total_mass);
 
 	std::vector<double> part_mass(num_body,0); // vector of size num_body, with values 0
 #pragma omp parallel for
 	for (int k = 0; k < num_body; k++)
 		for (int i = bot.id_vertices.at("part")[k]; i < bot.id_vertices.at("part")[k + 1]; i++)
-			part_mass[k] += mass.m[i];
+			part_mass[k] += 1./mass.inv_m[i];
 	printf("part mass:");
 	for (const auto& i : part_mass) 
 		printf("%.2f ", i);
@@ -268,7 +272,7 @@ int main(int argc, char* argv[])
 #pragma omp parallel for
 	for (int k = 0; k < num_joint; k++)
 		for (const auto & i:bot.joints[k].left)
-			joint_mass[k] += mass.m[i];
+			joint_mass[k] += 1./mass.inv_m[i];
 	printf("joint mass:");
 	for (const auto& i : joint_mass)
 		printf("%.2f ", i);
@@ -307,6 +311,8 @@ int main(int argc, char* argv[])
 	//double runtime = 15;//48 hours
 	//sim.setBreakpoint(runtime,true);
 
+
+	
 	sim.start();
 	
 	//while (sim.RUNNING) {

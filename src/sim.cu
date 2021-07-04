@@ -11,16 +11,94 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 
 
 
-//__global__ void pbdStart(
-//	const MASS mass,
-//	const SPRING spring) {
-//	int i = blockIdx.x * blockDim.x + threadIdx.x;
-//	if (i < mass.num) {
-//
-//	}
-//
-//}
+__global__ void pbdStart(
+	const MASS mass,
+	const Vec3d global_acc,
+	const double dt
+	) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < mass.num) {
+		mass.pos_prev[i] = mass.pos[i];
+		mass.vel[i] += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
+		mass.pos[i] += dt * mass.vel[i];
+	}
+}
 
+__global__ void pbdSolveDist(
+	const MASS mass,
+	const SPRING spring,
+	const double dt
+) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < spring.num) {
+		Vec2i e = spring.edge[i];
+		Vec3d n = mass.pos[e.y] - mass.pos[e.x];// distance constraint direction
+		double w1 = mass.inv_m[e.x];
+		double w2 = mass.inv_m[e.y];
+		double w = w1 + w2;
+
+		double d = n.norm(); 
+		double c = d - spring.rest[i]; // distance constraint magnitude
+		n /= (d > 1e-13 ? d : 1e-13);// normalized to unit vector (direction),
+		double alpha_bar = spring.compliance[i] / (dt * dt);
+		double delta_lambda = -c / (w + alpha_bar);
+		Vec3d p = delta_lambda * n;
+		
+		mass.pos[e.x].atomicVecAdd(-p  * w1);
+		mass.pos[e.y].atomicVecAdd(p * w2);
+
+		//Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0) * n;
+
+		//mass.pos[e.x].atomicVecAdd((-p + vn*dt) * w1);
+		//mass.pos[e.y].atomicVecAdd(( p - vn*dt) * w2);
+
+	}
+}
+
+
+__global__ void pbdSolveContact(
+	const MASS mass,
+	const CUDA_GLOBAL_CONSTRAINTS c,
+	const double dt
+) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < mass.num) {
+		if (mass.constrain) { //only apply to constrain set of masses
+			//Vec3d _force(force);
+			for (int j = 0; j < c.num_planes; j++) { // global constraints
+				c.d_planes[j].solveDist(
+					mass.force[i], mass.pos[i], mass.pos_prev[i], mass.vel[i],dt); // todo fix this 
+			}
+			//for (int j = 0; j < c.num_balls; j++) {
+			//	c.d_balls[j].applyForce(force, pos, vel);
+			//}
+			//mass.force_constraint[i] = force - _force;
+		}
+		mass.vel[i] = (mass.pos[i] - mass.pos_prev[i]) / dt;
+	}
+}
+
+
+__global__ void pbdSolveVel(
+	const MASS mass,
+	const SPRING spring,
+	const double dt
+) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < spring.num) {
+		Vec2i e = spring.edge[i];
+		Vec3d n = mass.pos[e.y] - mass.pos[e.x];// distance constraint direction
+		double w1 = mass.inv_m[e.x];
+		double w2 = mass.inv_m[e.y];
+		double d = n.norm();
+		n /= (d > 1e-13 ? d : 1e-13);// normalized to unit vector (direction),
+
+		Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0) * n;
+		mass.pos[e.x].atomicVecAdd(vn*dt * w1);
+		mass.pos[e.y].atomicVecAdd(vn*dt * w2);
+
+	}
+}
 
 
 __global__ void updateSpring(
@@ -80,13 +158,12 @@ __global__ void updateMass(
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
 		if (mass.fixed[i] == false) {
-			double m = mass.m[i];
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
 
 			Vec3d force = mass.force[i];
 			force += mass.force_extern[i];// add spring force and external force [N]
-			force += global_acc*m;// add global accleration
+			force += global_acc/mass.inv_m[i];// add global accleration
 
 			if (mass.constrain) { //only apply to constrain set of masses
 				Vec3d _force(force);
@@ -100,7 +177,7 @@ __global__ void updateMass(
 			}
 
 			// euler integration
-			force /= m;// force is now acceleration
+			force *= mass.inv_m[i];// force is now acceleration
 			//force += global_acc;// add global accleration
 			vel += force * dt; // vel += acc*dt
 			mass.acc[i] = force; // update acceleration
@@ -460,26 +537,39 @@ void Simulation::updatePhysics() { // repeatedly start next
 		//d_joint.copyPosFrom(joint, stream[CUDA_DYNAMICS_STREAM]);
 		cudaMemcpyAsync(d_joint.pos_desired, joint.pos_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 
-		// invoke cuda kernel for dynamics update
-		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-#ifdef ROTATION
-			if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
-				k_rot = 0; // reset counter
-				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
-				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-				//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
 
-			}
-			else {
-				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-			}
-#else
-			updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-#endif // ROTATION
-			updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-			//gpuErrchk(cudaPeekAtLastError());
-			k_rot++;
+//		// invoke cuda kernel for dynamics update
+//		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+//#ifdef ROTATION
+//			if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
+//				k_rot = 0; // reset counter
+//				updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+//				updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+//				//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+//
+//			}
+//			else {
+//				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+//			}
+//#else
+//			updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
+//#endif // ROTATION
+//			updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+//			//gpuErrchk(cudaPeekAtLastError());
+//			k_rot++;
+//		}
+
+
+		for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
+			pbdStart <<< mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, global_acc, dt);
+			updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+			pbdSolveDist <<<spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, d_spring, dt);
+			pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, dt);
+			pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 		}
+
+
+
 
 		T += NUM_QUEUED_KERNELS * dt;
 
@@ -713,8 +803,8 @@ double Simulation::energy() { // compute total energy of the system
 	double e_kinetic = 0; //kinetic energy
 	for (int i = 0; i < mass.num; i++)
 	{
-		e_potential += -global_acc.dot(mass.pos[i]) * mass.m[i];
-		e_kinetic += 0.5 * mass.vel[i].SquaredSum() * mass.m[i];
+		e_potential += -global_acc.dot(mass.pos[i]) / mass.inv_m[i];
+		e_kinetic += 0.5 * mass.vel[i].SquaredSum() / mass.inv_m[i];
 	}
 	for (int i = 0; i < spring.num; i++)
 	{
