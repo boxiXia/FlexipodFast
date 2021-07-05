@@ -47,11 +47,17 @@ __global__ void pbdSolveDist(
 		//mass.pos[e.x].atomicVecAdd(-p  * w1);
 		//mass.pos[e.y].atomicVecAdd(p * w2);
 
-		Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0) * n;
+		Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0)/w * n;
 
 		mass.pos[e.x].atomicVecAdd((-p + vn*dt) * w1);
 		mass.pos[e.y].atomicVecAdd(( p - vn*dt) * w2);
 
+//#ifdef ROTATION
+//		if (spring.resetable[i]) {
+//			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
+//			spring.rest[i] = spring.rest[i] * 0.9 + 0.1 * d;//reset the spring rest length if this spring is restable
+//		}
+//#endif // ROTATION
 	}
 }
 
@@ -77,6 +83,7 @@ __global__ void pbdSolveContact(
 		}
 		mass.vel[i] = (mass.pos[i] - mass.pos_prev[i]) / dt;
 
+		// moved from the start of the loop
 		mass.pos_prev[i] = mass.pos[i];
 		mass.vel[i] += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
 		mass.pos[i] += dt * mass.vel[i];
@@ -119,7 +126,7 @@ __global__ void updateSpring(
 
 		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
-		Vec3d force = 1.0/spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		Vec3d force = 1.0 / spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
 
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
@@ -139,7 +146,7 @@ __global__ void updateSpringAndReset(
 		double length = s_vec.norm(); // current spring length
 		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
-		Vec3d force = 1.0/spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		Vec3d force = 1.0 / spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
 		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
 
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
@@ -148,7 +155,7 @@ __global__ void updateSpringAndReset(
 #ifdef ROTATION
 		if (spring.resetable[i]) {
 			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
-			spring.rest[i] = spring.rest[i]*0.9+0.1*length;//reset the spring rest length if this spring is restable
+			spring.rest[i] = spring.rest[i] * 0.9 + 0.1 * length;//reset the spring rest length if this spring is restable
 		}
 #endif // ROTATION
 	}
@@ -166,10 +173,11 @@ __global__ void updateMass(
 		if (mass.fixed[i] == false) {
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
+			mass.pos_prev[i] = pos;
 
 			Vec3d force = mass.force[i];
 			force += mass.force_extern[i];// add spring force and external force [N]
-			force += global_acc/mass.inv_m[i];// add global accleration
+			force += global_acc / mass.inv_m[i];// add global accleration
 
 			if (mass.constrain) { //only apply to constrain set of masses
 				Vec3d _force(force);
@@ -211,19 +219,35 @@ __global__ void updateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
 	}
 }
 
-__global__ void updateJointSpring(double* __restrict__ spring_rest, const JOINT joint) {
+
+__global__ void updateJointPos(Vec3d* __restrict__ mass_pos, double* __restrict__ spring_rest, const JOINT joint) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < joint.num) {
+		Vec2i anchor_edge = joint.anchor[i];
+		Vec3d rotation_axis = (mass_pos[anchor_edge.y] - mass_pos[anchor_edge.x]).normalize();
+		//Vec3d x_left = mass.pos[joint.anchors.left_coord[i] + 1] - mass.pos[joint.anchors.left_coord[i]];//oxyz
+		//Vec3d x_right = mass.pos[joint.anchors.right_coord[i] + 1] - mass.pos[joint.anchors.right_coord[i]];//oxyz
+		//pos[i] = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
+		Vec3d y_left = mass_pos[joint.left_coord[i] + 2] - mass_pos[joint.left_coord[i]];//oxyz
+		Vec3d y_right = mass_pos[joint.right_coord[i] + 2] - mass_pos[joint.right_coord[i]];//oxyz
+		joint.pos[i] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
+	}
+}
+
+
+__global__ void updateJointSpring(Vec3d* __restrict__ mass_pos, double* __restrict__ spring_rest, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.num) {
 		double delta = joint.pos_desired[i] - joint.pos[i];
 		clampPeroidicInplace(delta, -M_PI, M_PI);
-		joint.pos[i] = joint.pos[i] + 0.02*delta;
+		joint.pos[i] += 0.02 * delta;
 	}
 	if (i < joint.edge_num) {
 		Vec3d c = joint.edge_c[i]; // joint edge constant
-		double joint_pos = joint.pos[joint.edge_joint_id[i]];
 		int edge_id = joint.edge_id[i];
-		spring_rest[edge_id] = sqrt(c.x + c.y * cos(joint_pos + c.z));
-		//spring_rest[edge_id] = 0.99*spring_rest[edge_id]+0.01*sqrt(c.x + c.y * cos(joint_pos + c.z));
+		double joint_pos = joint.pos[joint.edge_joint_id[i]];
+		//spring_rest[edge_id] = sqrt(c.x + c.y * cos(joint_pos + c.z));
+		spring_rest[edge_id] = 0.99*spring_rest[edge_id]+0.01*sqrt(c.x + c.y * cos(joint_pos + c.z));
 	}
 }
 
@@ -549,8 +573,9 @@ void Simulation::updatePhysics() { // repeatedly start next
 		if (USE_PBD) {
 			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
 				//pbdStart <<< mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, global_acc, dt);
-				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
 				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
+				//updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
 				pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 				//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 			}
@@ -562,7 +587,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 					k_rot = 0; // reset counter
 					updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
 					updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-					//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_spring.rest, d_joint);
+					//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
 				}
 				else {
 					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);

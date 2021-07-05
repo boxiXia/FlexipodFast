@@ -870,7 +870,7 @@ struct MY_ALIGN(8) Mat3d {
 /* clamp a value n between lower and upper */
 template <typename T>
 inline CUDA_CALLABLE_MEMBER void clampInplace(T& n, const T& lower, const T& upper) {
-	assert(lower < upper);
+	//assert(lower < upper);
 	if (n > upper) { n = upper; }
 	else if (n < lower) { n = lower; }
 }
@@ -880,7 +880,7 @@ assume periodic between lower and upper */
 
 template <typename T>
 void CUDA_CALLABLE_MEMBER clampPeroidicInplace(T& n, const T& lower, const T& upper) {
-	assert(lower < upper);
+	//assert(lower < upper);
 	if (n > upper) { n = fmod(n - upper, upper - lower) + lower; }
 	else if (n < lower) { n = fmod(n - lower, upper - lower) + upper; }
 }
