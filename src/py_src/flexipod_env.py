@@ -259,16 +259,18 @@ class FlexipodEnv(gym.Env):
         
         if self.humanoid_task:
             orientation_z = ori[2] # z_z, local x vector projected to world z direction
-            uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+0.56,1)
             com_z_min = 0.36
+            com_z_offset = 0.56
             orientation_z_min = 0.56
         else: # quadruped task
             orientation_z= ori[0]*ori[4] - ori[1]*ori[3] # z_z, local z vector projected to world z direction
-            uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+0.8,1)
             com_z_min = 0.1
+            com_z_offset = 0.8
             orientation_z_min = 0.56
-
         
+        # uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
+        uph_cost = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
+
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
         # plt.plot(x,y)
@@ -279,8 +281,8 @@ class FlexipodEnv(gym.Env):
         reward =  uph_cost*quad_ctrl_cost*vel_cost
         
 #         reward = orientation_z
-        done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
-        # done = True if self.episode_steps>=self._max_episode_steps else False # done when exceeding max steps
+        # done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps) else False
         
         t = msg_rec_i[self.ID_t]
         if self.info:

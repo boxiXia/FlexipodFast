@@ -78,7 +78,7 @@ __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, con
         Vec3d vn = vn_s * _normal; // velocity normal to the plane
         Vec3d vt = vel - vn; // velocity tangential to the plane
         double vt_norm = vt.norm();
-        if (vt_norm > 1e-13) { // kinetic friction domain
+        if (vt_norm > 1e-10) { // kinetic friction domain
             //      <----friction magnitude------>   <-friction direction->
             fc -= _FRICTION_K * fn_ground_norm / vt_norm * vt;
         }
@@ -114,7 +114,8 @@ __device__  void CudaContactPlane::solveDist(
 	if (disp < 0) {// if inside the plane
 #endif
         Vec3d dp = pos - pos_prev; // delta pos
-		Vec3d dp_n = dp.dot(_normal) * _normal; // delta pos normal to plane
+        double dp_n_norm = dp.dot(_normal);
+		Vec3d dp_n = dp_n_norm * _normal; // delta pos normal to plane
 		Vec3d dp_t = dp - dp_n; // delta pos tangential to plane
 		double dp_t_norm = dp_t.norm();
 		double  dp_t_fs = -disp * _FRICTION_S; // maximun friction correction
@@ -126,10 +127,25 @@ __device__  void CudaContactPlane::solveDist(
             pos -= fmin(dp_t_norm, - disp * _FRICTION_K) * dp_t / dp_t_norm;
 		}
 		pos -= disp * _normal; // move out of the ground
-		double vn = vel.dot(_normal);
-		if (vn < 0) {
-			pos_prev += vn * 1.0 * dt * _normal; // restitution
-		}
+
+
+       dp_n_norm = (pos - pos_prev).dot(_normal);
+       double vn = dp_n_norm / dt;
+       double vn_old = vel.dot(_normal);
+       if (vn < 0) {
+
+           
+           pos_prev -= (-vn + vn < -2 * 9.8 * dt ? 0 : fmin(-vn_old * 1.0, 0.0)) * dt * _normal;
+       }
+
+		//double vn = vel.dot(_normal);
+		//if (vn < 0 && vn<-2*9.8*dt) {
+		//	pos_prev += vn * 1.0 * dt * _normal; // restitution
+		//}
+
+        //if (dp_n_norm < 0) {
+        //    pos_prev += dp_n_norm * 1.0 * _normal; // restitution
+        //}
 	}
 }
 

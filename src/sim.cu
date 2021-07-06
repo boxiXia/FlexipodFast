@@ -10,20 +10,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #include "sim.h"
 
 
-
-__global__ void pbdStart(
-	const MASS mass,
-	const Vec3d global_acc,
-	const double dt
-	) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < mass.num) {
-		mass.pos_prev[i] = mass.pos[i];
-		mass.vel[i] += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
-		mass.pos[i] += dt * mass.vel[i];
-	}
-}
-
 __global__ void pbdSolveDist(
 	const MASS mass,
 	const SPRING spring,
@@ -47,10 +33,10 @@ __global__ void pbdSolveDist(
 		//mass.pos[e.x].atomicVecAdd(-p  * w1);
 		//mass.pos[e.y].atomicVecAdd(p * w2);
 
-		Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0)/w * n;
-
-		mass.pos[e.x].atomicVecAdd((-p + vn*dt) * w1);
-		mass.pos[e.y].atomicVecAdd(( p - vn*dt) * w2);
+		// velocity damping
+		Vec3d dpn = n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt*dt, 1.0)/w * n;
+		mass.pos[e.x].atomicVecAdd((-p + dpn) * w1);
+		mass.pos[e.y].atomicVecAdd(( p - dpn) * w2);
 
 //#ifdef ROTATION
 //		if (spring.resetable[i]) {
@@ -58,6 +44,28 @@ __global__ void pbdSolveDist(
 //			spring.rest[i] = spring.rest[i] * 0.9 + 0.1 * d;//reset the spring rest length if this spring is restable
 //		}
 //#endif // ROTATION
+	}
+}
+
+__global__ void pbdSolveVel(
+	const MASS mass,
+	const SPRING spring,
+	const double dt
+) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < spring.num) {
+		Vec2i e = spring.edge[i];
+		Vec3d n = mass.pos[e.y] - mass.pos[e.x];// distance constraint direction
+		double w1 = mass.inv_m[e.x];
+		double w2 = mass.inv_m[e.y];
+		double w = w1 + w2;
+		double d = n.norm();
+		n /= (d > 1e-13 ? d : 1e-13);// normalized to unit vector (direction),
+
+		Vec3d dpn = n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt * dt, 1.0) / w * n;
+		mass.pos[e.x].atomicVecAdd(dpn * w1);
+		mass.pos[e.y].atomicVecAdd(- dpn * w2);
+
 	}
 }
 
@@ -92,26 +100,6 @@ __global__ void pbdSolveContact(
 }
 
 
-__global__ void pbdSolveVel(
-	const MASS mass,
-	const SPRING spring,
-	const double dt
-) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < spring.num) {
-		Vec2i e = spring.edge[i];
-		Vec3d n = mass.pos[e.y] - mass.pos[e.x];// distance constraint direction
-		double w1 = mass.inv_m[e.x];
-		double w2 = mass.inv_m[e.y];
-		double d = n.norm();
-		n /= (d > 1e-13 ? d : 1e-13);// normalized to unit vector (direction),
-
-		Vec3d vn = n.dot(mass.vel[e.y] - mass.vel[e.y]) * fmin(spring.damping[i] * dt, 1.0) * n;
-		mass.pos[e.x].atomicVecAdd(vn*dt * w1);
-		mass.pos[e.y].atomicVecAdd(vn*dt * w2);
-
-	}
-}
 
 
 __global__ void updateSpring(
@@ -572,7 +560,6 @@ void Simulation::updatePhysics() { // repeatedly start next
 
 		if (USE_PBD) {
 			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-				//pbdStart <<< mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_mass, global_acc, dt);
 				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
 				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 				//updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
@@ -585,9 +572,9 @@ void Simulation::updatePhysics() { // repeatedly start next
 #ifdef ROTATION
 				if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
 					k_rot = 0; // reset counter
+					//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
 					updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
 					updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-					//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
 				}
 				else {
 					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);

@@ -93,8 +93,8 @@ int main(int argc, char* argv[])
 	const double m = 0.09* radius_poisson;// mass per vertex
 	const double inv_m = 1. / m;
 
-	const double spring_compliance = 1/(m * 6.5e6); //spring constant for silicone leg
-	const double spring_damping = m * 6.5e2; // damping for spring
+	const double spring_compliance = 1/(m * 6.5e6); //spring constant for silicone leg [m/N]
+	const double spring_damping = m * 6.5e2; // damping for spring [N*s/m]
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
 	constexpr double scale_soft = 2.0; // scaling factor soft
