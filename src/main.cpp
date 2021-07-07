@@ -175,6 +175,11 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	//// fix the main body
+	//for (int i = bot.id_vertices.at("part").at(0); i < bot.id_vertices.at("part").at(1); i++) {
+	//	mass.fixed[i] = true;
+	//}
+
 
 	 //// set higher mass value for robot body
 	 //for (int i = bot.idVertices[0]; i < bot.idVertices[1]; i++)

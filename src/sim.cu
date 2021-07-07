@@ -194,16 +194,18 @@ __global__ void updateMass(
 #ifdef ROTATION
 
 // roate the mass of the joint directly
-__global__ void updateJoint(Vec3d* __restrict__ mass_pos, const JOINT joint) {
+__global__ void updateJoint(Vec3d* __restrict__ mass_pos,bool* __restrict__ mass_fixed, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.vert_num) {
 		int vert_id = joint.vert_id[i];
-		int vert_joint_id = joint.vert_joint_id[i];
-		Vec2i anchor_edge = joint.anchor[vert_joint_id]; // mass id of the achor edge point
-		mass_pos[vert_id] = AxisAngleRotaion(
-			mass_pos[anchor_edge.x],
-			mass_pos[anchor_edge.y], mass_pos[vert_id],
-			joint.theta[vert_joint_id] * joint.vert_dir[i]);
+		if (!mass_fixed[vert_id]) {
+			int vert_joint_id = joint.vert_joint_id[i];
+			Vec2i anchor_edge = joint.anchor[vert_joint_id]; // mass id of the achor edge point
+			mass_pos[vert_id] = AxisAngleRotaion(
+				mass_pos[anchor_edge.x],
+				mass_pos[anchor_edge.y], mass_pos[vert_id],
+				joint.theta[vert_joint_id] * joint.vert_dir[i]);
+		}
 	}
 }
 
@@ -562,7 +564,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
 				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
 				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
-				//updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+				//updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_mass.fixed, d_joint);
 				pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 				//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 			}
@@ -573,7 +575,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 				if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
 					k_rot = 0; // reset counter
 					//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
-					updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_joint);
+					updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_mass.fixed, d_joint);
 					updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
 				}
 				else {

@@ -207,6 +207,54 @@ class FlexipodEnv(gym.Env):
         print('Destructor called, FlexipodEnv deleted.')
 #         self.close()
     
+    
+    @property
+    def humanoid_task(self):
+        return self._humanoid_task
+    
+    @humanoid_task.setter
+    def humanoid_task(self,is_humanoid:bool):
+        self._humanoid_task = is_humanoid
+        pi = np.pi
+        if is_humanoid:
+            self.joint_pos_limit = np.array([
+                # front left
+                [-pi,pi], # 0
+                [-pi/2,pi/2], # 1
+                [-pi/2,pi/2], # 2
+                # front right
+                [-pi,pi], # 3
+                [-pi/2,pi/2], # 4
+                [-pi/2,pi/2], # 5
+                # back left
+                [-pi/4,pi/4], # 6, reduced range
+                [-pi/2-pi/5,-pi/2+pi/5], # 7, reduced range
+                [-pi/2,pi/2], # 8
+                # back right
+                [-pi/4,pi/4], # 9 , reduced range
+                [pi/2-pi/5,pi/2+pi/5], # 10, reduced range
+                [-pi/2,pi/2], # 11
+            ], dtype=np.float32)
+        else: # quadruped task
+            self.joint_pos_limit = np.array([
+                # front left, TODO: CHANGE THIS RANGE
+                [-pi,pi], # 0
+                [-pi/2,pi/2], # 1
+                [-pi/2,pi/2], # 2
+                # front right
+                [-pi,pi], # 3
+                [-pi/2,pi/2], # 4
+                [-pi/2,pi/2], # 5
+                # back left
+                [-pi/2-pi/5, pi/2+pi/5], # 6
+                [-pi/2-pi/5, pi/2+pi/5], # 7
+                [-pi/2,pi/2], # 8
+                # back right
+                [-pi/4,pi/4], # 9
+                [-pi/2-pi/5, pi/2+pi/5], # 6
+                [-pi/2-pi/5, pi/2+pi/5], # 7
+            ], dtype=np.float32)
+    
     def step(self,action = None):
         if action is not None:
             # map action -> action*max_acton
@@ -238,6 +286,11 @@ class FlexipodEnv(gym.Env):
         _ = np.arctan2(joint_pos[1::2],joint_pos[::2],self.joint_pos,dtype=np.float32)
         # print(f"self.joint_pos ={self.joint_pos}")
         
+        # check if out of range
+        joint_pos_limit_check = self.joint_pos - np.clip(self.joint_pos,self.joint_pos_limit[:,0],self.joint_pos_limit[:,1])
+        joint_out_of_range_norm = np.linalg.norm(joint_pos_limit_check)
+        joint_limit_cost = max(0,1.0 - joint_out_of_range_norm*10)
+        joint_out_of_range = joint_out_of_range_norm>0.1
         
         # observation = np.stack([np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]])
         observation = np.stack([np.hstack(msg_i[2:-1])
@@ -257,7 +310,7 @@ class FlexipodEnv(gym.Env):
         # uph_cost = max(0,orientation_z)*min(com_z+0.56,1)
         ori = msg_rec_i[self.ID_orientation]
         
-        if self.humanoid_task:
+        if self._humanoid_task:
             orientation_z = ori[2] # z_z, local x vector projected to world z direction
             com_z_min = 0.36
             com_z_offset = 0.56
@@ -278,15 +331,20 @@ class FlexipodEnv(gym.Env):
         # print(msg_rec_i[self.ID_orientation])
         
         quad_ctrl_cost = max(0,1-0.1 * sum(np.square(actuation))) # quad control cost
-        reward =  uph_cost*quad_ctrl_cost*vel_cost
+        reward =  uph_cost*quad_ctrl_cost*vel_cost*joint_limit_cost
         
 #         reward = orientation_z
         # done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
-        done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
         
         t = msg_rec_i[self.ID_t]
         if self.info:
-            info = {'t':t,'vel_cost':vel_cost,'uph_cost':uph_cost,'quad_ctrl_cost':quad_ctrl_cost}
+            info = {'t':t,
+                    'vel_cost':vel_cost,
+                    'uph_cost':uph_cost,
+                    'quad_ctrl_cost':quad_ctrl_cost,
+                    'joint_limit_cost':joint_limit_cost
+                    }
         else:
             info = {'t':t}
         # if done:
