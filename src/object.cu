@@ -124,7 +124,7 @@ __device__  void CudaContactPlane::solveDist(
 		}
 		else { // dynamic friction
 			//pos -= fmin(dp_t_norm, -0.5 * disp * _FRICTION_K) * dp_t / dp_t_norm;
-            pos -= fmin(dp_t_norm, - disp * _FRICTION_K) * dp_t / dp_t_norm;
+            pos -= fmin(1.0, - disp * _FRICTION_K / dp_t_norm)  * dp_t;
 		}
 		pos -= disp * _normal; // move out of the ground
 
@@ -134,8 +134,8 @@ __device__  void CudaContactPlane::solveDist(
        double vn_old = vel.dot(_normal);
        if (vn < 0) {
 
-           
-           pos_prev -= (-vn + vn < -2 * 9.8 * dt ? 0 : fmin(-vn_old * 1.0, 0.0)) * dt * _normal;
+           double e = fabs(vn) < 2 * 9.8 * dt ? 0 : 1; // TODO gravity as variable
+           pos_prev -= (-vn - e* fmin(vn_old * 0.0, 0.0)) * dt * _normal;
        }
 
 		//double vn = vel.dot(_normal);

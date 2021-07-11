@@ -60,6 +60,7 @@ For external library that works with cpp but not with .cu, wrap host code with
 #include <list>
 #include <vector>
 #include <set>
+#include <numeric>      // std::accumulate
 
 #include <thread>
 #include <mutex>
@@ -286,6 +287,7 @@ struct SPRING {
 	double* damping = nullptr; // damping on the masses.
 	Vec2i* edge = nullptr;// (left,right) mass indices of the spring
 	bool* resetable = nullptr; // a flag indicating whether to reset every dynamic update
+	int* joint_id = nullptr; // pointer to joint spring id
 	double* lambda = nullptr; // lagrange multiplier 
 	int num = 0;
 	inline int size() { return num; }
@@ -306,6 +308,7 @@ struct SPRING {
 		allocateMemory(on_host, num, damping);
 		allocateMemory(on_host, num, edge);
 		allocateMemory(on_host, num, resetable);
+		allocateMemory(on_host, num, joint_id);
 		allocateMemory(on_host, num, lambda);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
@@ -316,6 +319,7 @@ struct SPRING {
 		cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(joint_id, other.joint_id, num * sizeof(int), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(lambda, other.lambda, num * sizeof(double), cudaMemcpyDefault, stream);
 		gpuErrchk(cudaPeekAtLastError());
 		//this->num = other.num;
@@ -356,6 +360,7 @@ struct JOINT {
 	double* theta;// the angular increment per joint update
 	double* pos; // joint position [rad] (-pi,pi]
 	double* pos_desired; // desired joint position [rad] (-pi,pi]
+	double* vel_desired; // desired joint velocity [rad/s]
 	int* left_coord; // the index of left coordintate (oxyz) start for all joints (flat view)
 	int* right_coord;// the index of right coordintate (oxyz) start for all joints (flat view)
 
@@ -394,6 +399,7 @@ struct JOINT {
 		allocateMemory(on_host, num, theta);
 		allocateMemory(on_host, num, pos);
 		allocateMemory(on_host, num, pos_desired);
+		allocateMemory(on_host, num, vel_desired);
 		allocateMemory(on_host, num, left_coord);
 		allocateMemory(on_host, num, right_coord);
 		// joint vertices
@@ -416,6 +422,7 @@ struct JOINT {
 		cudaMemcpyAsync(theta, other.theta, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos_desired, other.pos_desired, num * sizeof(double), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(vel_desired, other.vel_desired, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(left_coord, other.left_coord, num * sizeof(int), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(right_coord, other.right_coord, num * sizeof(int), cudaMemcpyDefault, stream);
 		// joint vertices
@@ -456,8 +463,10 @@ struct JOINT {
 
 				Vec3d rotation_axis = (mass_pos[anchor[jid].y] - 
 					mass_pos[anchor[jid].x]).normalize();
-				Vec3d y_left = mass_pos[left_coord[jid] + 2] - mass_pos[left_coord[jid]];//oxyz
-				Vec3d y_right = mass_pos[right_coord[jid] + 2] - mass_pos[right_coord[jid]];//oxyz
+				// 0  1  2  3  4  5
+				// x  y  z -x -y -z
+				Vec3d y_left = mass_pos[left_coord[jid] + 1] - mass_pos[left_coord[jid]+4];//oxyz
+				Vec3d y_right = mass_pos[right_coord[jid] + 1] - mass_pos[right_coord[jid]+4];//oxyz
 				pos[jid] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 				// pos_desired[jid] = pos[jid];
 				/*----------- joint vertices ------------------*/
@@ -604,14 +613,12 @@ struct JointControl {
 		memset(vel_error, 0, nbytes);//vel_error[i] = 0.;
 		memset(pos_error, 0, nbytes);//pos_error[i] = 0.;
 		for (int i = 0; i < num; i++) {//TODO change this...
-
 			Vec2i anchor_edge = joint.anchor[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
-			//Vec3d x_left = mass.pos[joint.anchors.left_coord[i] + 1] - mass.pos[joint.anchors.left_coord[i]];//oxyz
-			//Vec3d x_right = mass.pos[joint.anchors.right_coord[i] + 1] - mass.pos[joint.anchors.right_coord[i]];//oxyz
-			//pos[i] = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
-			Vec3d y_left = mass.pos[joint.left_coord[i] + 2] - mass.pos[joint.left_coord[i]];//oxyz
-			Vec3d y_right = mass.pos[joint.right_coord[i] + 2] - mass.pos[joint.right_coord[i]];//oxyz
+			// 0  1  2  3  4  5
+			// x  y  z -x -y -z
+			Vec3d y_left = mass.pos[joint.left_coord[i] + 1] - mass.pos[joint.left_coord[i]+4];//oxyz
+			Vec3d y_right = mass.pos[joint.right_coord[i] + 1] - mass.pos[joint.right_coord[i]+4];//oxyz
 			pos[i] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 			pos_desired[i] = pos[i];//keep it still
 		}
@@ -624,12 +631,10 @@ struct JointControl {
 		{
 			Vec2i anchor_edge = joint.anchor[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
-			//Vec3d x_left = mass.pos[joint.left_coord[i] + 1] - mass.pos[joint.left_coord[i]];//oxyz
-			//Vec3d x_right = mass.pos[joint.right_coord[i] + 1] - mass.pos[joint.right_coord[i]];//oxyz
-			//double angle = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
-			//
-			Vec3d y_left = mass.pos[joint.left_coord[i] + 2] - mass.pos[joint.left_coord[i]];//oxyz
-			Vec3d y_right = mass.pos[joint.right_coord[i] + 2] - mass.pos[joint.right_coord[i]];//oxyz
+			// 0  1  2  3  4  5
+			// x  y  z -x -y -z
+			Vec3d y_left = mass.pos[joint.left_coord[i] + 1] - mass.pos[joint.left_coord[i]+4];//oxyz
+			Vec3d y_right = mass.pos[joint.right_coord[i] + 1] - mass.pos[joint.right_coord[i]+4];//oxyz
 			// angle is within (-pi,pi]
 			double angle = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 			
@@ -642,9 +647,13 @@ struct JointControl {
 			pos[i] = angle;
 			
 			// update cmd with position PD control: clamp to (-max_vel,max_vel)
+			double dv;
+			double vel_desired_proxy;
 			switch (mode)//switch controller mode
 			{
 			case JointControlMode::vel:
+				dv = max_acc * ndt;
+				//clampInplace(vel_desired[i], vel[i] - dv, vel[i] + dv);
 				clampInplace(vel_desired[i], -max_vel, max_vel);
 				vel_error[i] = vel_desired[i] - vel[i];
 
@@ -653,7 +662,17 @@ struct JointControl {
 				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
-				cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
+				//cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
+				//clampInplace(cmd[i], vel[i] -dv, vel[i] + dv);
+
+				//joint.vel_desired[i] = cmd[i];
+				//TODO FIX THIS
+				vel_desired_proxy = vel_desired[i];
+				clampInplace(vel_desired_proxy, joint.vel_desired[i] -dv, joint.vel_desired[i] + dv);
+				joint.vel_desired[i] = vel_desired_proxy;
+				cmd[i] = vel_desired_proxy;
+				
+				//joint.vel_desired[i] = joint.vel_desired[i] * 0.9 + 0.1*vel_desired[i];
 
 				vel_desired[i] = 0.98 * vel_desired[i];
 				break;
@@ -662,8 +681,8 @@ struct JointControl {
 				pos_error[i] = pos_desired[i] - pos[i];
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
-				double vel_desired_proxy = pos_error[i] / ndt; // reach the destination at 1 control step
-				double dv = max_acc * ndt;
+				vel_desired_proxy = pos_error[i] / ndt; // reach the destination at 1 control step
+				dv = max_acc * ndt;
 				clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
 				clampInplace(vel_desired_proxy, -max_vel, max_vel);
 				// calcuate settling time based ob velocity change
@@ -726,34 +745,35 @@ struct RigidBody {
 	/// <param name="id_start"> start index of the coordinate frame</param>
 	/// <param name="w"> initial angular velocity in body frame</param>
 	void init(const MASS& mass, const int& id_start,Vec3d w = Vec3d(0,0,0)) {
-		pos = mass.pos[id_start];
-		vel = mass.vel[id_start];
-		acc = mass.acc[id_start];
-		Vec3d ux = (mass.pos[id_start + 1] - pos).normalize();
-		Vec3d uy = mass.pos[id_start + 2] - pos;
+		// 0  1  2  3  4  5
+		// x  y  z -x -y -z
+		// com
+		pos = std::accumulate(mass.pos + id_start, mass.pos + id_start + 6, Vec3d(0.,0.,0.)) / 6.;
+		vel = std::accumulate(mass.vel + id_start, mass.vel + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
+		acc = std::accumulate(mass.acc + id_start, mass.acc + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
+		Vec3d ux = (mass.pos[id_start] - mass.pos[id_start+3]).normalize();
+		Vec3d uy = (mass.pos[id_start+1] - mass.pos[id_start + 4]);
 		uy = (uy - uy.dot(ux) * ux).normalize();
 		Vec3d uz = cross(ux, uy);
 		rot = Mat3d(ux, uy, uz, false);
 		this->ang_vel = w;
 	}
 	void update(const MASS& mass, const int& id_start,const double& dt) {
-		
-		//vel = mass.vel[id_start]
-		//acc = mass.acc[id_start];
-		//pos = mass.pos[id_start];
 		// instead of directly estimating the acc,
 		// estimate from vel backward difference
 
-		Vec3d pos_new = mass.pos[id_start];
+		Vec3d pos_new = std::accumulate(mass.pos + id_start, mass.pos + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
+
+		//Vec3d pos_new = mass.pos[id_start];
 		Vec3d vel_new = (pos_new - pos) / dt;
-		//Vec3d vel_new = mass.vel[id_start];
 		acc = (vel_new - vel) / dt; 
 		vel = vel_new;
 		//pos = mass.pos[id_start];
 		pos = pos_new;
-		
-		Vec3d ux = (mass.pos[id_start + 1] - pos).normalize();
-		Vec3d uy = mass.pos[id_start + 2] - pos;
+		// 0  1  2  3  4  5
+		// x  y  z -x -y -z
+		Vec3d ux = (mass.pos[id_start] - mass.pos[id_start + 3]).normalize();
+		Vec3d uy = (mass.pos[id_start + 1] - mass.pos[id_start + 4]);
 		uy = (uy - uy.dot(ux) * ux).normalize();
 		Vec3d uz = cross(ux, uy).normalize();
 		Mat3d rot_new = Mat3d(ux, uy, uz, false);
@@ -834,6 +854,7 @@ public:
 			joint_pos[i * 2 +1] = sinf(joint_control.pos[i]);
 			joint_vel[i] = joint_control.vel[i];
 			joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize
+		
 		}
 		body.acc.fillArray(com_acc);
 		body.vel.fillArray(com_vel);
@@ -904,7 +925,6 @@ public:
 
 	// cuda and udp update parameters (should be constant during the simualtion)
 	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
-	int NUM_UPDATE_PER_ROTATION = 2; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 #ifdef UDP
 	int udp_num_obs = 5;// send udp_num_obs at once (number of observations)
 	int udp_step = 4; // udp observations is stepped by this factor
@@ -957,7 +977,7 @@ public:
 	bool SHOULD_RUN = true;
 	bool SHOULD_END = false;
 
-	bool USE_PBD = false;// flag to use position based dynamics
+	bool USE_PBD = true;// flag to use position based dynamics
 
 	std::mutex mutex_running;
 	std::condition_variable cv_running;

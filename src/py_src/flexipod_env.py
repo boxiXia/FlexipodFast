@@ -228,11 +228,11 @@ class FlexipodEnv(gym.Env):
                 [-pi/2,pi/2], # 5
                 # back left
                 [-pi/4,pi/4], # 6, reduced range
-                [-pi/2-pi/5,-pi/2+pi/5], # 7, reduced range
+                [-pi/2-pi/6,-pi/2+pi/4], # 7, reduced range
                 [-pi/2,pi/2], # 8
                 # back right
                 [-pi/4,pi/4], # 9 , reduced range
-                [pi/2-pi/5,pi/2+pi/5], # 10, reduced range
+                [pi/2-pi/4,pi/2+pi/6], # 10, reduced range
                 [-pi/2,pi/2], # 11
             ], dtype=np.float32)
         else: # quadruped task
@@ -321,8 +321,8 @@ class FlexipodEnv(gym.Env):
             com_z_offset = 0.8
             orientation_z_min = 0.56
         
-        # uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
-        uph_cost = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
+        uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
+        # uph_cost = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
 
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
@@ -334,9 +334,9 @@ class FlexipodEnv(gym.Env):
         reward =  uph_cost*quad_ctrl_cost*vel_cost*joint_limit_cost
         
 #         reward = orientation_z
-        # done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
-        done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
-        
+        done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
+        # done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
+        # done = True if (self.episode_steps>=self._max_episode_steps) else False
         t = msg_rec_i[self.ID_t]
         if self.info:
             info = {'t':t,

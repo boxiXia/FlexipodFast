@@ -13,10 +13,23 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 __global__ void pbdSolveDist(
 	const MASS mass,
 	const SPRING spring,
+	const JOINT joint,
 	const double dt
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < spring.num) {
+		// joint spring
+		if (i < joint.num) {
+			joint.pos[i] += joint.vel_desired[i] * dt;
+		}
+		if (spring.resetable[i]) {
+			int jid = spring.joint_id[i];
+			Vec3d c = joint.edge_c[jid]; // joint edge constant
+			double joint_pos = joint.pos[joint.edge_joint_id[jid]];
+			spring.rest[i] = sqrt(c.x + c.y * cos(joint_pos + c.z));
+			//spring.rest[i] = 0.99*spring.rest[i]+0.01*sqrt(c.x + c.y * cos(joint_pos + c.z));
+		}
+
 		Vec2i e = spring.edge[i];
 		Vec3d n = mass.pos[e.y] - mass.pos[e.x];// distance constraint direction
 		double w1 = mass.inv_m[e.x];
@@ -34,14 +47,14 @@ __global__ void pbdSolveDist(
 		//mass.pos[e.y].atomicVecAdd(p * w2);
 
 		// velocity damping
-		Vec3d dpn = n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt*dt, 1.0)/w * n;
+		Vec3d dpn = n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt * dt, 1.0) / w * n;
 		mass.pos[e.x].atomicVecAdd((-p + dpn) * w1);
 		mass.pos[e.y].atomicVecAdd(( p - dpn) * w2);
 
 //#ifdef ROTATION
 //		if (spring.resetable[i]) {
 //			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
-//			spring.rest[i] = spring.rest[i] * 0.9 + 0.1 * d;//reset the spring rest length if this spring is restable
+//			spring.rest[i] = spring.rest[i] * 0.1 + 0.9 * d;//reset the spring rest length if this spring is restable
 //		}
 //#endif // ROTATION
 	}
@@ -100,8 +113,6 @@ __global__ void pbdSolveContact(
 }
 
 
-
-
 __global__ void updateSpring(
 	const MASS mass,
 	const SPRING spring
@@ -111,7 +122,6 @@ __global__ void updateSpring(
 		Vec2i e = spring.edge[i];
 		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
 		double length = s_vec.norm(); // current spring length
-
 		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
 		Vec3d force = 1.0 / spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
@@ -120,8 +130,8 @@ __global__ void updateSpring(
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
 		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
 	}
-
 }
+
 
 __global__ void updateSpringAndReset(
 	const MASS mass,
@@ -147,7 +157,6 @@ __global__ void updateSpringAndReset(
 		}
 #endif // ROTATION
 	}
-
 }
 
 
@@ -194,7 +203,7 @@ __global__ void updateMass(
 #ifdef ROTATION
 
 // roate the mass of the joint directly
-__global__ void updateJoint(Vec3d* __restrict__ mass_pos,bool* __restrict__ mass_fixed, const JOINT joint) {
+__global__ void updateJointMass(Vec3d* __restrict__ mass_pos,bool* __restrict__ mass_fixed, const JOINT joint) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.vert_num) {
 		int vert_id = joint.vert_id[i];
@@ -215,29 +224,35 @@ __global__ void updateJointPos(Vec3d* __restrict__ mass_pos, double* __restrict_
 	if (i < joint.num) {
 		Vec2i anchor_edge = joint.anchor[i];
 		Vec3d rotation_axis = (mass_pos[anchor_edge.y] - mass_pos[anchor_edge.x]).normalize();
-		//Vec3d x_left = mass.pos[joint.anchors.left_coord[i] + 1] - mass.pos[joint.anchors.left_coord[i]];//oxyz
-		//Vec3d x_right = mass.pos[joint.anchors.right_coord[i] + 1] - mass.pos[joint.anchors.right_coord[i]];//oxyz
-		//pos[i] = signedAngleBetween(x_left, x_right, rotation_axis); //joint angle in [-pi,pi]
-		Vec3d y_left = mass_pos[joint.left_coord[i] + 2] - mass_pos[joint.left_coord[i]];//oxyz
-		Vec3d y_right = mass_pos[joint.right_coord[i] + 2] - mass_pos[joint.right_coord[i]];//oxyz
+		// 0  1  2  3  4  5
+		// x  y  z -x -y -z
+		Vec3d y_left = mass_pos[joint.left_coord[i] + 1] - mass_pos[joint.left_coord[i]+4];//oxyz
+		Vec3d y_right = mass_pos[joint.right_coord[i] + 1] - mass_pos[joint.right_coord[i]+4];//oxyz
 		joint.pos[i] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 	}
 }
 
 
-__global__ void updateJointSpring(Vec3d* __restrict__ mass_pos, double* __restrict__ spring_rest, const JOINT joint) {
+__global__ void updateJointSpring(
+	Vec3d* __restrict__ mass_pos, 
+	double* __restrict__ spring_rest, 
+	const JOINT joint,
+	const double dt
+) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < joint.num) {
-		double delta = joint.pos_desired[i] - joint.pos[i];
-		clampPeroidicInplace(delta, -M_PI, M_PI);
-		joint.pos[i] += 0.02 * delta;
+		//double delta = joint.pos_desired[i] - joint.pos[i];
+		//clampPeroidicInplace(delta, -M_PI, M_PI);
+		//joint.pos[i] += 0.01 * delta;
+		//joint.pos[i] += joint.theta[i];
+		joint.pos[i] += joint.vel_desired[i]*dt;
 	}
 	if (i < joint.edge_num) {
 		Vec3d c = joint.edge_c[i]; // joint edge constant
 		int edge_id = joint.edge_id[i];
 		double joint_pos = joint.pos[joint.edge_joint_id[i]];
-		//spring_rest[edge_id] = sqrt(c.x + c.y * cos(joint_pos + c.z));
-		spring_rest[edge_id] = 0.99*spring_rest[edge_id]+0.01*sqrt(c.x + c.y * cos(joint_pos + c.z));
+		spring_rest[edge_id] = sqrt(c.x + c.y * cos(joint_pos + c.z));
+		//spring_rest[edge_id] = 0.99*spring_rest[edge_id]+0.01*sqrt(c.x + c.y * cos(joint_pos + c.z));
 	}
 }
 
@@ -451,6 +466,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 	cudaDeviceSynchronize();//sync before while loop
 	auto start = std::chrono::steady_clock::now();
 	int k_rot = 0; // rotation counter
+	int NUM_UPDATE_PER_ROTATION = 2; // NUM_QUEUED_KERNELS should be divisable by NUM_UPDATE_PER_ROTATION
 
 #ifdef DEBUG_ENERGY
 	energy_start = energy(); // compute the total energy of the system at T=0
@@ -548,46 +564,44 @@ void Simulation::updatePhysics() { // repeatedly start next
 
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
 		// update joint speed
-
 		for (int i = 0; i < joint.size(); i++) { // compute joint angles and angular velocity
-			joint.theta[i] = NUM_UPDATE_PER_ROTATION * joint_control.cmd[i] * dt;// update joint speed
+			joint.theta[i] = joint_control.cmd[i] * NUM_UPDATE_PER_ROTATION* dt;// update joint speed
 			joint.pos_desired[i] = joint_control.pos_desired[i];
 		}
-		d_joint.copyThetaFrom(joint, stream[CUDA_DYNAMICS_STREAM]);
-		//d_joint.copyPosFrom(joint, stream[CUDA_DYNAMICS_STREAM]);
+		cudaMemcpyAsync(d_joint.theta, joint.theta, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 		cudaMemcpyAsync(d_joint.pos_desired, joint.pos_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+		cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 
 
 		// invoke cuda kernel for dynamics update
 
 		if (USE_PBD) {
 			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-				updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
-				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
-				//updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_mass.fixed, d_joint);
+				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring,d_joint, dt);
+				//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_spring.rest, d_joint, dt);
+				//updateJointMass << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_mass.fixed, d_joint);
 				pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 				//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 			}
 		}
-		else{
+		else {
 			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
 #ifdef ROTATION
 				if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
-					k_rot = 0; // reset counter
-					//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_spring.rest, d_joint);
-					updateJoint << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_mass.fixed, d_joint);
+					updateJointMass << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_mass.fixed, d_joint);
 					updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
 				}
 				else {
 					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
 				}
+				k_rot++;
 #else
 				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
 #endif // ROTATION
 				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
 				//gpuErrchk(cudaPeekAtLastError());
-				k_rot++;
-				}
+
+			}
 		}
 
 
@@ -854,7 +868,7 @@ void Simulation::updateCudaParameters() {
 	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &mass_block_size, updateMass, 0, 0);
 	mass_grid_size = computeGridSize(mass_block_size, mass.size());
 
-	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &joint_block_size, updateJoint, 0, 0);
+	//cudaOccupancyMaxPotentialBlockSize(&minGridSize, &joint_block_size, updateJointMass, 0, 0);
 	joint_grid_size = computeGridSize(joint_block_size, joint.vert_num);
 
 	// joint edge
@@ -1094,14 +1108,12 @@ void Simulation::updateGraphics() {
 				joint_control.reset(mass, joint);
 			}
 
-			// copy only the position
-			//mass.CopyPosFrom(d_mass, stream[CUDA_MEMORY_STREAM]);
-			//mass.CopyPosFrom(d_mass, id_oxyz_start,1,stream[CUDA_MEMORY_STREAM]);
-			Vec3d com_pos = mass.pos[id_oxyz_start];// center of mass position (anchored body center)
+			Vec3d com_pos = body.pos;// center of mass position (anchored body center)
 
 			// Interpolate half way from original view to the new.
 			float interp_factor = T < 2.0 ? 1 : 0.01; // 0.0 == original, 1.0 == new
 
+			
 			glm::vec3 target_pos = glm::vec3(com_pos.x, com_pos.y, com_pos.z);
 
 			camera.follow(target_pos, interp_factor);

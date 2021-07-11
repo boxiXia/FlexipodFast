@@ -252,7 +252,7 @@ void Simulation::runImgui() {
 			ImGui::Text("com acc %+6.2f %+6.2f %+6.2f", body.acc.x, body.acc.y, body.acc.z);
 			ImGui::Text("body angular velocity %+6.2f %+6.2f %+6.2f", body.ang_vel.x, body.ang_vel.y, body.ang_vel.z);
 			auto& rot = body.rot;
-			ImGui::Text("body rotation: \n  %+6.2f %+6.2f %+6.2f\n  %+6.2f %+6.2f %+6.2f\n  %+6.2f %+6.2f %+6.2f",
+			ImGui::Text("body rotation: \n  %+7.3f %+7.3f %+7.3f\n  %+7.3f %+7.3f %+7.3f\n  %+7.3f %+7.3f %+7.3f",
 				rot.m00, rot.m01, rot.m02,
 				rot.m10, rot.m11, rot.m12,
 				rot.m20, rot.m21, rot.m22);

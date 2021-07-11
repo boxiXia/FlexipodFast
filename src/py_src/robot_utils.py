@@ -1221,7 +1221,8 @@ def flattenNamedArrays(iterable, dim: int):
 
 ##########################################################################
 # number of points in a coordinate (o,x,y,z,-x,-y,-z)
-NUM_POINTS_PER_COORDINATE = 7
+# NUM_POINTS_PER_COORDINATE = 7
+NUM_POINTS_PER_COORDINATE = 6
 
 
 def getCoordinateOXYZ(transform=None, radius=1):
@@ -1237,7 +1238,8 @@ def getCoordinateOXYZ(transform=None, radius=1):
     nx = o - ox  # negative x
     ny = o - oy  # negative y
     nz = o - oz  # netative z
-    oxyz = np.vstack([o, x, y, z, nx, ny, nz])
+    # oxyz = np.vstack([o, x, y, z, nx, ny, nz])
+    oxyz = np.vstack([x, y, z, nx, ny, nz])
     return oxyz
 
 

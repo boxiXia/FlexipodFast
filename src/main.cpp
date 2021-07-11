@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
 	const double m = 0.09* radius_poisson;// mass per vertex
 	const double inv_m = 1. / m;
 
-	const double spring_compliance = 1/(m * 6.5e6); //spring constant for silicone leg [m/N]
+	const double spring_compliance = 1 / (m * 6e6); //spring constant for silicone leg [m/N]
 	const double spring_damping = m * 6.5e2; // damping for spring [N*s/m]
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
 	constexpr double scale_rot_spring = 1.0; // stiffness scale for rotation spring
 
 	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
-	constexpr double scale_joint_compliance = 1.5; // scaling factor for the joint spring constant
+	constexpr double scale_joint_compliance = 3; // scaling factor for the joint spring constant
 	constexpr double scale_joint_damping = 3; // scaling factor for the joint spring damping
 
 	const double inv_m_joint = inv_m / scale_joint_m; // inverse joint mass
@@ -222,18 +222,6 @@ int main(int argc, char* argv[])
 		//spring.damping[i] = 0;
 	}
 
-	sim.id_restable_spring_start = bot.id_edges.at("fri_spring").front(); // resetable spring (frictional spring)
-	sim.id_resetable_spring_end = bot.id_edges.at("fri_spring").back();
-	for (int i = sim.id_restable_spring_start; i < sim.id_resetable_spring_end; i++)
-	{
-		spring.compliance[i] = spring_compliance_restable;// resetable spring, reset the rest length per dynamic update
-		spring.damping[i] = spring_damping_restable;
-		//spring.compliance[i] = 0;// resetable spring, reset the rest length per dynamic update
-		//spring.damping[i] = 0;
-
-		spring.resetable[i] = true;
-	}
-
 
 	sim.id_oxyz_start = bot.id_vertices.at("part_coord").front();
 	sim.id_oxyz_end = bot.id_vertices.at("joint_coord").back();
@@ -257,6 +245,16 @@ int main(int argc, char* argv[])
 
 	sim.joint.init(bot, true);
 	sim.d_joint.init(bot, false);
+
+	auto& joint = sim.joint; // set spring joint_id
+	for (int i = 0; i < joint.edge_num; i++) {
+		int jid = joint.edge_id[i];
+		spring.compliance[jid] = spring_compliance_restable;// resetable spring, reset the rest length per dynamic update
+		spring.damping[jid] = spring_damping_restable;
+		spring.resetable[jid] = true;
+		spring.joint_id[jid] = i;
+	}
+
 
 	// print out mass statistics
 	double total_mass = 0;
@@ -288,7 +286,7 @@ int main(int argc, char* argv[])
 	// set max speed for each joint
 	double max_rpm = 300;//maximun revolution per minute
 	sim.joint_control.max_vel = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
-	double settling_time = 1;// reaches max_rpm within this time
+	double settling_time = 0.5;// reaches max_rpm within this time
 	sim.joint_control.max_acc = sim.joint_control.max_vel / settling_time;
 
 #ifdef GRAPHICS
@@ -302,7 +300,7 @@ int main(int argc, char* argv[])
 
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.7, 0.7);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 	//sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.05f,0.1f);
