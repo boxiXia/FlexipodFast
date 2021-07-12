@@ -150,7 +150,7 @@ class Workspace(object):
                         self.replay_buffer.num_recent = int(max(self.step*eta**(k*1000.0/num_updates),min_sample_size))
                         # print(self.replay_buffer.num_recent)
                         self.agent.update(self.replay_buffer,self.logger, self.step)
-                    print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
+                    # print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
 
                 self.logger.log('train/episode_reward',
                                 episode_reward, self.step)

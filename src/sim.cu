@@ -102,12 +102,18 @@ __global__ void pbdSolveContact(
 			//}
 			//mass.force_constraint[i] = force - _force;
 		}
-		mass.vel[i] = (mass.pos[i] - mass.pos_prev[i]) / dt;
+
+		Vec3d vel_prev = mass.vel[i]; // for computing acceleration
+
+		Vec3d vel = (mass.pos[i] - mass.pos_prev[i]) / dt;
 
 		// moved from the start of the loop
+		vel += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
+
 		mass.pos_prev[i] = mass.pos[i];
-		mass.vel[i] += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
-		mass.pos[i] += dt * mass.vel[i];
+		mass.pos[i] += dt * vel;
+		mass.vel[i] = vel;
+		mass.acc[i] = (vel - vel_prev) / dt; // for computing acceleration
 
 	}
 }

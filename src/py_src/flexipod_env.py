@@ -142,6 +142,7 @@ class FlexipodEnv(gym.Env):
         self.ID_joint_pos = self.ID['joint_pos']
         self.ID_com_pos = self.ID['com_pos']
         self.ID_com_vel = self.ID['com_vel']
+        self.ID_com_acc = self.ID['com_acc']
         
         OBS_NAME = ("joint_pos","joint_vel","actuation","orientation",
                     "ang_vel","com_acc","com_vel","spring_strain")#,"com_pos")
@@ -149,7 +150,8 @@ class FlexipodEnv(gym.Env):
         
         # action min-max
         # max_action = 0.025 # [rad], delta position control
-        max_action = 5 # [rad/s], velocity control
+        # max_action = 5 # [rad/s], velocity control
+        max_action = 3 # [rad/s], velocity control
 
         # raw min/max action
         self.raw_min_act = - max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
@@ -276,40 +278,45 @@ class FlexipodEnv(gym.Env):
         """processed received message to state action pair"""
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
         # observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
-        
+
         msg_rec_i = msg_rec[0]
-        
+
         actuation = msg_rec_i[self.ID_actuation] # actuation (size=dof) of the latest observation
         com_z = msg_rec_i[self.ID_com_pos][2]
         # joint position (sin,cos->rad)
         joint_pos = msg_rec_i[self.ID_joint_pos]
         _ = np.arctan2(joint_pos[1::2],joint_pos[::2],self.joint_pos,dtype=np.float32)
         # print(f"self.joint_pos ={self.joint_pos}")
-        
+
+        com_acc = np.mean([m[self.ID_com_acc] for m in msg_rec],axis=0)
+
+        com_acc_norm = np.linalg.norm(com_acc)
+        r_acc = np.clip(1.3-0.1*com_acc_norm,0,1) # acceleration reward
+
         # check if out of range
         joint_pos_limit_check = self.joint_pos - np.clip(self.joint_pos,self.joint_pos_limit[:,0],self.joint_pos_limit[:,1])
         joint_out_of_range_norm = np.linalg.norm(joint_pos_limit_check)
-        joint_limit_cost = max(0,1.0 - joint_out_of_range_norm*10)
+        r_joint_limit = max(0,1.0 - joint_out_of_range_norm*10)
         joint_out_of_range = joint_out_of_range_norm>0.1
-        
+
         # observation = np.stack([np.hstack(msg_i[2:-1]+[msg_i[self.ID_com_pos][2]])
         observation = np.stack([np.hstack(msg_i[2:-1])
                 for msg_i in msg_rec]).astype(np.float32) 
-        
+
         if self.flatten_obs:
             observation = observation.ravel()
         if self.normalize: # normalize the observation
             observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
-        
+
         # x velocity
         com_vel_x = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
-        # vel_cost = 0.3*np.clip(com_vel_xy,0,1)+0.7
-        vel_cost = 0.5*np.clip(com_vel_x,-0.5,1)+0.6
-        
-#         print(orientation_z,com_z)
-        # uph_cost = max(0,orientation_z)*min(com_z+0.56,1)
+        # r_vel = 0.3*np.clip(com_vel_xy,0,1)+0.7 # velocity reward
+        r_vel = 0.5*np.clip(com_vel_x,-0.5,1)+0.6 # velocity reward
+
+    #         print(orientation_z,com_z)
+        # r_orientation = max(0,orientation_z)*min(com_z+0.56,1)
         ori = msg_rec_i[self.ID_orientation]
-        
+
         if self._humanoid_task:
             orientation_z = ori[2] # z_z, local x vector projected to world z direction
             com_z_min = 0.36
@@ -320,35 +327,36 @@ class FlexipodEnv(gym.Env):
             com_z_min = 0.1
             com_z_offset = 0.8
             orientation_z_min = 0.56
-        
-        uph_cost = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
-        # uph_cost = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
+
+        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
+        # r_orientation = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
 
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
         # plt.plot(x,y)
         # print(com_z+0.56)
         # print(msg_rec_i[self.ID_orientation])
-        
-        quad_ctrl_cost = max(0,1-0.1 * sum(np.square(actuation))) # quad control cost
-        reward =  uph_cost*quad_ctrl_cost*vel_cost*joint_limit_cost
-        
-#         reward = orientation_z
+
+        r_quad_ctrl = max(0,1-0.1 * sum(np.square(actuation))) # quad control cost
+        reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
+
+    #         reward = orientation_z
         done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
         # done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
         # done = True if (self.episode_steps>=self._max_episode_steps) else False
         t = msg_rec_i[self.ID_t]
         if self.info:
             info = {'t':t,
-                    'vel_cost':vel_cost,
-                    'uph_cost':uph_cost,
-                    'quad_ctrl_cost':quad_ctrl_cost,
-                    'joint_limit_cost':joint_limit_cost
+                    'r_vel':r_vel,
+                    'r_orientation':r_orientation,
+                    'r_quad_ctrl':r_quad_ctrl,
+                    'r_joint_limit':r_joint_limit,
+                    'r_acc':r_acc
                     }
         else:
             info = {'t':t}
         # if done:
-#             print(orientation_z,com_z)
+    #             print(orientation_z,com_z)
         # _ = [m[self.ID['t']] for m in msg_rec]
         # print(_[0]-_[-1])
         return observation,reward,done,info # TODO, change shape
@@ -381,7 +389,6 @@ class FlexipodEnv(gym.Env):
     def receive(self,max_attempts:int = 10,verbose=True):
         try:
             sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) # UDP
-            # sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1) #immediate reuse of IP address
             sock.settimeout(self.TIMEOUT)
             sock.bind(self.local_address) #Bind the socket to the port
             for k in range(max_attempts):# try max_attempts times
@@ -389,8 +396,7 @@ class FlexipodEnv(gym.Env):
                     data = sock.recv(self.BUFFER_LEN)
                     sock.shutdown(socket.SHUT_RDWR) # closing connection
                     sock.close()
-                    msg_rec = msgpack.unpackb(data)
-                    data_unpacked = msgpack.unpackb(data)
+                    data_unpacked = msgpack.unpackb(data,use_list=False)
                     return data_unpacked
                 except Exception as e:
                     if verbose:
@@ -402,7 +408,7 @@ class FlexipodEnv(gym.Env):
             sock.shutdown(socket.SHUT_RDWR)
             sock.close()
             raise KeyboardInterrupt
-    
+
     @staticmethod   
     def item_to_String(key,value):
         try:

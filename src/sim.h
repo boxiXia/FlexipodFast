@@ -563,7 +563,7 @@ struct JointControl {
 
 	double max_vel; // [rad/s] maximum joint speed
 	double max_acc; // [rad/s^2] maximum joint acceleration
-	double k_vel = 0.5; // coefficient for speed control
+	double k_vel = 1.0; // coefficient for speed control
 	double k_pos = 0.1; // coefficient for position control
 
 	int num = 0;

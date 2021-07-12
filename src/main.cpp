@@ -286,7 +286,7 @@ int main(int argc, char* argv[])
 	// set max speed for each joint
 	double max_rpm = 300;//maximun revolution per minute
 	sim.joint_control.max_vel = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
-	double settling_time = 0.5;// reaches max_rpm within this time
+	double settling_time = 0.8;// reaches max_rpm within this time
 	sim.joint_control.max_acc = sim.joint_control.max_vel / settling_time;
 
 #ifdef GRAPHICS

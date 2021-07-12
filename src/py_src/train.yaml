@@ -26,7 +26,7 @@ update_frequency: 16 #num of update is devided by this number
 train: True
 # train: False
 
-num_seed_steps: 20000
+num_seed_steps: 40000
 
 eval_frequency: 10000
 num_eval_episodes: 1
