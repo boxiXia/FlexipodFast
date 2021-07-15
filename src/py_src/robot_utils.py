@@ -813,7 +813,7 @@ class VolumeMesh(dict):
             mid_points = getMidpoints(vertices, edges)
             is_inside = mesh.ray.contains_points(mid_points)
             edges = edges[is_inside]
-            # combine tetra lines and lines from nearest neighbor search
+            # merge tetra lines and lines from nearest neighbor search
             edges, _ = getUniqueEdges(np.vstack((edges_tetra, edges)))
 
         edge_lengths = np.linalg.norm(
@@ -928,12 +928,15 @@ class VolumeMesh(dict):
         return self
 
     def combine(
-            self, other,
+            self, vertices:np.ndarray, lines:np.ndarray=None, tri_mesh:trimesh.Trimesh=None,
             min_radius: float = 0, max_radius: float = -1., max_nn: int = 1,
             keep_vertices: bool = False, keep_triangles: bool = True):
         """
         combine volumeMesh with other VolumeMesh
         Input:
+            vertices: (np.array) [nx3] xyz position of the new vertices to be added
+            lines: (np.array) [nx2] edges of the new vertices
+            tri_mesh: (trimesh.Trimesh) triangle mesh of the added volume (may overlap with original)
             other: (VolumeMesh) other VolumeMesh
             min_radius: (float) minimum radius for line generation, min_radius>0
             max_radius: (float)  maximum radius for line generation,max_radius>min_radius
@@ -942,16 +945,15 @@ class VolumeMesh(dict):
             keep_triangels: (bool): remove overlapping triangles if False and keep_vertices==False
         """
 
-        new_vertices = other.vertices
-        if len(new_vertices) == 0:
-            print("combine:no vertices added")
+        if len(vertices) == 0:
+            print("combine():no vertices added")
             return self
-        if ~keep_vertices:  # remove overlapping vertices
-            is_inside = other.triMesh().ray.contains_points(self.vertices)
+        if (~keep_vertices) and (tri_mesh is not None):  # remove overlapping vertices
+            is_inside = tri_mesh.ray.contains_points(self.vertices)
             self = self.removeVertices(ids=np.flatnonzero(is_inside),
                                        keep_triangles=keep_triangles)
         self = self.appendVertices(
-            new_vertices,other.lines, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+            vertices,lines, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
         return self
 ####################################################################################
 
@@ -1378,6 +1380,7 @@ class RobotDescription(nx.OrderedDiGraph):
         add the necessary vertices and lines for the joints,
         should only run once
         """
+        radius_poisson = opt["radius_poisson"]
         max_nn = opt["max_nn"]
         min_radius = opt["min_radius"]
         max_radius = opt["max_radius"]
@@ -1392,19 +1395,47 @@ class RobotDescription(nx.OrderedDiGraph):
         cylinder_spec = dict(center=(0, 0, 0), axis=(1, 0, 0),
                              radius=joint_radius, height=joint_height)
 
-        fitness = 0
-        for k in range(10):  # choose the cylinder with best symmetry from 10 candidates
-            cyliner_k, _ = generateGmsh(gmshGeoFcn=gmshGeoAddCylinder, gmsh_geo_kwargs=cylinder_spec,
-                                        gmsh_args=gmsh_args, gmsh_args_3d=gmsh_args_3d,dim = 3, gui=False)
-            moi = momentOfInertia(cyliner_k.points)
+        def createCylinders():
+            cylinder, _ = generateGmsh(gmshGeoFcn=gmshGeoAddCylinder, gmsh_geo_kwargs=cylinder_spec,
+                                    gmsh_args=gmsh_args, gmsh_args_3d=gmsh_args_3d, gui=False)
+            moi = momentOfInertia(cylinder.points)
             fitness_k = np.linalg.norm(
                 moi.diagonal())/np.linalg.norm((moi[0, 1], moi[0, 2], moi[1, 2]))
-            if fitness_k > fitness:
-                fitness = fitness_k
-                cylinder = cyliner_k
+            return cylinder, fitness_k
+        
+        cylinder_list,fitness_list = list(zip(*[createCylinders() for k in range(5)]))
+        # choose the cylinder with best symmetry from 5 candidates
+        cylinder = cylinder_list[np.argmin(fitness_list)]
         # convert to VolumeMesh
         vmd_cylinder = VolumeMesh.fromGmsh(
             cylinder, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+        
+        # cylinder_volume = np.pi*(joint_radius**2)*joint_height
+        # num = int(cylinder_volume/((radius_poisson*np.sqrt(3))**3))*3000
+        # def cylinderDownsample():
+        #     # cylinder centered at (0,0,0), axis = (1,0,0)
+        #     r = np.sqrt(np.random.uniform(0, joint_radius**2, num))
+        #     alpha = np.random.uniform(0, 2*np.pi, num)
+        #     h = np.random.uniform(-joint_height/2., joint_height/2., num)
+        #     cylinder_vert_candidate = np.column_stack(
+        #         (h, r*np.cos(alpha), r*np.sin(alpha)))
+        #     cylinder_norm_candidate = np.empty_like(cylinder_vert_candidate)
+
+        #     cylinder_vert, cylinder_norm = pcu.prune_point_cloud_poisson_disk(
+        #         v=cylinder_vert_candidate, n=cylinder_norm_candidate,
+        #         radius=radius_poisson, best_choice_sampling=False)
+        #     moi = momentOfInertia(cylinder_vert)
+        #     fitness = np.linalg.norm(
+        #         moi.diagonal())/np.linalg.norm((moi[0, 1], moi[0, 2], moi[1, 2]))
+        #     return cylinder_vert, fitness
+        
+        # cylinder_list, fitness_list = list(
+        #     zip(*[cylinderDownsample() for k in range(40)]))
+        # cid = np.argpartition(fitness_list, 2)  # partitioned args
+        # # print(cid,np.array(fitness_list)[cid])
+        # cylinder_vert_parent = cylinder_list[cid[0]]
+        # cylinder_vert_child = applyTransform(cylinder_vert_parent,[[-1,0,0],[0,1,0],[0,0,-1]])    
+
 
         for e in self.edges:  # first pass
             parent_node = self.nodes[e[0]]
@@ -1430,16 +1461,32 @@ class RobotDescription(nx.OrderedDiGraph):
             # cylinder at child space
             edge["cylinder_parent"] = vmd_cylinder.copy(
             ).transform(cylinder_to_parent_transform)
+            
+            # edge["cylinder_parent_vert"] = applyTransform(cylinder_vert_parent,cylinder_to_parent_transform)
+            
             parent_node["vmd"] = parent_node["vmd"].combine(
-                edge["cylinder_parent"],min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+                # vertices =  edge["cylinder_parent_vert"],
+                # lines = None,
+                vertices = edge["cylinder_parent"].vertices,
+                lines = edge["cylinder_parent"].lines,
+                tri_mesh = edge["cylinder_parent"].triMesh(),
+                min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
 
             cylinder_to_child_transform = np.linalg.inv(
                 T_child)@cylinder_transform
             # cylinder at parent space
             edge["cylinder_child"] = vmd_cylinder.copy(
             ).transform(cylinder_to_child_transform)
+            
+            # edge["cylinder_child_vert"] = applyTransform(cylinder_vert_child,cylinder_to_child_transform)
+            
             child_node["vmd"] = child_node["vmd"].combine(
-                edge["cylinder_child"],min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
+                # vertices = edge["cylinder_child_vert"],
+                # lines = None,
+                vertices = edge["cylinder_child"].vertices,
+                lines = edge["cylinder_child"].lines,
+                tri_mesh = edge["cylinder_child"].triMesh(),
+                min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
 
             edge['axis'] = np.asarray(edge['axis'], dtype=np.float64)
             edge['anchor'] = np.stack((-edge['axis'], edge['axis']))*joint_axis_radius
@@ -1452,15 +1499,20 @@ class RobotDescription(nx.OrderedDiGraph):
                 print(
                     f"edge{e}: ({len(edge['id_joint_parent']), len(edge['id_joint_child'])}) already processed, skipping")
                 continue
+            
             pcd = parent_node["vmd"].pcd()
             pcd_tree = o3d.geometry.KDTreeFlann(pcd)
             edge["id_joint_parent"] = np.asarray([pcd_tree.search_hybrid_vector_3d(
                 point, 0.1, max_nn=1)[1][0] for point in edge["cylinder_parent"].vertices])
+            # edge["id_joint_parent"] = np.asarray([pcd_tree.search_hybrid_vector_3d(
+            #     point, 0.1, max_nn=1)[1][0] for point in edge["cylinder_parent_vert"]])
 
             pcd = child_node["vmd"].pcd()
             pcd_tree = o3d.geometry.KDTreeFlann(pcd)
             edge["id_joint_child"] = np.asarray([pcd_tree.search_hybrid_vector_3d(
                 point, 0.1, max_nn=1)[1][0] for point in edge["cylinder_child"].vertices])
+            # edge["id_joint_child"] = np.asarray([pcd_tree.search_hybrid_vector_3d(
+            #     point, 0.1, max_nn=1)[1][0] for point in edge["cylinder_child_vert"]])     
             print(
                 f"{e}:{len(edge['id_joint_child'])},{len(edge['id_joint_parent'])}")
         return self

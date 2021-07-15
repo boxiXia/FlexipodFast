@@ -662,7 +662,7 @@ struct JointControl {
 				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
-				//cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
+				cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
 				//clampInplace(cmd[i], vel[i] -dv, vel[i] + dv);
 
 				//joint.vel_desired[i] = cmd[i];
@@ -670,7 +670,7 @@ struct JointControl {
 				vel_desired_proxy = vel_desired[i];
 				clampInplace(vel_desired_proxy, joint.vel_desired[i] -dv, joint.vel_desired[i] + dv);
 				joint.vel_desired[i] = vel_desired_proxy;
-				cmd[i] = vel_desired_proxy;
+				//cmd[i] = vel_desired_proxy;
 				
 				//joint.vel_desired[i] = joint.vel_desired[i] * 0.9 + 0.1*vel_desired[i];
 
@@ -782,6 +782,31 @@ struct RigidBody {
 
 		rot = rot_new;
 	}
+
+	char* print() {
+		char out[250];
+		int n = snprintf(out,250,
+			"com pos %+6.2f %+6.2f %+6.2f\n"
+			"com vel %+6.2f %+6.2f %+6.2f\n"
+			"com acc %+6.2f %+6.2f %+6.2f\n"
+			"ang vel %+6.2f %+6.2f %+6.2f\n"
+			"rotation:\n"
+			"%+7.3f %+7.3f %+7.3f\n"
+			"%+7.3f %+7.3f %+7.3f\n"
+			"%+7.3f %+7.3f %+7.3f",
+			pos.x, pos.y, pos.z,
+			vel.x, vel.y, vel.z,
+			acc.x, acc.y, acc.z,
+			ang_vel.x, ang_vel.y, ang_vel.z,
+			rot.m00, rot.m01, rot.m02,
+			rot.m10, rot.m11, rot.m12,
+			rot.m20, rot.m21, rot.m22
+		);
+		//assert(n < 250);
+		//printf("%d\n",n);
+		return out;
+	}
+	
 };
 
 
@@ -977,7 +1002,7 @@ public:
 	bool SHOULD_RUN = true;
 	bool SHOULD_END = false;
 
-	bool USE_PBD = true;// flag to use position based dynamics
+	bool USE_PBD = false;// flag to use position based dynamics
 
 	std::mutex mutex_running;
 	std::condition_variable cv_running;
@@ -1045,7 +1070,7 @@ private:
 
 	std::set<BreakPoint, BreakPoint> bpts; // list of breakpoints
 
-	int spring_block_size = 128; // spring update threads per block
+	int spring_block_size = 64; // spring update threads per block
 	int spring_grid_size;// spring update blocks per grid
 
 	int mass_block_size = 64; // mass update threads per block

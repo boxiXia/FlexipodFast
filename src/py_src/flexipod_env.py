@@ -150,8 +150,8 @@ class FlexipodEnv(gym.Env):
         
         # action min-max
         # max_action = 0.025 # [rad], delta position control
-        # max_action = 5 # [rad/s], velocity control
-        max_action = 3 # [rad/s], velocity control
+        max_action = 5 # [rad/s], velocity control
+        # max_action = 3 # [rad/s], velocity control
 
         # raw min/max action
         self.raw_min_act = - max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
@@ -328,8 +328,8 @@ class FlexipodEnv(gym.Env):
             com_z_offset = 0.8
             orientation_z_min = 0.56
 
-        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
-        # r_orientation = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
+        # r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
+        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
 
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
@@ -341,8 +341,8 @@ class FlexipodEnv(gym.Env):
         reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
 
     #         reward = orientation_z
-        done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
-        # done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
+        # done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
+        done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
         # done = True if (self.episode_steps>=self._max_episode_steps) else False
         t = msg_rec_i[self.ID_t]
         if self.info:
