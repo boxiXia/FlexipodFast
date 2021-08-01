@@ -115,37 +115,27 @@ __device__  void CudaContactPlane::solveDist(
 #endif
         Vec3d dp = pos - pos_prev; // delta pos
         double dp_n_norm = dp.dot(_normal);
-		Vec3d dp_n = dp_n_norm * _normal; // delta pos normal to plane
-		Vec3d dp_t = dp - dp_n; // delta pos tangential to plane
+		Vec3d dp_t = dp - dp_n_norm * _normal; // delta pos tangential to plane
 		double dp_t_norm = dp_t.norm();
 		double  dp_t_fs = -disp * _FRICTION_S; // maximun friction correction
-		if (dp_t_fs > dp_t_norm) { // static friction
-			pos -= dp_t;
-		}
-		else { // dynamic friction
-			//pos -= fmin(dp_t_norm, -0.5 * disp * _FRICTION_K) * dp_t / dp_t_norm;
-            pos -= fmin(1.0, - disp * _FRICTION_K / dp_t_norm)  * dp_t;
-		}
-		pos -= disp * _normal; // move out of the ground
 
+		//  move out of the ground      static friction   <-> dynamic friction
+		pos -= disp * _normal + (dp_t_fs > dp_t_norm ? dp_t : fmin(1.0, -disp * _FRICTION_K / dp_t_norm) * dp_t);
+		//if (dp_t_fs > dp_t_norm) { // static friction
+		//	pos -= dp_t;
+		//}
+		//else { // dynamic friction
+        //      pos -= fmin(1.0, - disp * _FRICTION_K / dp_t_norm)  * dp_t;
+		//}
+		//pos -= disp * _normal; // move out of the ground
 
        dp_n_norm = (pos - pos_prev).dot(_normal);
        double vn = dp_n_norm / dt;
-       double vn_old = vel.dot(_normal);
        if (vn < 0) {
-
+           double vn_old = vel.dot(_normal);
            double e = fabs(vn) < 2 * 9.8 * dt ? 0 : 1; // TODO gravity as variable
            pos_prev -= (-vn - e* fmin(vn_old * 0.0, 0.0)) * dt * _normal;
        }
-
-		//double vn = vel.dot(_normal);
-		//if (vn < 0 && vn<-2*9.8*dt) {
-		//	pos_prev += vn * 1.0 * dt * _normal; // restitution
-		//}
-
-        //if (dp_n_norm < 0) {
-        //    pos_prev += dp_n_norm * 1.0 * _normal; // restitution
-        //}
 	}
 }
 

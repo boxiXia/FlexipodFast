@@ -19,9 +19,6 @@ __global__ void pbdSolveDist(
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < spring.num) {
 		// joint spring
-		if (i < joint.num) {
-			joint.pos[i] += joint.vel_desired[i] * dt;
-		}
 		if (spring.resetable[i]) {
 			int jid = spring.joint_id[i];
 			Vec3d c = joint.edge_c[jid]; // joint edge constant
@@ -39,17 +36,21 @@ __global__ void pbdSolveDist(
 		double d = n.norm(); 
 		double c = d - spring.rest[i]; // distance constraint magnitude
 		n /= (d > 1e-13 ? d : 1e-13);// normalized to unit vector (direction),
-		double alpha_bar = spring.compliance[i] / (dt * dt);
-		double delta_lambda = -c / (w + alpha_bar);
-		Vec3d p = delta_lambda * n;
+
+		double dt2 = dt * dt;
+		//double alpha_bar = spring.compliance[i] / dt2;
+		//double delta_lambda = -c / (w + alpha_bar);
+		//Vec3d p = delta_lambda * n;
+		Vec3d p = -c / (w + spring.compliance[i] / dt2) * n;
 		
+
 		//mass.pos[e.x].atomicVecAdd(-p  * w1);
 		//mass.pos[e.y].atomicVecAdd(p * w2);
 
 		// velocity damping
-		Vec3d dpn = n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt * dt, 1.0) / w * n;
-		mass.pos[e.x].atomicVecAdd((-p + dpn) * w1);
-		mass.pos[e.y].atomicVecAdd(( p - dpn) * w2);
+		p -= n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt2, 1.0) / w * n;
+		mass.pos[e.x].atomicVecAdd(- w1 * p);
+		mass.pos[e.y].atomicVecAdd(  w2 * p);
 
 //#ifdef ROTATION
 //		if (spring.resetable[i]) {
@@ -59,6 +60,45 @@ __global__ void pbdSolveDist(
 //#endif // ROTATION
 	}
 }
+
+
+__global__ void pbdSolveContact(
+	const MASS mass,
+	const CUDA_GLOBAL_CONSTRAINTS c,
+	const Vec3d global_acc,
+	const JOINT joint,
+	const double dt
+) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < mass.num) {
+		if (i < joint.num) { // update joint pos
+			joint.pos[i] += joint.vel_desired[i] * dt;
+		}
+		if (mass.constrain) { //only apply to constrain set of masses
+			//Vec3d _force(force);
+			for (int j = 0; j < c.num_planes; j++) { // global constraints
+				c.d_planes[j].solveDist(
+					mass.force[i], mass.pos[i], mass.pos_prev[i], mass.vel[i], dt); // todo fix this 
+			}
+			//for (int j = 0; j < c.num_balls; j++) {
+			//	c.d_balls[j].applyForce(force, pos, vel);
+			//}
+			//mass.force_constraint[i] = force - _force;
+		}
+
+		Vec3d vel_prev = mass.vel[i]; // for computing acceleration
+		Vec3d vel = (mass.pos[i] - mass.pos_prev[i]) / dt;
+		// moved from the start of the loop
+		vel *= 0.9999; // per vertex damping
+		vel += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
+		mass.pos_prev[i] = mass.pos[i];
+		mass.pos[i] += dt * vel;
+		mass.vel[i] = vel;
+		mass.acc[i] = (vel - vel_prev) / dt; // for computing acceleration
+	}
+}
+
+
 
 __global__ void pbdSolveVel(
 	const MASS mass,
@@ -78,45 +118,9 @@ __global__ void pbdSolveVel(
 		Vec3d dpn = n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt * dt, 1.0) / w * n;
 		mass.pos[e.x].atomicVecAdd(dpn * w1);
 		mass.pos[e.y].atomicVecAdd(- dpn * w2);
-
 	}
 }
 
-
-__global__ void pbdSolveContact(
-	const MASS mass,
-	const CUDA_GLOBAL_CONSTRAINTS c,
-	const Vec3d global_acc,
-	const double dt
-) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < mass.num) {
-		if (mass.constrain) { //only apply to constrain set of masses
-			//Vec3d _force(force);
-			for (int j = 0; j < c.num_planes; j++) { // global constraints
-				c.d_planes[j].solveDist(
-					mass.force[i], mass.pos[i], mass.pos_prev[i], mass.vel[i],dt); // todo fix this 
-			}
-			//for (int j = 0; j < c.num_balls; j++) {
-			//	c.d_balls[j].applyForce(force, pos, vel);
-			//}
-			//mass.force_constraint[i] = force - _force;
-		}
-
-		Vec3d vel_prev = mass.vel[i]; // for computing acceleration
-
-		Vec3d vel = (mass.pos[i] - mass.pos_prev[i]) / dt;
-
-		// moved from the start of the loop
-		vel += dt * (mass.force_extern[i] * mass.inv_m[i] + global_acc);
-
-		mass.pos_prev[i] = mass.pos[i];
-		mass.pos[i] += dt * vel;
-		mass.vel[i] = vel;
-		mass.acc[i] = (vel - vel_prev) / dt; // for computing acceleration
-
-	}
-}
 
 
 __global__ void updateSpring(
@@ -586,7 +590,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring,d_joint, dt);
 				//updateJointSpring << <joint_edge_grid_size, joint_edge_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_spring.rest, d_joint, dt);
 				//updateJointMass << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos,d_mass.fixed, d_joint);
-				pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+				pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, d_joint, dt);
 				//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 			}
 		}

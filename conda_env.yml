@@ -43,6 +43,7 @@ dependencies:
   - jupyter
   - jupyter_contrib_nbextensions
   - line_profiler
+  - py-opencv
   - pip:
     - hydra-core --pre
     - pybullet

@@ -1409,33 +1409,6 @@ class RobotDescription(nx.OrderedDiGraph):
         # convert to VolumeMesh
         vmd_cylinder = VolumeMesh.fromGmsh(
             cylinder, min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
-        
-        # cylinder_volume = np.pi*(joint_radius**2)*joint_height
-        # num = int(cylinder_volume/((radius_poisson*np.sqrt(3))**3))*3000
-        # def cylinderDownsample():
-        #     # cylinder centered at (0,0,0), axis = (1,0,0)
-        #     r = np.sqrt(np.random.uniform(0, joint_radius**2, num))
-        #     alpha = np.random.uniform(0, 2*np.pi, num)
-        #     h = np.random.uniform(-joint_height/2., joint_height/2., num)
-        #     cylinder_vert_candidate = np.column_stack(
-        #         (h, r*np.cos(alpha), r*np.sin(alpha)))
-        #     cylinder_norm_candidate = np.empty_like(cylinder_vert_candidate)
-
-        #     cylinder_vert, cylinder_norm = pcu.prune_point_cloud_poisson_disk(
-        #         v=cylinder_vert_candidate, n=cylinder_norm_candidate,
-        #         radius=radius_poisson, best_choice_sampling=False)
-        #     moi = momentOfInertia(cylinder_vert)
-        #     fitness = np.linalg.norm(
-        #         moi.diagonal())/np.linalg.norm((moi[0, 1], moi[0, 2], moi[1, 2]))
-        #     return cylinder_vert, fitness
-        
-        # cylinder_list, fitness_list = list(
-        #     zip(*[cylinderDownsample() for k in range(40)]))
-        # cid = np.argpartition(fitness_list, 2)  # partitioned args
-        # # print(cid,np.array(fitness_list)[cid])
-        # cylinder_vert_parent = cylinder_list[cid[0]]
-        # cylinder_vert_child = applyTransform(cylinder_vert_parent,[[-1,0,0],[0,1,0],[0,0,-1]])    
-
 
         for e in self.edges:  # first pass
             parent_node = self.nodes[e[0]]
@@ -1453,12 +1426,14 @@ class RobotDescription(nx.OrderedDiGraph):
             T_child = T_edge@axisAngleRotation(edge["axis"],
                                                edge["joint_pos"])@child_node["transform"]
 
-            cylinder_transform = T_edge@vecAlignRotation(
-                (1, 0, 0), edge["axis"])
+            # cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])
+            parent_cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])
+            child_cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])@axisAngleRotation([0,1,0],np.pi) # rotate 180 deg
 
+            # TODO:fix this
             cylinder_to_parent_transform = np.linalg.inv(
-                T_parent)@cylinder_transform
-            # cylinder at child space
+                T_parent)@parent_cylinder_transform
+            # cylinder at parent space
             edge["cylinder_parent"] = vmd_cylinder.copy(
             ).transform(cylinder_to_parent_transform)
             
@@ -1473,7 +1448,7 @@ class RobotDescription(nx.OrderedDiGraph):
                 min_radius=min_radius, max_radius=max_radius, max_nn=max_nn)
 
             cylinder_to_child_transform = np.linalg.inv(
-                T_child)@cylinder_transform
+                T_child)@child_cylinder_transform
             # cylinder at parent space
             edge["cylinder_child"] = vmd_cylinder.copy(
             ).transform(cylinder_to_child_transform)
