@@ -43,7 +43,6 @@ __global__ void pbdSolveDist(
 		//Vec3d p = delta_lambda * n;
 		Vec3d p = -c / (w + spring.compliance[i] / dt2) * n;
 		
-
 		//mass.pos[e.x].atomicVecAdd(-p  * w1);
 		//mass.pos[e.y].atomicVecAdd(p * w2);
 
@@ -116,7 +115,7 @@ __global__ void pbdSolveVel(
 		n /= (d > 1e-13 ? d : 1e-13);// normalized to unit vector (direction),
 
 		Vec3d dpn = n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt * dt, 1.0) / w * n;
-		mass.pos[e.x].atomicVecAdd(dpn * w1);
+		mass.pos[e.x].atomicVecAdd(  dpn * w1);
 		mass.pos[e.y].atomicVecAdd(- dpn * w2);
 	}
 }

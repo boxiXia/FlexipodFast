@@ -91,6 +91,7 @@ class FlexipodEnv(gym.Env):
         normalize = True,
         max_joint_vel = 10, # maximum joint velocity rad/s
         humanoid_task = True, # if true, humanoid, else qurdurped
+        max_episode_steps = 10000,
         ip_local = "127.0.0.1", port_local = 33300,
         ip_remote = "127.0.0.1",port_remote = 33301):
         
@@ -109,7 +110,7 @@ class FlexipodEnv(gym.Env):
         self.num_observation = num_observation
         self.normalize = normalize
         
-        self._max_episode_steps = 10000#np.inf
+        self._max_episode_steps = max_episode_steps # maximum episode steps
         self.episode_steps = 0 # curret step in an episode
 
         self.info = False # bool flag to send info or not when processing messages
@@ -328,8 +329,8 @@ class FlexipodEnv(gym.Env):
             com_z_offset = 0.8
             orientation_z_min = 0.56
 
-        # r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
-        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
+        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
+        # r_orientation = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
 
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
@@ -341,8 +342,8 @@ class FlexipodEnv(gym.Env):
         reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
 
     #         reward = orientation_z
-        # done = True if (orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps) else False
-        done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
+        done = True if ((orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range) else False
+        # done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
         # done = True if (self.episode_steps>=self._max_episode_steps) else False
         t = msg_rec_i[self.ID_t]
         if self.info:

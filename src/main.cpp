@@ -77,35 +77,32 @@ int main(int argc, char* argv[])
 #endif
 
 
-	sim.dt = 5e-5; // timestep
-	//sim.dt = 3e-5; // timestep
+	sim.dt = 6e-5; // timestep
+	//sim.dt = 5e-5; // timestep
 
 	//sim.dt = 1e-5; // timestep
 	//sim.pause();
 
 	//constexpr double radius_poisson = 12.5 * 1e-3;
 	const double  radius_poisson = bot.radius_poisson;
-	
-
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 0.09* radius_poisson;// mass per vertex
+	const double m = 0.08* radius_poisson;// mass per vertex
 	const double inv_m = 1. / m;
 
 	const double spring_compliance = 1 / (m * 6e6); //spring constant for silicone leg [m/N]
-	const double spring_damping = m * 6.5e2; // damping for spring [N*s/m]
+	const double spring_damping = m * 6e4; // damping for spring [N*s/m]
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
 	constexpr double scale_soft = 2.0; // scaling factor soft
 	constexpr double scale_rot_spring = 1.0; // stiffness scale for rotation spring
 
-	constexpr double scale_joint_m = 2.5; // scaling factor for the joint mass
+	constexpr double scale_joint_m = 3; // scaling factor for the joint mass
 	constexpr double scale_joint_compliance = 3; // scaling factor for the joint spring constant
 	constexpr double scale_joint_damping = 3; // scaling factor for the joint spring damping
 
 	const double inv_m_joint = inv_m / scale_joint_m; // inverse joint mass
-
 
 	//const double scale_low = 0.5; // scaling factor low
 	constexpr double scale_probe = 0.08; // scaling factor for the probs, e.g. coordinates
