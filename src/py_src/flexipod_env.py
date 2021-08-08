@@ -12,22 +12,85 @@ import pybullet_utils.bullet_client as bc
 
 def linearMinMaxConversionCoefficient(a,b,c,d):
     """
-    linear conversion from [a,b] to [c,d] using y = kx + m
+    linear conversion from [a,b] to [c,d] using y = kx + m,
     return coefficient k,m
     """
     k = (d - c)/(b-a)
     m = c - a*k
     return k,m
 
+def linearMapFcn(a,b,c,d):
+    """
+    return a function of the linear conversion from 
+    [a,b] to [c,d] using y = kx + m,
+    """
+    k = (d - c)/(b-a)
+    m = c - a*k    
+    def y(x):
+        return k*x +m
+    return y
+
+
+class UDPServer:
+    def __init__(
+        s, # self
+        local_address = ("127.0.0.1",33300),
+        remote_address = ("127.0.0.1",33301)
+        ):        
+        s.local_address = local_address
+        s.remote_address = remote_address
+        s.BUFFER_LEN = 32768  # in bytes
+                
+        # udp socket for sending
+        s.send_sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) 
+        s.send_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1) 
+                
+        # udp socket for receving
+        s.recv_sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+        s.recv_sock.settimeout(0) # timeout immediately
+        s.recv_sock.setblocking(False)
+        s.recv_sock.bind(s.local_address) #Bind the socket to the port
+        
+    def receive(s,max_attempts=1000000):
+        """return the recived data at local port"""
+        for k in range(max_attempts):
+            try:
+                data = s.recv_sock.recv(s.BUFFER_LEN)
+                break
+            except Exception:
+                continue
+        try:
+            for k in range(max_attempts):
+                data = s.recv_sock.recv(s.BUFFER_LEN)
+        except:
+            try:
+                return data
+            except UnboundLocalError:
+                raise TimeoutError("tried to many times")
+        
+    def send(s,data):
+        """send the data to remote address, return num_bytes_send"""
+        return s.send_sock.sendto(data,s.remote_address) 
+        
+    def close(s):
+        try:
+            s.recv_sock.shutdown(socket.SHUT_RDWR)
+            s.recv_sock.close()
+        except Exception as e:
+            print(e)
+        print(f"shutdown UDP server:{s.local_address},{s.remote_address}")
+    def __del__(s): 
+        s.close()
+
+
 class BulletCollisionDetect:
     """
     Helper class for collision detection using pybullet
     """
-    def __init__(self,gui=False):
+    def __init__(self,gui=False,urdf_path="../../data/urdf/12dof/robot.urdf"):
         """
         load urdf and init the collision detection
         """
-        urdf_path="../../data/urdf/12dof/robot.urdf"
         urdf_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),urdf_path)
         # print(os.path.abspath(urdf_path))
         # loading using bullet_client
@@ -63,6 +126,7 @@ class BulletCollisionDetect:
         self._p.disconnect()
 #         print("deleted")
 
+
 class FlexipodEnv(gym.Env):
     """
     openai gym compatible environment for the simulated 12DOF flexipod
@@ -92,18 +156,21 @@ class FlexipodEnv(gym.Env):
         max_joint_vel = 10, # maximum joint velocity rad/s
         humanoid_task = True, # if true, humanoid, else qurdurped
         max_episode_steps = 10000,
-        ip_local = "127.0.0.1", port_local = 33300,
-        ip_remote = "127.0.0.1",port_remote = 33301):
+        max_action = 5, # [rad/s], velocity control
+        local_address = ("127.0.0.1",33300),
+        remote_address = ("127.0.0.1",33301)):
         
-        super(FlexipodEnv,self).__init__()
+        super().__init__() # init gym env
         
         self.humanoid_task = humanoid_task
         
-        print(f"humanoid_task:{humanoid_task}")
-        self.cd = BulletCollisionDetect() # collision detection with pybullet
+        # defualt packer
+        # reset data packed # https://msgpack-python.readthedocs.io/en/latest/api.html#msgpack.Packer
+        self.packer = msgpack.Packer(use_single_float=True, use_bin_type=True)
         
-        self.local_address = (ip_local, port_local)
-        self.remote_address = (ip_remote, port_remote)
+        # collision detection with pybullet
+        self.cd = BulletCollisionDetect() 
+        
         
         self.dof = dof # num joints
         self.joint_pos = np.empty(dof,dtype=np.float32) # joint position [rad]
@@ -115,27 +182,23 @@ class FlexipodEnv(gym.Env):
 
         self.info = False # bool flag to send info or not when processing messages
         # name of the returned message
-        REC_NAME = np.array([
-            # name,         size,      min,          max
-            ("header",       1,      -32768,         32768        ),
-            ("t",            1,      0,              np.inf       ), # simulation time [s]
-            ("joint_pos",    dof*2,  -1.,            1.           ), # joint cos(angle) sin(angle) [rad]
-            ("joint_vel",    dof,    -max_joint_vel, max_joint_vel), # joint velocity [rad/s]
-            ("actuation",    dof,    -1.,            1.           ), # joint actuation [-1,1]
-            ("orientation",  6,      -1.,            1.           ), # base link (body) orientation
-            ("ang_vel",      3,      -30.,           30.          ), # base link (body) angular velocity [rad/s]
-            ("com_acc",      3,      -30.,           30.          ), # base link (body) acceleration
-            ("com_vel",      3,      -2.,            2.           ), # base link (body) velocity
-            ("spring_strain",num_sensors,-0.005,    0.005         ), # selected spring strain
-            ("com_pos",      3.,     -1.,            1.           ), # base link (body) position
-        ],dtype=[('name', 'U14'), ('size', 'i4'), ('min', 'f4'),('max', 'f4')])
+        REC = np.array([
+            # name,         size,         min,          max
+            ("header",       1,         -32768,         32768        ),
+            ("t",            1,         0,              np.inf       ), # simulation time [s]
+            ("joint_pos",    dof*2,     -1.,            1.           ), # joint cos(angle) sin(angle) [rad]
+            ("joint_vel",    dof,       -max_joint_vel, max_joint_vel), # joint velocity [rad/s]
+            ("actuation",    dof,       -1.,            1.           ), # joint actuation [-1,1]
+            ("orientation",  6,         -1.,            1.           ), # base link (body) orientation
+            ("ang_vel",      3,         -30.,           30.          ), # base link (body) angular velocity [rad/s]
+            ("com_acc",      3,         -30.,           30.          ), # base link (body) acceleration
+            ("com_vel",      3,         -2.,            2.           ), # base link (body) velocity
+            ("spring_strain",num_sensors,-0.005,       0.005         ), # selected spring strain
+            ("com_pos",      3.,        -1.,            1.           ), # base link (body) position
+        ],dtype=[('name', 'U20'), ('size', 'i4'), ('min', 'f4'),('max', 'f4')])
         
-        REC_SIZE = REC_NAME["size"]
-        REC_MIN = REC_NAME["min"]
-        REC_MAX = REC_NAME["max"]
 
-        
-        self.ID =defaultdict(None,{name: k  for k,(name,_,_,_) in enumerate(REC_NAME)})
+        self.ID =defaultdict(None,{name: k  for k,name in enumerate(REC["name"])})
         
         self.ID_t = self.ID['t']
         self.ID_actuation = self.ID['actuation']
@@ -146,70 +209,61 @@ class FlexipodEnv(gym.Env):
         self.ID_com_acc = self.ID['com_acc']
         
         OBS_NAME = ("joint_pos","joint_vel","actuation","orientation",
-                    "ang_vel","com_acc","com_vel","spring_strain")#,"com_pos")
-        # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
-        
-        # action min-max
-        # max_action = 0.025 # [rad], delta position control
-        max_action = 5 # [rad/s], velocity control
-        # max_action = 3 # [rad/s], velocity control
+                    "ang_vel","com_acc","com_vel","spring_strain")#,"com_pos")        
 
-        # raw min/max action
-        self.raw_min_act = - max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
-        self.raw_max_act =   max_action*np.ones(self.dof,dtype=np.float32) # [rad], delta position control for all motors
+        self._initObsACt(max_action,REC,OBS_NAME) # initialize the observation and action space
+
+        # simulation specific commend
+        self.reset_cmd_b =  self.packer.pack([self.UDP_RESET,0])
+        self.pause_cmd_b =  self.packer.pack([self.UDP_PAUSE,0,[0,0,0,0]])
+        self.resume_cmd_b = self.packer.pack([self.UDP_RESUME,0,[0,0,0,0]])
+        self.close_cmd_b =  self.packer.pack([self.UDP_TERMINATE,0,[0,0,0,0]])
+        
+        self.server = UDPServer(local_address,remote_address)
+
+        # start the simulation
+        self.start()
+        
+        
+    def _initObsACt(self,max_action,REC,OBS_NAME):
+        """helper function to initialize the observation and action space"""
+        # raw min/max action for all motors # [rad/s]
+        self.raw_min_act = - max_action*np.ones(self.dof,dtype=np.float32)
+        self.raw_max_act =   max_action*np.ones(self.dof,dtype=np.float32)
         
         # observartion min-max
         self.raw_min_obs = np.hstack([ # raw max observation (from simulation)
-            np.ones(REC_SIZE[self.ID[name]])*REC_MIN[self.ID[name]]for name in OBS_NAME]).astype(np.float32)#[:-2]
+            np.ones(REC["size"][self.ID[name]])*REC["min"][self.ID[name]]for name in OBS_NAME]).astype(np.float32)#[:-2]
         self.raw_max_obs = np.hstack([ # raw min observation (from simulation)
-            np.ones(REC_SIZE[self.ID[name]])*REC_MAX[self.ID[name]]for name in OBS_NAME]).astype(np.float32)#[:-2]
+            np.ones(REC["size"][self.ID[name]])*REC["max"][self.ID[name]]for name in OBS_NAME]).astype(np.float32)#[:-2]
 
         # multiple observation per network input
-        self.raw_min_obs = np.tile(self.raw_min_obs,(num_observation,1))
-        self.raw_max_obs = np.tile(self.raw_max_obs,(num_observation,1))
+        self.raw_min_obs = np.tile(self.raw_min_obs,(self.num_observation,1))
+        self.raw_max_obs = np.tile(self.raw_max_obs,(self.num_observation,1))
         
         self.flatten_obs = True # whether to flatten the observation
         if(self.flatten_obs):
             self.raw_min_obs = self.raw_min_obs.ravel()
             self.raw_max_obs = self.raw_max_obs.ravel()
         
-        if normalize: # conditionally normalize the action space
+        if self.normalize: # conditionally normalize the action space
             self.action_space = gym.spaces.Box(low = - np.ones_like(self.raw_min_act),high = np.ones_like(self.raw_max_act))
             self.observation_space = gym.spaces.Box(low = - np.ones_like(self.raw_min_obs),high = np.ones_like(self.raw_max_obs))
             # action conversion from normalized to raw: y = kx + m
-            self.to_raw_act_k,self.to_raw_act_m = linearMinMaxConversionCoefficient(-1.0,1.0,self.raw_min_act,self.raw_max_act)
+            self.toRawAction = linearMapFcn(-1.0,1.0,self.raw_min_act,self.raw_max_act)
             # action conversion from raw to normalized: nor - normalized
-            self.to_nor_act_k, self.to_nor_act_m = linearMinMaxConversionCoefficient(self.raw_min_act,self.raw_max_act,-1.0,1.0)
+            self.toNormalizedAction = linearMapFcn(self.raw_min_act,self.raw_max_act,-1.0,1.0)            
             # observation from normalized to raw:
-            self.to_raw_obs_k,self.to_raw_obs_m = linearMinMaxConversionCoefficient(-1.0, 1.0,self.raw_min_obs,self.raw_max_obs)
+            self.toRawObservation = linearMapFcn(-1.0, 1.0,self.raw_min_obs,self.raw_max_obs)            
             # observation from raw to normalized:
-            self.to_nor_obs_k, self.to_nor_obs_m = linearMinMaxConversionCoefficient(self.raw_min_obs,self.raw_max_obs,-1.0,1.0)
+            self.toNormalizedObservation = linearMapFcn(self.raw_min_obs,self.raw_max_obs,-1.0,1.0)
         else: # raw action and observation
             self.action_space = gym.spaces.Box(low = self.raw_min_act,high = self.raw_max_act)
             self.observation_space = gym.spaces.Box(low = self.raw_min_obs,high = self.raw_max_obs)
-
-        # reset data packed # https://msgpack-python.readthedocs.io/en/latest/api.html#msgpack.Packer
-        self.packer = msgpack.Packer(use_single_float=True, use_bin_type=True)
-        # self.reset_cmd_b = self.packer.pack([self.UDP_RESET,0,[0,0,0,0]])
-        self.reset_cmd_b = self.packer.pack([self.UDP_RESET,0])
-        self.pause_cmd_b = self.packer.pack([self.UDP_PAUSE,0,[0,0,0,0]])
-        self.resume_cmd_b = self.packer.pack([self.UDP_RESUME,0,[0,0,0,0]])
-        self.close_cmd_b = self.packer.pack([self.UDP_TERMINATE,0,[0,0,0,0]])
-        self.BUFFER_LEN = 32768  # in bytes
-        self.TIMEOUT = 0.2 #timeout duration
-        
-#         self.startSimulation()
-#         gc.collect()
-        self.send_sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) # UDP
-        self.send_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1) #immediate reuse of IP address
-        
-        # start the simulation
-        self.startSimulation()
         
     def __del__(self): # Deleting (Calling destructor) 
-        print('Destructor called, FlexipodEnv deleted.')
+        print(f'Destructor called, {self.__class__} deleted.')
 #         self.close()
-    
     
     @property
     def humanoid_task(self):
@@ -217,6 +271,7 @@ class FlexipodEnv(gym.Env):
     
     @humanoid_task.setter
     def humanoid_task(self,is_humanoid:bool):
+        print(f"setting humanoid_task={is_humanoid}")
         self._humanoid_task = is_humanoid
         pi = np.pi
         if is_humanoid:
@@ -263,14 +318,14 @@ class FlexipodEnv(gym.Env):
             # map action -> action*max_acton
             cmd_action = np.asarray(action,dtype=np.float32)
             if self.normalize:
-                cmd_action = cmd_action*self.to_raw_act_k + self.to_raw_act_m
+                cmd_action = self.toRawAction(cmd_action)
             # # # position difference control
             # cmd_action += self.joint_pos # the actual position
             
             # if len(self.cd.getContactPoints(cmd_action))>0:
             # step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
             step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
-            num_bytes_send = self.send_sock.sendto(step_cmd_b,self.remote_address)
+            num_bytes_send = self.server.send(step_cmd_b)
         msg_rec = self.receive()
         self.episode_steps+=1 # update episodic step counter
         return self._processRecMsg(msg_rec)
@@ -307,7 +362,7 @@ class FlexipodEnv(gym.Env):
         if self.flatten_obs:
             observation = observation.ravel()
         if self.normalize: # normalize the observation
-            observation = observation*self.to_nor_obs_k + self.to_nor_obs_m
+            observation = self.toNormalizedObservation(observation)            
 
         # x velocity
         com_vel_x = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
@@ -342,7 +397,9 @@ class FlexipodEnv(gym.Env):
         reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
 
     #         reward = orientation_z
-        done = True if ((orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range) else False
+        # done = True if ((orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range) else False
+        done = True if ((orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
+
         # done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
         # done = True if (self.episode_steps>=self._max_episode_steps) else False
         t = msg_rec_i[self.ID_t]
@@ -363,19 +420,18 @@ class FlexipodEnv(gym.Env):
         return observation,reward,done,info # TODO, change shape
     
     def reset(self):
-        self.send_sock.sendto(self.reset_cmd_b,self.remote_address)
+        self.server.send(self.reset_cmd_b)
         time.sleep(1/50)
         msg_rec = self.receive()
         self.episode_steps = 0
         observation,reward,done,info =  self._processRecMsg(msg_rec)
         self.episode_start_time = info['t']
-        # print([m[self.ID['t']] for m in msg_rec])
         return observation
     
     def render(self,mode="human"):
         pass
 
-    def startSimulation(self):
+    def start(self):
         try: # check if the simulation is opened
             msg_rec = self.receive(max_attempts=2,verbose=False)
         except TimeoutError: # program not opened
@@ -385,47 +441,24 @@ class FlexipodEnv(gym.Env):
             task = subprocess.Popen([path])
             
     def endSimulation(self):
-            self.send_sock.sendto(self.close_cmd_b,self.remote_address)
+        self.server.send(self.close_cmd_b)
 
-    def receive(self,max_attempts:int = 10,verbose=True):
-        try:
-            sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) # UDP
-            sock.settimeout(self.TIMEOUT)
-            sock.bind(self.local_address) #Bind the socket to the port
-            for k in range(max_attempts):# try max_attempts times
-                try:
-                    data = sock.recv(self.BUFFER_LEN)
-                    sock.shutdown(socket.SHUT_RDWR) # closing connection
-                    sock.close()
-                    data_unpacked = msgpack.unpackb(data,use_list=False)
-                    return data_unpacked
-                except Exception as e:
-                    if verbose:
-                        print(f"receive(): try #{k}:{e}")
-            sock.shutdown(socket.SHUT_RDWR)
-            sock.close()
-            raise TimeoutError("receive():tried too many times")
-        except KeyboardInterrupt:
-            sock.shutdown(socket.SHUT_RDWR)
-            sock.close()
-            raise KeyboardInterrupt
-
-    @staticmethod   
-    def item_to_String(key,value):
-        try:
-            return f"{key:<12s}:{','.join(f'{k:>+6.2f}' for k in value)}\n"
-        except:
-            return f"{key:<12s}:{value:>+6.2f}\n"
+    def receive(self,max_attempts:int = 1000000,verbose=True):
+        data = self.server.receive(max_attempts=max_attempts)
+        data_unpacked = msgpack.unpackb(data,use_list=False)
+        return data_unpacked 
         
     def pause(self):
-        self.send_sock.sendto(self.pause_cmd_b,self.remote_address)
+        """pause the simulation"""
+        self.server.send(self.pause_cmd_b)
+        
     def resume(self):
-        self.send_sock.sendto(self.resume_cmd_b,self.remote_address)
+        """resume the simulation"""
+        self.server.send(self.resume_cmd_b)
 
 def make(**kargs):
     return FlexipodEnv(**kargs)
-    # print(kargs)
-    # return 0
+
 
 if __name__ == '__main__':
     env = FlexipodEnv(dof = 12)
