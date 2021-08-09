@@ -334,9 +334,7 @@ class FlexipodEnv(gym.Env):
         """processed received message to state action pair"""
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
         # observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
-
         msg_rec_i = msg_rec[0]
-
         actuation = msg_rec_i[self.ID_actuation] # actuation (size=dof) of the latest observation
         com_z = msg_rec_i[self.ID_com_pos][2]
         # joint position (sin,cos->rad)
