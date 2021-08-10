@@ -40,7 +40,6 @@ class MarkerMapTracker:
 
 if __name__ == '__main__':
     
-    tracker = MarkerMapTracker()
     
     from scipy.spatial.transform import Rotation as R
     import open3d as o3d
@@ -61,14 +60,16 @@ if __name__ == '__main__':
     #     [0,0,0,1]
     # ],dtype=float)
 
-    t_world = np.eye(4)
+    t_cam = np.eye(4)
 
 
-    t_world = np.array([[0.073567934, 0.099872582, 0.99227685, -0.38515991],
-        [-0.09691719, 0.99097961, -0.092556529, 0.050713513],
-        [-0.99256986, -0.089359485, 0.082583688, 0.7048679],
-        [0, 0, 0, 1]], dtype='float32')
-    t_world = np.linalg.inv(t_world)
+    t_cam = np.array([[-0.024631739, 0.016739305, 0.99955648, -0.33330822],
+       [0.051919091, -0.99848908, 0.01800086, -0.022353087],
+       [0.99834758, 0.052339453, 0.023725629, 0.51768297],
+       [0, 0, 0, 1]], dtype='float32')
+    tracker = MarkerMapTracker(camera_transform=t_cam)
+
+
 
     ended=False
     def signalEnd(vis):
@@ -80,8 +81,6 @@ if __name__ == '__main__':
         try:
             t1_ = tracker.receive(verbose=False)
     #         print(t1_)
-    #         t1_ = np.linalg.inv(t1_)
-    #         coord_1.transform(t_world@t1_@np.linalg.inv(t1)@np.linalg.inv(t_world))
             coord_1.transform(t1_@np.linalg.inv(t1))
             t1 = t1_[:]
     #         coord_1.rotate(r, center=(0, 0, 0))
