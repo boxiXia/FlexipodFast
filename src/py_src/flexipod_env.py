@@ -176,6 +176,7 @@ class FlexipodEnv(gym.Env):
     UDP_MOTOR_POS_COMMEND = int(11)
     UDP_STEP_MOTOR_POS_COMMEND = int(10)
     
+    
     def __init__(
         self, 
         dof = 12, 
@@ -322,6 +323,11 @@ class FlexipodEnv(gym.Env):
                 [pi/2-pi/4,pi/2+pi/6], # 10, reduced range
                 [-pi/2,pi/2], # 11
             ], dtype=np.float32)
+            
+            self.com_z_min = 0.36
+            self.com_z_offset = 0.56
+            self.orientation_z_min = 0.56
+            
         else: # quadruped task
             self.joint_pos_limit = np.array([
                 # front left, TODO: CHANGE THIS RANGE
@@ -341,6 +347,10 @@ class FlexipodEnv(gym.Env):
                 [-pi/2-pi/5, pi/2+pi/5], # 6
                 [-pi/2-pi/5, pi/2+pi/5], # 7
             ], dtype=np.float32)
+            
+            self.com_z_min = 0.1
+            self.com_z_offset = 0.8
+            self.orientation_z_min = 0.56
     
     def step(self,action = None):
         if action is not None:
@@ -402,17 +412,11 @@ class FlexipodEnv(gym.Env):
 
         if self._humanoid_task:
             orientation_z = ori[2] # z_z, local x vector projected to world z direction
-            com_z_min = 0.36
-            com_z_offset = 0.56
-            orientation_z_min = 0.56
         else: # quadruped task
             orientation_z= ori[0]*ori[4] - ori[1]*ori[3] # z_z, local z vector projected to world z direction
-            com_z_min = 0.1
-            com_z_offset = 0.8
-            orientation_z_min = 0.56
 
-        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+com_z_offset,1)
-        # r_orientation = (np.clip(orientation_z*1.02,0,1)**3)#*min(com_z+com_z_offset,1)
+
+        r_orientation = (np.clip(orientation_z*1.03,0,1)**3)*min(com_z+self.com_z_offset,1)
 
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
@@ -423,12 +427,9 @@ class FlexipodEnv(gym.Env):
         r_quad_ctrl = max(0,1-0.1 * sum(np.square(actuation))) # quad control cost
         reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
 
-    #         reward = orientation_z
-        # done = True if ((orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range) else False
-        done = True if ((orientation_z<orientation_z_min)or(com_z<com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
+        done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
+        # done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps) or joint_out_of_range) else False
 
-        # done = True if (orientation_z<orientation_z_min)or(self.episode_steps>=self._max_episode_steps)or joint_out_of_range else False
-        # done = True if (self.episode_steps>=self._max_episode_steps) else False
         t = msg_rec_i[self.ID_t]
         if self.info:
             info = {'t':t,
@@ -483,12 +484,58 @@ class FlexipodEnv(gym.Env):
         """resume the simulation"""
         self.server.send(self.resume_cmd_b)
 
+
+
+class FlexipodHumanoid(FlexipodEnv):
+    @property
+    def humanoid_task(self):
+        return self._humanoid_task
+    
+    @humanoid_task.setter
+    def humanoid_task(self,is_humanoid:bool):
+        print(f"setting humanoid_task={is_humanoid}")
+        self._humanoid_task = is_humanoid
+        pi = np.pi
+        if is_humanoid:
+            self.joint_pos_limit = np.array([
+                # front left
+                [-pi,pi],     # 0
+                [-pi/2,pi/2], # 1
+                # front right
+                [-pi,pi],     # 2
+                [-pi/2,pi/2], # 3
+                # back left
+                [-pi/4,pi/4], # 4, reduced range
+                [-pi/2-pi/6,-pi/2+pi/4], # 5, reduced range
+                [-pi/3,pi/3], # 6
+                [-pi/3,pi/3], # 7
+                # back right
+                [-pi/4,pi/4], # 8 , reduced range
+                [pi/2-pi/4,pi/2+pi/6], # 9, reduced range
+                [-pi/3,pi/3], # 10
+                [-pi/3,pi/3], # 11
+            ], dtype=np.float32)
+            
+            self.com_z_min = 0.42
+            self.com_z_offset = 0.46
+            self.orientation_z_min = 0.56
+        else:
+            raise NotImplementedError
+        print(f"init FlexipodHumanoid,com_z_min = {self.com_z_min}")
+
+    # def __init__(self,**kwargs):
+    #      super().__init__(**kwargs)
+    #      self.humanoid_task = True
+
+
 def make(**kargs):
-    return FlexipodEnv(**kargs)
+    # return FlexipodEnv(**kargs)
+    return FlexipodHumanoid(**kargs)
 
 
 if __name__ == '__main__':
-    env = FlexipodEnv(dof = 12)
+    # env = FlexipodEnv(dof = 12)
+    env = make()
     env.reset()
     while True:
         action = env.action_space.sample()
