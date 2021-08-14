@@ -505,19 +505,19 @@ class FlexipodHumanoid(FlexipodEnv):
                 [-pi,pi],     # 2
                 [-pi/2,pi/2], # 3
                 # back left
-                [-pi/4,pi/4], # 4, reduced range
+                [-pi/3,pi/3], # 4, reduced range
                 [-pi/2-pi/6,-pi/2+pi/4], # 5, reduced range
                 [-pi/3,pi/3], # 6
                 [-pi/3,pi/3], # 7
                 # back right
-                [-pi/4,pi/4], # 8 , reduced range
+                [-pi/3,pi/3], # 8 , reduced range
                 [pi/2-pi/4,pi/2+pi/6], # 9, reduced range
                 [-pi/3,pi/3], # 10
                 [-pi/3,pi/3], # 11
             ], dtype=np.float32)
             
             self.com_z_min = 0.42
-            self.com_z_offset = 0.46
+            self.com_z_offset = 0.52
             self.orientation_z_min = 0.56
         else:
             raise NotImplementedError
