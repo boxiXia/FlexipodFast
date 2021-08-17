@@ -197,6 +197,17 @@ public:
 };
 
 
+__constant__ constexpr int MASS_FLAG_DOF_X_ID = 0;
+__constant__ constexpr int MASS_FLAG_DOF_Y_ID = 1;
+__constant__ constexpr int MASS_FLAG_DOF_Z_ID = 2;
+//whether to apply constrain on the mass, must be set true for constraint to work
+__constant__ constexpr int MASS_FLAG_CONSTRAIN_ID = 3;
+
+// constexpr uint8_t MASS_FLAG_DOF       = 0b00000111;
+__constant__ constexpr uint8_t MASS_FLAG_DOF = (1U << MASS_FLAG_DOF_X_ID) | (1U << MASS_FLAG_DOF_Y_ID) | (1U << MASS_FLAG_DOF_Z_ID);
+// constexpr uint8_t MASS_FLAG_CONSTRAIN = 0b00001000;
+__constant__ constexpr uint8_t MASS_FLAG_CONSTRAIN = (1U << MASS_FLAG_CONSTRAIN_ID);
+
 struct MASS {
 	//double* m = nullptr;
 	double* inv_m = nullptr; // inverse mass
@@ -208,8 +219,9 @@ struct MASS {
 	Vec3d* force_extern = nullptr; // (input) external force
 	Vec3d* force_constraint = nullptr;// (measured) constrain force
 	Vec3d* color = nullptr;
-	bool* fixed = nullptr;
-	bool* constrain = nullptr;//whether to apply constrain on the mass, must be set true for constraint to work
+
+	Vec8b* flag = nullptr; // flag:(0-2:dof,3 constrain)
+
 	int num = 0;
 	inline int size() const { return num; }
 
@@ -233,17 +245,19 @@ struct MASS {
 		allocateMemory(on_host, num, force_extern);
 		allocateMemory(on_host, num, force_constraint);
 		allocateMemory(on_host, num, color);
-		allocateMemory(on_host, num, fixed);
-		allocateMemory(on_host, num, constrain);
+		allocateMemory(on_host, num, flag);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 		if (on_host) {// set vel,acc to 0
 			memset(vel, 0, num * sizeof(Vec3d));
 			memset(acc, 0, num * sizeof(Vec3d));
+			memset(flag, MASS_FLAG_DOF, num * sizeof(Vec8b));
 		}
 		else {
 			cudaMemset(vel, 0, num * sizeof(Vec3d));
 			cudaMemset(acc, 0, num * sizeof(Vec3d));
+			cudaMemset(flag, MASS_FLAG_DOF, num * sizeof(Vec8b));
+
 		}
 	}
 
@@ -258,8 +272,7 @@ struct MASS {
 		cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(force_constraint, other.force_constraint, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(fixed, other.fixed, num * sizeof(bool), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(constrain, other.constrain, num * sizeof(bool), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(flag, other.flag, num * sizeof(Vec8b), cudaMemcpyDefault, stream);
 		//this->num = other.num;
 		gpuErrchk(cudaPeekAtLastError());
 	}
@@ -652,29 +665,24 @@ struct JointControl {
 			switch (mode)//switch controller mode
 			{
 			case JointControlMode::vel:
-				dv = max_acc * ndt;
-				//clampInplace(vel_desired[i], vel[i] - dv, vel[i] + dv);
 				clampInplace(vel_desired[i], -max_vel, max_vel);
-				vel_error[i] = vel_desired[i] - vel[i];
 
-				pos_desired[i] += vel_desired[i] * ndt;
-				pos_error[i] = pos_desired[i] - pos[i];
-				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
-				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
+				//vel_error[i] = vel_desired[i] - vel[i];
+				//pos_desired[i] += vel_desired[i] * ndt;
+				//pos_error[i] = pos_desired[i] - pos[i];
+				//clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
+				//clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
+				//cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
 
-				cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
-				//clampInplace(cmd[i], vel[i] -dv, vel[i] + dv);
-
-				//joint.vel_desired[i] = cmd[i];
 				//TODO FIX THIS
 				vel_desired_proxy = vel_desired[i];
+				dv = max_acc * ndt;
 				clampInplace(vel_desired_proxy, joint.vel_desired[i] -dv, joint.vel_desired[i] + dv);
+				// set joint velocity
 				joint.vel_desired[i] = vel_desired_proxy;
-				//cmd[i] = vel_desired_proxy;
-				
-				//joint.vel_desired[i] = joint.vel_desired[i] * 0.9 + 0.1*vel_desired[i];
+				cmd[i] = vel_desired_proxy;
 
-				vel_desired[i] = 0.98 * vel_desired[i];
+				vel_desired[i] = 0.99 * vel_desired[i];
 				break;
 			case JointControlMode::pos:
 				clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
@@ -878,8 +886,7 @@ public:
 			joint_pos[i * 2] = cosf(joint_control.pos[i]);
 			joint_pos[i * 2 +1] = sinf(joint_control.pos[i]);
 			joint_vel[i] = joint_control.vel[i];
-			joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize
-		
+			joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize		
 		}
 		body.acc.fillArray(com_acc);
 		body.vel.fillArray(com_vel);
@@ -1022,7 +1029,7 @@ public:
 	void createBall(const Vec3d& center, const double r); // creates ball with radius r at position center
 	void clearConstraints(); // clears global constraints only
 
-	void setBreakpoint(const double time,const bool should_end=false); // tell the program to stop at a fixed time (doesn't hang).
+	void setBreakpoint(const double time,const bool should_end=false); // tell the program to stop at the set time (doesn't hang).
 	void start();
 	void pause(const double t=0);//pause the simulation at (simulation) time t [s]
 	void resume();

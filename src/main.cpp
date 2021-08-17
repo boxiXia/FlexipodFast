@@ -91,8 +91,8 @@ int main(int argc, char* argv[])
 	const double m = 0.08* radius_poisson;// mass per vertex
 	const double inv_m = 1. / m;
 
-	const double spring_compliance = 1 / (m * 6e6); //spring constant for silicone leg [m/N]
-	const double spring_damping = m * 6e4; // damping for spring [N*s/m]
+	const double spring_compliance = 1 / (m * 5e6); //spring constant for silicone leg [m/N]
+	const double spring_damping = m * 1e5; // damping for spring [N*s/m]
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
 	constexpr double scale_soft = 2.0; // scaling factor soft
@@ -140,7 +140,8 @@ int main(int argc, char* argv[])
 		mass.pos_prev[i] = mass.pos[i];// previous pos
 		mass.color[i] = bot.colors[i]; // color (Vec3d) [0.0-1.0]
 		mass.inv_m[i] = inv_m; // mass [kg]
-		mass.constrain[i] = bot.is_surface[i];// set constraint to true for suface vertices, and false otherwise
+		// conditionally apply constraint to the masses
+		mass.flag[i].assignBit(MASS_FLAG_CONSTRAIN_ID, bot.is_surface[i]);
 	}
 #pragma omp simd
 	for (int i = 0; i < num_spring; i++)
@@ -174,7 +175,9 @@ int main(int argc, char* argv[])
 
 	//// fix the main body
 	//for (int i = bot.id_vertices.at("part").at(0); i < bot.id_vertices.at("part").at(1); i++) {
-	//	mass.fixed[i] = true;
+	//	mass.flag[i].assignBit(MASS_FLAG_DOF_X_ID, false);
+	//	mass.flag[i].assignBit(MASS_FLAG_DOF_Y_ID, false);
+	//	mass.flag[i].assignBit(MASS_FLAG_DOF_Z_ID, false);
 	//}
 
 
@@ -294,7 +297,6 @@ int main(int argc, char* argv[])
 
 	// our plane has a unit normal in the z-direction, with 0 offset.
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
-
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
 	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);

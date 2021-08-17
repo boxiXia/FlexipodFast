@@ -10,6 +10,8 @@ import numpy as np
 import torch
 import hydra
 from omegaconf import DictConfig, OmegaConf
+import heapq
+
 
 # from pytorch_sac.train import Workspace
 
@@ -105,6 +107,10 @@ class Workspace(object):
         eta_T = 0.996
         min_sample_size = batch_size*10
         
+        # saving top x models
+        num_saved_model = self.cfg.num_saved_model
+        h_saved_model = [] # container for heapq (priority queue): 
+        
         # training loop
         while self.step < num_train_steps:
             # sample action for data collection
@@ -161,12 +167,19 @@ class Workspace(object):
                 if self.step > eval_step:
                     eval_step += eval_frequency
                     self.logger.log('eval/episode', episode, self.step)
-                    average_episode_reward = self.evaluate()
+                    avg_episode_reward = self.evaluate() # average episode reward
                     
-                    # save the model
-                    t1 = time.time()
-                    self.agent.save(f"{self.model_dir}//{self.step}_{average_episode_reward:.0f}.chpt")
-                    print(f"model_save dt={time.time()-t1}")
+                    # save the <num_saved_model> top model
+                    save_path = f"{self.model_dir}//{self.step}_{avg_episode_reward:.0f}.chpt"
+                    if len(h_saved_model)<num_saved_model:
+                        # print(f"model_save:{save_path}")
+                        heapq.heappush(h_saved_model,(avg_episode_reward,save_path))
+                        self.agent.save(save_path) # saving new
+                    elif h_saved_model[0][0]<avg_episode_reward: # old reward < current reward
+                        # print(f"model_save:{save_path}")
+                        avg_episode_reward_pop,save_path_pop = heapq.heapreplace(h_saved_model, (avg_episode_reward,save_path))
+                        self.agent.save(save_path) # saving new
+                        os.remove(save_path_pop)   # removing old
                 
                 # reset agent and env
                 episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
@@ -179,7 +192,7 @@ def main(cfg):
 
     print(torch.cuda.device_count())
     workspace = Workspace(cfg)
-    if "load_model" in  cfg:
+    if cfg.load_model:
         workspace.agent.load(cfg.load_model)
     if "train" in cfg and cfg.train:
         workspace.run()

@@ -30,6 +30,8 @@
 
 #include <thread>
 
+#include <bitset>
+
 #include "vec.h"
 
 int main() {
@@ -117,4 +119,30 @@ int main() {
 		std::cout << w_a << std::endl;
 
 	}
+
+
+	{
+		std::cout << "\n----------- Vec8b ---------\n";
+		Vec8b v8(0, 0, 1,1,1,0,1,1);
+
+		v8.setBit(0);
+		v8.assignBit(1, true);
+		v8.clearBit(2);
+		v8.clearBit(3);
+		assert(v8.getBit(6) == true);
+		assert(v8 == Vec8b(0b11010011));
+		assert(v8);
+		Vec3d v(1.0, 2.0, 3.0);
+
+		for (int i = 0; i < 8; i++)
+			std::cout << std::setw(2)<<v8.getBit(i);
+		std::cout << std::endl;
+		std::cout << v8 << '\n';
+		std::cout << v8*v << std::endl;
+
+		v *= v8;
+		std::cout << v << std::endl;
+
+	}
+
 }

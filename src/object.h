@@ -155,7 +155,8 @@ struct CudaContactPlane {
         Vec3d& force, 
         Vec3d& pos, 
         Vec3d& pos_prev, 
-        Vec3d& vel, 
+        Vec3d& vel,
+        const Vec3d& global_acc,
         const double dt
     );
 

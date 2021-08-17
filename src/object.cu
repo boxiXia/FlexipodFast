@@ -105,6 +105,7 @@ __device__  void CudaContactPlane::solveDist(
 	Vec3d& pos,
 	Vec3d& pos_prev,
 	Vec3d& vel,
+    const Vec3d& global_acc,
 	const double dt
 ) {
 	double disp = _normal.dot(pos) - _offset; // displacement into the plane
@@ -120,15 +121,16 @@ __device__  void CudaContactPlane::solveDist(
 		double  dp_t_fs = -disp * _FRICTION_S; // maximun friction correction
 
 		//  move out of the ground         static friction <-> dynamic friction
-		pos -= disp * _normal + (dp_t_fs > dp_t_norm ? 
-            dp_t : fmin(1.0, -disp * _FRICTION_K / dp_t_norm) * dp_t);
+		pos -= disp * _normal + dp_t * (dp_t_fs > dp_t_norm ?
+            1: fmin(1.0, -disp * _FRICTION_K / dp_t_norm));
 
        dp_n_norm = (pos - pos_prev).dot(_normal);
        double vn = dp_n_norm / dt;
        if (vn < 0) {
            double vn_old = vel.dot(_normal);
-           double e = fabs(vn) < 2 * 9.8 * dt ? 0 : 1; // TODO gravity as variable
-           pos_prev -= (-vn - e* fmin(vn_old * 0.5, 0.0)) * dt * _normal;
+                                 // grivity at negative plane direction
+           double e = fabs(vn) < 2 * (-global_acc.dot(_normal)) * dt ? 0 : 1; // TODO gravity as variable
+           pos_prev -= (-vn - e* fmin(vn_old * 0.1, 0.0)) * dt * _normal;
        }
 	}
 }

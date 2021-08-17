@@ -215,11 +215,11 @@ public:
 
 		if (thread_udp_send.joinable()) {
 			thread_udp_send.join();
-			//printf("thread_udp_send joined\n");
+			//printf("thread_udp_send joined\data");
 		}
 		if (thread_udp_receive.joinable()) {
 			thread_udp_receive.join();
-			//printf("thread_udp_receive joined\n");
+			//printf("thread_udp_receive joined\data");
 		}
 		printf("UDP server closed\n");
 	}
@@ -238,7 +238,7 @@ private:
 					//for (int i = 0; i < bytes_recvd; i++) {//prints the data in hex format
 					//	printf("%02x", reinterpret_cast<unsigned char*>(recv_buffer_)[i]);
 					//}
-					//printf("\n");
+					//printf("\data");
 
 					// Unpack data
 					msgpack::object_handle oh = msgpack::unpack(recv_buffer_, n_bytes_received);
@@ -253,7 +253,7 @@ private:
 			}
 			catch (std::system_error) {
 				//todo: ignore it
-				//printf("timed out\n");
+				//printf("timed out\data");
 				//printf( __FILE__, __LINE__);
 				continue;
 			}
@@ -276,7 +276,7 @@ private:
 				if (!msg_send_queue.empty()) { // assuming sending speed is faster than data creation
 					while (msg_send_queue.size() > 1) {
 						msg_send_queue.pop(); // remove any second old message
-						//printf("send() drop old message %s:line %d\n", __FILE__, __LINE__);
+						//printf("send() drop old message %s:line %d\data", __FILE__, __LINE__);
 					}
 					// Pack data into msgpack
 					auto& _msg_send = msg_send_queue.front(); // oldest message

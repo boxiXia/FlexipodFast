@@ -19,9 +19,9 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 
 
 #if defined(__CUDACC__) // NVCC
-#define MY_ALIGN(n) __align__(n)
+#define MY_ALIGN(data) __align__(data)
 #elif defined(__GNUC__) // GCC
-#define MY_ALIGN(n) __attribute__((aligned(n)))
+#define MY_ALIGN(data) __attribute__((aligned(data)))
 #elif defined(_MSC_VER) // MSVC
 #define MY_ALIGN(n) __declspec(align(n))
 #else
@@ -32,6 +32,7 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include <bitset>
 
 #include <cuda_runtime.h>
 #include <cuda.h>
@@ -39,6 +40,11 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 #include <device_launch_parameters.h>
 
 #include <msgpack.hpp>
+
+
+
+class Vec8b; // boolean bit set
+
 
 /*
 index 2 (int)
@@ -204,6 +210,8 @@ struct MY_ALIGN(8) Vec3d {
 		return *this;
 	}
 
+	inline CUDA_CALLABLE_MEMBER Vec3d& operator*=(const Vec8b& d);
+
 	inline CUDA_CALLABLE_MEMBER Vec3d& operator/=(const Vec3d & v) {
 		x /= v.x;
 		y /= v.y;
@@ -293,7 +301,7 @@ struct MY_ALIGN(8) Vec3d {
 		printf("(%2f, %2f, %2f)\n", x, y, z);
 	}
 
-	inline CUDA_CALLABLE_MEMBER double dot(const Vec3d& b) { // dot product
+	inline CUDA_CALLABLE_MEMBER double dot(const Vec3d& b) const { // dot product
 		return x * b.x + y * b.y + z * b.z; // preferably use this version
 	}
 
@@ -323,9 +331,9 @@ struct MY_ALIGN(8) Vec3d {
 
 	CUDA_CALLABLE_MEMBER Vec3d normalize() {
 		double n = this->norm();
-		//if (n<1e-8)
+		//if (data<1e-8)
 		//{// Todo: change this
-		//    n = 1e-8;// add for numerical stability
+		//    data = 1e-8;// add for numerical stability
 		//}
 		*this /= n;
 		return *this;
@@ -467,8 +475,8 @@ float lerp(float a, float b, float f);
 //		return Vec3<T>(-x, -y, -z);
 //	}
 //
-//	CUDA_CALLABLE_MEMBER T& operator [] (int n) {
-//		switch (n) {
+//	CUDA_CALLABLE_MEMBER T& operator [] (int data) {
+//		switch (data) {
 //		case 0:
 //			return x;
 //		case 1:
@@ -476,13 +484,13 @@ float lerp(float a, float b, float f);
 //		case 2:
 //			return z;
 //		default:
-//			printf("C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
+//			printf("C FILE %s LINE %d:operator [data] out of range!\data", __FILE__, __LINE__);
 //			exit(-1);
 //		} // to do remove this
 //	}
 //
-//	CUDA_CALLABLE_MEMBER const T& operator [] (int n) const {
-//		switch (n) {
+//	CUDA_CALLABLE_MEMBER const T& operator [] (int data) const {
+//		switch (data) {
 //		case 0:
 //			return x;
 //		case 1:
@@ -490,7 +498,7 @@ float lerp(float a, float b, float f);
 //		case 2:
 //			return z;
 //		default:
-//			printf("C FILE %s LINE %d:operator [n] out of range!\n", __FILE__, __LINE__);
+//			printf("C FILE %s LINE %d:operator [data] out of range!\data", __FILE__, __LINE__);
 //			return x;
 //		} // to do remove this
 //	}
@@ -531,7 +539,7 @@ float lerp(float a, float b, float f);
 //	}
 //
 //	CUDA_CALLABLE_MEMBER void print() {
-//		printf("(%2f, %2f, %2f)\n", x, y, z);
+//		printf("(%2f, %2f, %2f)\data", x, y, z);
 //	}
 //
 //	inline CUDA_CALLABLE_MEMBER  double SquaredSum() const {
@@ -865,9 +873,109 @@ struct MY_ALIGN(8) Mat3d {
 
 
 };
+/*----------------------------------------------------------------------*/
 
 
-/* clamp a value n between lower and upper */
+/*reference: 
+https://stackoverflow.com/questions/47981/how-do-you-set-clear-and-toggle-a-single-bit
+https://www.learncpp.com/cpp-tutorial/bitwise-operators/
+*/
+class Vec8b {
+public:
+	uint8_t data=0;
+	MSGPACK_DEFINE_ARRAY(data);
+
+	CUDA_CALLABLE_MEMBER Vec8b() { }
+	CUDA_CALLABLE_MEMBER Vec8b( bool v0, bool v1, bool v2=0, bool v3=0, 
+								bool v4=0, bool v5=0, bool v6=0, bool v7=0) {
+		data |= v0 << 0;
+		data |= v1 << 1;
+		data |= v2 << 2;
+		data |= v3 << 3;
+		data |= v4 << 4;
+		data |= v5 << 5;
+		data |= v6 << 6;
+		data |= v7 << 7;
+	}
+	CUDA_CALLABLE_MEMBER Vec8b(const uint8_t& v) {data = v;}
+	CUDA_CALLABLE_MEMBER Vec8b(const unsigned int& v) { data = v; }
+	CUDA_CALLABLE_MEMBER Vec8b(const int& v) { data = v; }
+
+	// asignment oprator
+	CUDA_CALLABLE_MEMBER Vec8b& operator=(const uint8_t& v) {
+		data = v;
+		return *this;
+	}
+
+	/*assign k-th bit to value */
+	inline CUDA_CALLABLE_MEMBER void assignBit(int k, bool value) {
+		// clear kth bit      set kth bit
+		data = (data & ~(true << k)) | (value << k);
+	}
+
+	/*Use bitwise OR operator (|) to set k-th bit to 1*/
+	inline CUDA_CALLABLE_MEMBER void setBit(int k) {
+		data |= true << k;
+	}
+	/*Use bitwise AND operator (&) to clear a bit.*/
+	inline CUDA_CALLABLE_MEMBER void clearBit(int k) {
+		data &= ~(true << k);
+	}
+	/* check the value of k-th bit*/
+	inline CUDA_CALLABLE_MEMBER bool getBit(int k) const {
+		return (data >> k) & 1U;
+	}
+	//CUDA_CALLABLE_MEMBER const double& operator [] (int n) const {
+
+	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec8b& v1, const Vec8b& v2) {return v1.data == v2.data;}
+	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec8b& v1, const uint8_t& v2) { return v1.data == v2; }
+	inline CUDA_CALLABLE_MEMBER friend bool operator==(const uint8_t& v1, const Vec8b& v2) { return v2.data == v1; }
+
+	// overloading if (var)
+	explicit inline CUDA_CALLABLE_MEMBER operator bool() const {return data;}
+
+	// overwrite bitwise and operator
+	inline CUDA_CALLABLE_MEMBER Vec8b operator&(const uint8_t& v2) {return Vec8b(data & v2);}
+	inline CUDA_CALLABLE_MEMBER Vec8b operator&(const Vec8b& v2) { return Vec8b(data & v2.data); }
+	inline CUDA_CALLABLE_MEMBER friend Vec8b operator&(const uint8_t& v1, const Vec8b& v2) { return Vec8b(v2.data & v1); }
+
+	inline CUDA_CALLABLE_MEMBER Vec8b operator~() { return Vec8b(~data); }
+
+
+	// convert to bitset
+	inline std::bitset<8> toBitset() const { return std::bitset<8>(data); }
+
+	// overloading << operator, least significant bit on the right
+	friend std::ostream& operator<<(std::ostream& os, const Vec8b& v){
+		os << v.toBitset(); return os;
+	}
+
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec8b& v8b, const Vec3d& v) {
+		return Vec3d(v8b.getBit(0) * v.x, v8b.getBit(1) * v.y, v8b.getBit(2) * v.z);
+	}
+	inline CUDA_CALLABLE_MEMBER friend Vec3d operator*(const Vec3d& v, const Vec8b& v8b) {
+		return Vec3d(v8b.getBit(0) * v.x, v8b.getBit(1) * v.y, v8b.getBit(2) * v.z);
+	}
+};
+
+CUDA_CALLABLE_MEMBER Vec3d& Vec3d::operator*=(const Vec8b& v) {
+	x *= v.getBit(0);
+	y *= v.getBit(1);
+	z *= v.getBit(2);
+	return *this;
+}
+
+/*----------------------------------------------------------------------*/
+
+
+
+
+
+
+
+
+
+/* clamp a value data between lower and upper */
 template <typename T>
 inline CUDA_CALLABLE_MEMBER void clampInplace(T& n, const T& lower, const T& upper) {
 	//assert(lower < upper);
@@ -875,7 +983,7 @@ inline CUDA_CALLABLE_MEMBER void clampInplace(T& n, const T& lower, const T& upp
 	else if (n < lower) { n = lower; }
 }
 
-/* clamp a value n between lower and upper,
+/* clamp a value data between lower and upper,
 assume periodic between lower and upper */
 
 template <typename T>

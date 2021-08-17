@@ -6,10 +6,10 @@ seed: 1
 
 agent:
     critic_cfg:
-        hidden_dim: 256
+        hidden_dim: 512
         hidden_depth: 4
     actor_cfg:
-        hidden_dim: 256
+        hidden_dim: 512
         hidden_depth: 4
     # batch_size: 512
     batch_size: 1024
@@ -20,11 +20,16 @@ agent:
 
 update_frequency: 16 #num of update is devided by this number
 
+
+load_model: False
+# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\14140373_5727.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\9460682_617.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\7980571_640.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1576903_9999.chpt
 train: True
 # train: False
+
+num_saved_model: 20 # saving the top x models
 
 num_seed_steps: 40000
 
