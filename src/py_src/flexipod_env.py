@@ -185,7 +185,7 @@ class FlexipodEnv(gym.Env):
         normalize = True,
         max_joint_vel = 10, # maximum joint velocity rad/s
         humanoid_task = True, # if true, humanoid, else qurdurped
-        max_episode_steps = 10000,
+        max_episode_steps = 4000,
         max_action = 5, # [rad/s], velocity control
         local_address = ("127.0.0.1",33300),
         remote_address = ("127.0.0.1",33301)):
@@ -324,8 +324,8 @@ class FlexipodEnv(gym.Env):
                 [-pi/2,pi/2], # 11
             ], dtype=np.float32)
             
-            self.com_z_min = 0.36
-            self.com_z_offset = 0.56
+            self.com_z_min = 0.34
+            self.com_z_offset = 0.62
             self.orientation_z_min = 0.56
             
         else: # quadruped task
@@ -404,7 +404,7 @@ class FlexipodEnv(gym.Env):
         # x velocity
         com_vel_x = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
         # r_vel = 0.3*np.clip(com_vel_xy,0,1)+0.7 # velocity reward
-        r_vel = 0.5*np.clip(com_vel_x,-0.5,1)+0.6 # velocity reward
+        r_vel = 1.0*np.clip(com_vel_x,-0.5,1)+0.6 # velocity reward
 
     #         print(orientation_z,com_z)
         # r_orientation = max(0,orientation_z)*min(com_z+0.56,1)
@@ -518,7 +518,7 @@ class FlexipodHumanoid(FlexipodEnv):
             
             self.com_z_min = 0.42
             self.com_z_offset = 0.52
-            self.orientation_z_min = 0.56
+            self.orientation_z_min = 0.6
         else:
             raise NotImplementedError
         print(f"init FlexipodHumanoid,com_z_min = {self.com_z_min}")

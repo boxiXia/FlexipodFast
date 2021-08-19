@@ -88,17 +88,17 @@ int main(int argc, char* argv[])
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 0.08* radius_poisson;// mass per vertex
+	const double m = 0.09* radius_poisson;// mass per vertex
 	const double inv_m = 1. / m;
 
-	const double spring_compliance = 1 / (m * 5e6); //spring constant for silicone leg [m/N]
-	const double spring_damping = m * 1e5; // damping for spring [N*s/m]
+	const double spring_compliance = 1 / (m * 6e6); //spring constant for silicone leg [m/N]
+	const double spring_damping = m * 6e4; // damping for spring [N*s/m]
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
 	constexpr double scale_soft = 2.0; // scaling factor soft
 	constexpr double scale_rot_spring = 1.0; // stiffness scale for rotation spring
 
-	constexpr double scale_joint_m = 3; // scaling factor for the joint mass
+	constexpr double scale_joint_m = 2.6; // scaling factor for the joint mass
 	constexpr double scale_joint_compliance = 3; // scaling factor for the joint spring constant
 	constexpr double scale_joint_damping = 3; // scaling factor for the joint spring damping
 
@@ -286,7 +286,7 @@ int main(int argc, char* argv[])
 	// set max speed for each joint
 	double max_rpm = 300;//maximun revolution per minute
 	sim.joint_control.max_vel = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
-	double settling_time = 0.8;// reaches max_rpm within this time
+	double settling_time = 1.0;// reaches max_rpm within this time
 	sim.joint_control.max_acc = sim.joint_control.max_vel / settling_time;
 
 #ifdef GRAPHICS
@@ -299,7 +299,7 @@ int main(int argc, char* argv[])
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.7, 0.6);
 
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 	//sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.05f,0.1f);
