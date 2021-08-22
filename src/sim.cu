@@ -1480,7 +1480,7 @@ void Simulation::createGLFWWindow() {
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 	glfwSwapInterval(0);// disable vsync
 	//glfwSwapInterval(1);// enable vsync
-	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);//simultaneously cover multiple windows with full screen windows
+	//glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);//simultaneously cover multiple windows with full screen windows
 
 	auto monitor = glfwGetPrimaryMonitor();
 	const GLFWvidmode* mode = glfwGetVideoMode(monitor);

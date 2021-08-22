@@ -99,6 +99,39 @@ static bool MyKnob(const char* label, float* p_value, float v_min, float v_max)
 	return value_changed;
 }
 
+
+// Make the UI compact because there are so many fields. ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
+static void PushStyleCompact()
+{
+	ImGuiStyle& style = ImGui::GetStyle();
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2((float)(int)(style.FramePadding.x * 0), (float)(int)(style.FramePadding.y *0)));
+	//ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2((float)(int)(style.ItemSpacing.x * 0), (float)(int)(style.ItemSpacing.y *0)));
+	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2((float)(int)(style.CellPadding.x * 0), (float)(int)(style.CellPadding.y * 0)));
+
+}
+
+static void PopStyleCompact()
+{
+	ImGui::PopStyleVar(2);
+}
+
+
+// Helper to display a little (?) mark which shows a tooltip when hovered.
+// In your own code you may want to display an actual icon if you are using a merged icon fonts (see docs/FONTS.md)
+// ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
+static void HelpMarker(const char* title, const char* help)
+{
+	ImGui::Text(title);
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+		ImGui::TextUnformatted(help);
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+	}
+}
+
 /*Setup Dear ImGui*/
 void Simulation::startupImgui() {
 	// Setup Dear ImGui context
@@ -130,8 +163,9 @@ void Simulation::startupImgui() {
 	// https://doc.magnum.graphics/magnum/classMagnum_1_1ImGuiIntegration_1_1Context.html#ImGuiIntegration-Context-dpi
 	auto monitor = glfwGetPrimaryMonitor();
 	//const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-	float xscale=2, yscale=2;
-	//glfwGetMonitorContentScale(monitor, &xscale, &yscale);
+	//float xscale=2, yscale=2;
+	float xscale, yscale;
+	glfwGetMonitorContentScale(monitor, &xscale, &yscale);
 	//std::cout << xscale << "," << yscale;
 	std::string font_path = (getProgramDir() + "\\Cousine-Regular.ttf");
 
@@ -163,8 +197,8 @@ void Simulation::runImgui() {
 		ImGui::NewFrame();
 
 		//// ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
-		//bool show_demo_window = true;
-		//ImGui::ShowDemoWindow(&show_demo_window);
+		bool show_demo_window = true;
+		ImGui::ShowDemoWindow(&show_demo_window);
 		//ImGui::ShowMetricsWindow();
 		//ImGui::ShowStyleEditor();
 
@@ -212,18 +246,23 @@ void Simulation::runImgui() {
 
 			float width = ImGui::GetContentRegionAvail().x;
 			float cursor_pos_x = ImGui::GetCursorPosX();
-			ImGui::Text("id");ImGui::SameLine();
+			ImGui::Text("id"); ImGui::SameLine();
+			HelpMarker("   x   ", "position [rad]");
 
-			ImGui::SetCursorPosX(width * 0.2f);
-			ImGui::Text("pos_desired"); ImGui::SameLine();
-			ImGui::SetCursorPosX(width * 0.6f);
-			ImGui::Text("vel_desired"); 
+			ImGui::SameLine();
+			HelpMarker("   x_d   ", "position desired [rad]");
+
+			ImGui::SameLine(); ImGui::SetCursorPosX(width * 0.7f);
+			HelpMarker("   v_d   ", "velocity desired [rad/s]");
 			
-			ImGui::PushItemWidth(width * 0.5);
+			//PushStyleCompact();
+			
+			ImGui::PushItemWidth(width * 0.3f);
+
 			char label[20];
 			for (int i = 0; i < joint_control.size(); i++)
 			{
-				ImGui::Text("%2d", i); 
+				ImGui::Text("%2d  %+6.3f", i, joint_control.pos[i]);
 				ImGui::SameLine();
 				
 				sprintf(label, "joint_pos_des_%d", i); 
@@ -241,6 +280,8 @@ void Simulation::runImgui() {
 			}
 			ImGui::PopItemWidth();
 			ImGui::Separator();
+
+			//PopStyleCompact();
 
 			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
 			const char* elem_name = (joint_control.mode == JointControlMode::vel)?  "vel":"pos";
