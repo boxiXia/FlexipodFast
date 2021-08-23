@@ -197,8 +197,8 @@ void Simulation::runImgui() {
 		ImGui::NewFrame();
 
 		//// ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
-		bool show_demo_window = true;
-		ImGui::ShowDemoWindow(&show_demo_window);
+		//bool show_demo_window = true;
+		//ImGui::ShowDemoWindow(&show_demo_window);
 		//ImGui::ShowMetricsWindow();
 		//ImGui::ShowStyleEditor();
 
