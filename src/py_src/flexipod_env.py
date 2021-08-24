@@ -404,7 +404,7 @@ class FlexipodEnv(gym.Env):
         # x velocity
         com_vel_x = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
         # r_vel = 0.3*np.clip(com_vel_xy,0,1)+0.7 # velocity reward
-        r_vel = 1.0*np.clip(com_vel_x,-0.5,1)+0.6 # velocity reward
+        r_vel = 1.0*np.clip(com_vel_x,-1.0,2.0)+1.0 # velocity reward
 
     #         print(orientation_z,com_z)
         # r_orientation = max(0,orientation_z)*min(com_z+0.56,1)
@@ -529,8 +529,8 @@ class FlexipodHumanoid(FlexipodEnv):
 
 
 def make(**kargs):
-    # return FlexipodEnv(**kargs)
-    return FlexipodHumanoid(**kargs)
+    return FlexipodEnv(**kargs)
+    # return FlexipodHumanoid(**kargs)
 
 
 if __name__ == '__main__':

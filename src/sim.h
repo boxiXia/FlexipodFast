@@ -792,8 +792,8 @@ struct RigidBody {
 	}
 
 	char* print() {
-		char out[250];
-		int n = snprintf(out,250,
+		char out[300];
+		int n = snprintf(out, 300,
 			"com pos %+6.2f %+6.2f %+6.2f\n"
 			"com vel %+6.2f %+6.2f %+6.2f\n"
 			"com acc %+6.2f %+6.2f %+6.2f\n"
@@ -801,7 +801,7 @@ struct RigidBody {
 			"rotation:\n"
 			"%+7.3f %+7.3f %+7.3f\n"
 			"%+7.3f %+7.3f %+7.3f\n"
-			"%+7.3f %+7.3f %+7.3f",
+			"%+7.3f %+7.3f %+7.3f\n",
 			pos.x, pos.y, pos.z,
 			vel.x, vel.y, vel.z,
 			acc.x, acc.y, acc.z,
