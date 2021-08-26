@@ -307,21 +307,21 @@ class FlexipodEnv(gym.Env):
         if is_humanoid:
             self.joint_pos_limit = np.array([
                 # front left
-                [-pi,pi], # 0
+                [-pi/1.25,pi/1.25], # 0
                 [-pi/2,pi/2], # 1
                 [-pi/2,pi/2], # 2
                 # front right
-                [-pi,pi], # 3
+                [-pi/1.25,pi/1.25], # 3
                 [-pi/2,pi/2], # 4
                 [-pi/2,pi/2], # 5
                 # back left
-                [-pi/4,pi/4], # 6, reduced range
+                [-pi/3,pi/3], # 6, reduced range
                 [-pi/2-pi/6,-pi/2+pi/4], # 7, reduced range
-                [-pi/2,pi/2], # 8
+                [-pi/2,pi/12], # 8
                 # back right
-                [-pi/4,pi/4], # 9 , reduced range
+                [-pi/3,pi/3], # 9 , reduced range
                 [pi/2-pi/4,pi/2+pi/6], # 10, reduced range
-                [-pi/2,pi/2], # 11
+                [-pi/12,pi/2], # 11
             ], dtype=np.float32)
             
             self.com_z_min = 0.34

@@ -6,17 +6,19 @@ seed: 1
 
 agent:
     critic_cfg:
-        hidden_dim: 512
-        hidden_depth: 4
+        hidden_channels: [512,256,256,256]
+        # hidden_dim: 256
+        # hidden_depth: 4
     actor_cfg:
-        hidden_dim: 512
-        hidden_depth: 4
+        hidden_channels: [512,256,256,256]
+        # hidden_dim: 256
+        # hidden_depth: 4
     # batch_size: 512
     batch_size: 1024
     discount: 0.999
     # batch_size: 256
     critic_target_update_frequency: 1
-    critic_tau: 0.004
+    critic_tau: 0.005
 
 update_frequency: 16 #num of update is devided by this number
 
@@ -73,6 +75,6 @@ hydra:
         # name: sac
         name: ${agent.name}
     run:
-        dir: ./exp/${now:%Y.%m.%d.%H%M}_${experiment}
+        dir: ./exp/${train}_${now:%Y.%m.%d.%H%M}
     searchpath:
         - pkg://pytorch_sac/config

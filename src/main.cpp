@@ -299,7 +299,7 @@ int main(int argc, char* argv[])
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.7, 0.6);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 	//sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.05f,0.1f);
