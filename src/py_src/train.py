@@ -52,10 +52,13 @@ class Workspace(object):
         ]
         self.agent = hydra.utils.instantiate(cfg.agent, _recursive_=False)
 
-        self.replay_buffer = ReplayBuffer(self.env.observation_space.shape,
-                                          self.env.action_space.shape,
-                                          int(cfg.replay_buffer_capacity),
-                                          self.device)
+        self.replay_buffer = ReplayBuffer(
+            int(cfg.replay_buffer_capacity),
+            self.env.observation_space.shape,
+            self.env.action_space.shape,
+            self.env.observation_space.dtype,
+            self.env.action_space.dtype,
+            self.device)
 
         self.video_recorder = VideoRecorder(
             self.work_dir if cfg.save_video else None)
@@ -93,6 +96,10 @@ class Workspace(object):
         eval_frequency = self.cfg.eval_frequency  # evaluate every x steps
         eval_step = eval_frequency # evaluate if step>eval_step
         update_step = num_seed_steps
+        
+        replay_buffer_save_interval = int(self.cfg.replay_buffer_save_interval)
+        replay_buffer_save_step = replay_buffer_save_interval
+        
         env = self.env
         batch_size = self.cfg.agent.batch_size
         update_frequency = self.cfg.update_frequency
@@ -162,6 +169,12 @@ class Workspace(object):
                                 episode_reward, self.step)
                 self.logger.log('train/episode', episode, self.step)
                 self.logger.dump(self.step, save=(self.step > num_seed_steps))
+                
+                
+                # save replay buffer periodically
+                if self.step>replay_buffer_save_step:
+                    replay_buffer_save_step+=replay_buffer_save_interval
+                    self.replay_buffer.save(f"{self.work_dir}//replay_buffer")
                 
                 # evaluate agent periodically
                 if self.step > eval_step:
