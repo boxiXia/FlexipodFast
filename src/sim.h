@@ -689,20 +689,38 @@ struct JointControl {
 				pos_error[i] = pos_desired[i] - pos[i];
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
-				vel_desired_proxy = pos_error[i] / ndt; // reach the destination at 1 control step
+
+				vel_desired_proxy = 10 * pos_error[i] - 0.1*vel[i];
+
 				dv = max_acc * ndt;
-				clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
+				//clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
+				clampInplace(vel_desired_proxy, vel[i] - dv, vel[i] + dv);
 				clampInplace(vel_desired_proxy, -max_vel, max_vel);
-				// calcuate settling time based ob velocity change
-				double ndt_proxy = (vel_desired_proxy - vel_desired[i]) / max_acc;
-				vel_desired[i] = vel_desired_proxy;
+				joint.vel_desired[i] = vel_desired_proxy;
+				cmd[i] = joint.vel_desired[i];
 
-				ndt_proxy = abs(pos_error[i] / max_vel)*2.0;
-				if (ndt_proxy < ndt) { ndt_proxy = ndt; }
+				//vel_desired_proxy = pos_error[i] / ndt/20; // reach the destination at 50 control step
+				//dv = max_acc * ndt;
 
-				vel_error[i] = vel_desired[i] - vel[i];
-				//cmd[i] = k_vel * vel_error[i] +k_pos / ndt * pos_error[i];
-				cmd[i] = k_pos / ndt_proxy * pos_error[i];
+				//clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
+				//clampInplace(vel_desired_proxy, -max_vel, max_vel);
+
+				//vel_desired[i] = vel_desired_proxy;
+				//joint.vel_desired[i] = vel_desired[i];
+				//cmd[i] = vel_desired[i];
+
+				//vel_desired_proxy = pos_error[i] / ndt; // reach the destination at 1 control step
+				//dv = max_acc * ndt;
+				//clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
+				//clampInplace(vel_desired_proxy, -max_vel, max_vel);
+				//// calcuate settling time based ob velocity change
+				//double ndt_proxy = (vel_desired_proxy - vel_desired[i]) / max_acc;
+				//vel_desired[i] = vel_desired_proxy;
+				//ndt_proxy = abs(pos_error[i] / max_vel)*2.0;
+				//if (ndt_proxy < ndt) { ndt_proxy = ndt; }
+				//vel_error[i] = vel_desired[i] - vel[i];
+				////cmd[i] = k_vel * vel_error[i] +k_pos / ndt * pos_error[i];
+				//cmd[i] = k_pos / ndt_proxy * pos_error[i];
 
 				break;
 			}
@@ -756,7 +774,7 @@ struct RigidBody {
 		// 0  1  2  3  4  5
 		// x  y  z -x -y -z
 		// com
-		pos = std::accumulate(mass.pos + id_start, mass.pos + id_start + 6, Vec3d(0.,0.,0.)) / 6.;
+		pos = std::accumulate(mass.pos + id_start, mass.pos + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
 		vel = std::accumulate(mass.vel + id_start, mass.vel + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
 		acc = std::accumulate(mass.acc + id_start, mass.acc + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
 		Vec3d ux = (mass.pos[id_start] - mass.pos[id_start+3]).normalize();

@@ -31,3 +31,9 @@ src/py_src/runs/
 imgui.ini
 
 mesh/v10/OldVersions/
+
+robot/v10/mesh/OldVersions/
+
+robot/v9/mesh/OldVersions/
+
+src/py_src/__pycache__/

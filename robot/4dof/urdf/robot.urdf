@@ -1,0 +1,141 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<robot name="robot">
+  <link name="body">
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <mass value="1.5665020311623215"/>
+      <inertia ixx="0.005477938308348608" ixy="6.123752902270894e-07" ixz="-3.265686826018712e-08" iyy="0.019944211589765858" iyz="-2.4884903377572354e-08" izz="0.024048066912883848"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/body.obj"/>
+      </geometry>
+      <material name="#ff0000ff">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/body.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="leg_0">
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <mass value="0.16367238574463583"/>
+      <inertia ixx="0.00041044527294799966" ixy="-3.958669715673647e-05" ixz="6.359176254884208e-08" iyy="8.266255855721674e-05" iyz="-5.7025743561705324e-08" izz="0.0004175782293150582"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_0.obj"/>
+      </geometry>
+      <material name="#00ff00ff">
+        <color rgba="0 1 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_0.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="leg_1">
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <mass value="0.16367238574463583"/>
+      <inertia ixx="0.00041044527294799966" ixy="-3.958669715673647e-05" ixz="6.359176254884208e-08" iyy="8.266255855721674e-05" iyz="-5.7025743561705324e-08" izz="0.0004175782293150582"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_1.obj"/>
+      </geometry>
+      <material name="#00ff00ff">
+        <color rgba="0 1 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_1.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="leg_2">
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <mass value="0.16367238574463583"/>
+      <inertia ixx="0.00041044527294799966" ixy="-3.958669715673647e-05" ixz="6.359176254884208e-08" iyy="8.266255855721674e-05" iyz="-5.7025743561705324e-08" izz="0.0004175782293150582"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_2.obj"/>
+      </geometry>
+      <material name="#0000ffff">
+        <color rgba="0 0 1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_2.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="leg_3">
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <mass value="0.16367238574463583"/>
+      <inertia ixx="0.00041044527294799966" ixy="-3.958669715673647e-05" ixz="6.359176254884208e-08" iyy="8.266255855721674e-05" iyz="-5.7025743561705324e-08" izz="0.0004175782293150582"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_3.obj"/>
+      </geometry>
+      <material name="#0000ffff">
+        <color rgba="0 0 1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <mesh filename="mesh/leg_3.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="body,leg_0" type="continuous">
+    <origin xyz="0.14704211705138975 0.10158034379941197 0.0" rpy="0.0 0.0 1.404574493271627"/>
+    <parent link="body"/>
+    <child link="leg_0"/>
+    <axis xyz="1.0 0.0 0.0"/>
+    <limit effort="5" velocity="51"/>
+  </joint>
+  <joint name="body,leg_1" type="continuous">
+    <origin xyz="-0.14704211705138975 0.10158034379941197 0.0" rpy="0.0 0.0 1.737018160318166"/>
+    <parent link="body"/>
+    <child link="leg_1"/>
+    <axis xyz="1.0 0.0 0.0"/>
+    <limit effort="5" velocity="51"/>
+  </joint>
+  <joint name="body,leg_2" type="continuous">
+    <origin xyz="-0.14704211705138975 -0.10158034379941197 0.0" rpy="0.0 0.0 -1.737018160318166"/>
+    <parent link="body"/>
+    <child link="leg_2"/>
+    <axis xyz="1.0 0.0 0.0"/>
+    <limit effort="5" velocity="51"/>
+  </joint>
+  <joint name="body,leg_3" type="continuous">
+    <origin xyz="0.14704211705138975 -0.10158034379941197 0.0" rpy="0.0 0.0 -1.404574493271627"/>
+    <parent link="body"/>
+    <child link="leg_3"/>
+    <axis xyz="1.0 0.0 0.0"/>
+    <limit effort="5" velocity="51"/>
+  </joint>
+</robot>

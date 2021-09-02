@@ -1,25 +1,25 @@
 import open3d as o3d
 import trimesh
-import point_cloud_utils as pcu  # downsampling
+# import point_cloud_utils as pcu  # downsampling
 import numpy as np
 import matplotlib.pyplot as plt
 import numba
 import copy
-from scipy.ndimage.morphology import binary_dilation, binary_erosion
-from scipy.spatial.transform import Rotation
+# from scipy.ndimage.morphology import binary_dilation, binary_erosion
+# from scipy.spatial.transform import Rotation
 import tempfile
 import gmsh
 import meshio
 import itertools
-import shutil  # file copying
+# import shutil  # file copying
 import networkx as nx  # graph representation
 from matplotlib.colors import to_hex
 from lxml import etree
 import os
 import functools
-# conda install pythonocc-core
-from OCC.Extend.DataExchange import write_stl_file
-from OCC.Core.STEPControl import STEPControl_Reader
+
+import math
+
 
 coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
     size=60, origin=[0, 0, 0])
@@ -109,15 +109,12 @@ def rotate_view(vis):
     ctr.rotate(1.0, 0.0)
     return False
 
-# @numba.jit(["float64[:,:](float64[:,::1], float64,int64)",
-#             "float64[:,:](float64[:,:], float64,int64)"],nopython=True)
 
-
-@numba.jit([
+@numba.njit([
     (numba.types.Array(numba.types.float64, 2, 'C', readonly=True),
      numba.types.float64, numba.types.int64),
     (numba.types.Array(numba.types.float64, 2, 'C', readonly=False), numba.types.float64, numba.types.int64)],
-    nopython=True, nogil=True)
+    nogil=True)
 def uniformRandomAroundPoints(points, radius, num_per_grid=50):
     """
     sample random points uniformly (along xyz) around an arry of n points (n,3)
@@ -153,24 +150,61 @@ def uniformRandomAroundPoints(points, radius, num_per_grid=50):
 ########## geometry #####################################################################
 
 
-def axisAngleRotation(vec, angle):
+# def axisAngleRotation(vec, angle):
+#     """
+#     return a rotation matrix of axis angle rotation represented by
+#     a homogeneous transformation matrix (4x4) 
+#     input:
+#         vec: (x,y,z) of the rotation axis
+#         angle: [rad] angle of rotation about the rotation axis
+#     return:
+#         (4x4) rotation matrix
+#     """
+#     v = np.array(vec, dtype=np.float64)
+#     v_norm = np.linalg.norm(v)
+#     if v_norm != 1:
+#         v = v/v_norm
+#     h = np.eye(4)
+#     h[:3, :3] = Rotation.from_rotvec(v*angle).as_matrix()
+#     return h
+
+@numba.njit(cache=True)
+def axisAngleRotation(vec:np.ndarray, angle:float):
     """
     return a rotation matrix of axis angle rotation represented by
     a homogeneous transformation matrix (4x4) 
     input:
-        vec: (x,y,z) of the rotation axis
+        vec: np.array((x,y,z)) of the rotation axis
         angle: [rad] angle of rotation about the rotation axis
     return:
         (4x4) rotation matrix
+    example:
+        h = axisAngleRotation(numba.typed.List([0,0,1]),1)
+        h = axisAngleRotation(np.array([0,0,1]),1)
     """
-    v = np.array(vec, dtype=np.float64)
-    v_norm = np.linalg.norm(v)
+#     v = np.array(vec, dtype=np.float64)
+#     v_norm = np.linalg.norm(v)
+#     if v_norm != 1:
+#         v = v/v_norm        
+#     h = np.eye(4)
+#     h[:3, :3] = Rotation.from_rotvec(v*angle).as_matrix()
+    x,y,z = vec
+    v_norm = x*x + y*y + z*z
     if v_norm != 1:
-        v = v/v_norm
-    h = np.eye(4)
-    h[:3, :3] = Rotation.from_rotvec(v*angle).as_matrix()
+        x/=v_norm
+        y/=v_norm
+        z/=v_norm
+    # acis angle to rotation matrix: 
+    # ref https://www.euclideanspace.com/maths/geometry/rotations/conversions/angleToMatrix/index.htm
+    c = math.cos(angle)
+    s = math.sin(angle)
+    t = 1. - c
+    h = np.array([
+        t*x*x + c,   t*x*y - z*s, t*x*z + y*s, 0,
+        t*x*y + z*s, t*y*y + c,   t*y*z - x*s, 0,
+        t*x*z - y*s, t*y*z + x*s, t*z*z + c,   0,
+        0,0,0,1], dtype= np.float64).reshape((4,4))
     return h
-
 
 def translation(vec, h=None):
     """
@@ -957,33 +991,35 @@ class VolumeMesh(dict):
         return self
 ####################################################################################
 
-
-def convertStepToSTL(
-        in_file_name: str, out_file_name: str,
-        mode='binary',
-        linear_deflection=0.5,
-        angular_deflection=0.3):
-    """
-    export stl given a step/stp model
-    Input:
-    in_file_name : str, Location of the file to be imported, file type should be stp/step
-    out_file_name : str, Location of the file to be imported, file type should be stl
-    mode: optional, "ascii" by default. Can either be "binary"
-    linear_deflection: optional, default to 0.001. Lower, more occurate mesh
-    angular_deflection: optional, default to 0.5. Lower, more accurate_mesh
-    """
-    # convert to absolute path
-    in_file_name = os.path.abspath(in_file_name)
-    out_file_name = os.path.abspath(out_file_name)
-    step_reader = STEPControl_Reader()
-    step_reader.ReadFile(in_file_name)
-    step_reader.TransferRoot()
-    myshape = step_reader.Shape()
-    # Export to STL
-    write_stl_file(
-        myshape, out_file_name, mode=mode,
-        linear_deflection=linear_deflection,
-        angular_deflection=angular_deflection)
+# # conda install pythonocc-core
+# from OCC.Extend.DataExchange import write_stl_file
+# from OCC.Core.STEPControl import STEPControl_Reader
+# def convertStepToSTL(
+#         in_file_name: str, out_file_name: str,
+#         mode='binary',
+#         linear_deflection=0.5,
+#         angular_deflection=0.3):
+#     """
+#     export stl given a step/stp model
+#     Input:
+#     in_file_name : str, Location of the file to be imported, file type should be stp/step
+#     out_file_name : str, Location of the file to be imported, file type should be stl
+#     mode: optional, "ascii" by default. Can either be "binary"
+#     linear_deflection: optional, default to 0.001. Lower, more occurate mesh
+#     angular_deflection: optional, default to 0.5. Lower, more accurate_mesh
+#     """
+#     # convert to absolute path
+#     in_file_name = os.path.abspath(in_file_name)
+#     out_file_name = os.path.abspath(out_file_name)
+#     step_reader = STEPControl_Reader()
+#     step_reader.ReadFile(in_file_name)
+#     step_reader.TransferRoot()
+#     myshape = step_reader.Shape()
+#     # Export to STL
+#     write_stl_file(
+#         myshape, out_file_name, mode=mode,
+#         linear_deflection=linear_deflection,
+#         angular_deflection=angular_deflection)
 
 
 # def discretize(msh_file,
@@ -1307,23 +1343,28 @@ class RobotDescription(nx.OrderedDiGraph):
         return t
 
     @property
-    def rootNode(self):
+    def root_node(self):
         """
         return the name of root node (base link) of the graph
         ref:https://stackoverflow.com/questions/4122390/getting-the-root-head-of-a-digraph-in-networkx-python
         """
         return [n for n, d in self.in_degree() if d == 0][0]
+    
+    @functools.cached_property
+    def _cached_root_node(self):
+        return self.nodes[[n for n, d in self.in_degree() if d == 0][0]]
 
     def updateWorldTransform(self, t=None):
         """
-        update the world_transform property for nodes and edges
+        update the world_transform property for nodes and edges,
+        this is the prefered function you need to change the robot
+        configuration frequently
         input:
             t: initial (world) 4x4 homogeneous transformation
         return: 
             the updated graph
         """
-        rn = self.rootNode
-
+        rn = self.root_node
         if "world_transform" not in self.nodes[rn]:
             if t is None:
                 t = np.eye(4)
@@ -1337,6 +1378,35 @@ class RobotDescription(nx.OrderedDiGraph):
             child_node["world_transform"] = edge["world_transform"]@axisAngleRotation(
                 edge["axis"], edge["joint_pos"])
         return self
+    
+    def updateWorldTransformFast(self, t=None):
+        """
+        fast update the world_transform property for nodes and edges. This can only be used
+        after updateWorldTransform is called or world transform of the root note is set.
+        no configuration changes should be made to the robot after it is called
+        input:
+            t: initial (world) 4x4 homogeneous transformation
+        return: 
+            the updated graph
+        """
+        if t is not None:
+            self._cached_root_node["world_transform"] = t
+        for parent_node, child_node,edge in self._cached_pce:
+            edge["world_transform"] = parent_node["world_transform"]@edge["transform"]
+            child_node["world_transform"] = edge["world_transform"]@axisAngleRotation(
+                edge["axis"], edge["joint_pos"])
+        return self
+
+    @functools.cached_property
+    def _cached_edge_bfs(self):
+        """return a tuple of the breadth first search the edges"""
+        return tuple(nx.edge_bfs(self, source=self.root_node))
+    
+    @functools.cached_property
+    def _cached_pce(self):
+        """ return tupele of cached parent_node, child_node and edge from breadth first search"""
+        # parent_node,    child_node,       edge
+        return tuple((self.nodes[e[0]], self.nodes[e[1]] , self.edges[e]) for e in self._cached_edge_bfs)
 
     def nodesProperty(self, property_name, value):
         return [self.nodes[n][property_name] for n in self.nodes]
@@ -1348,16 +1418,30 @@ class RobotDescription(nx.OrderedDiGraph):
 
     @joint_pos.setter
     def joint_pos(self, values):
-        """
-        set the joint_pos for all edges given values
-        support dict input or iterable
-        """
+        """set the joint_pos for all edges given values
+           support dict input or iterable """
         if values is dict:
             for e, v in values:
                 self.edges[e]["joint_pos"] = v
         else:
             for e, v in zip(self.orderedEdges, values):
                 self.edges[e]["joint_pos"] = v
+                
+    def setJointPosArrFast(self,values):
+        """ set joint_pos for all joints given array of values, 
+        should only be used when robot configuration is unchanged"""
+        for e, v in zip(self._cached_ordered_edges, values):
+            e["joint_pos"] = v
+    
+    def getJointPosArrFast(self,dtype = np.float32):
+        """ set joint_pos for all joints, 
+        should only be used when robot configuration is unchanged"""
+        return np.fromiter((e["joint_pos"] for e in self._cached_ordered_edges),dtype)
+    
+    @functools.cached_property
+    def _cached_ordered_edges(self):
+        """should only be used when robot configuration is unchanged"""
+        return tuple(self.edges[e] for e in self.orderedEdges)
 
     def createCoordinateOXYZ(self, radius):
         for n in self.nodes:
@@ -1428,7 +1512,7 @@ class RobotDescription(nx.OrderedDiGraph):
 
             # cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])
             parent_cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])
-            child_cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])@axisAngleRotation([0,1,0],np.pi) # rotate 180 deg
+            child_cylinder_transform = T_edge@vecAlignRotation((1, 0, 0), edge["axis"])@axisAngleRotation(np.array([0,1,0]),np.pi) # rotate 180 deg
 
             # TODO:fix this
             cylinder_to_parent_transform = np.linalg.inv(

@@ -6,9 +6,10 @@ from collections import defaultdict
 import msgpack
 import socket
 import os
-
+import pickle
 import pybullet as p
 import pybullet_utils.bullet_client as bc
+from torch import Graph
 
 def linearMinMaxConversionCoefficient(a,b,c,d):
     """
@@ -185,10 +186,12 @@ class FlexipodEnv(gym.Env):
         normalize = True,
         max_joint_vel = 10, # maximum joint velocity rad/s
         humanoid_task = True, # if true, humanoid, else qurdurped
-        max_episode_steps = 4000,
+        max_episode_steps = 2000,
         max_action = 5, # [rad/s], velocity control
         local_address = ("127.0.0.1",33300),
-        remote_address = ("127.0.0.1",33301)):
+        remote_address = ("127.0.0.1",33301),
+        robot_folder = "D://repo//FlexipodFast//robot//v9" # root folder for the robot
+        ):
         
         super().__init__() # init gym env
         
@@ -241,6 +244,9 @@ class FlexipodEnv(gym.Env):
         OBS_NAME = ("joint_pos","joint_vel","actuation","orientation",
                     "ang_vel","com_acc","com_vel","spring_strain")#,"com_pos")        
 
+        # TODO-> position control
+        max_action = 0.05*max_action
+        
         self._initObsACt(max_action,REC,OBS_NAME) # initialize the observation and action space
 
         # simulation specific commend
@@ -251,9 +257,52 @@ class FlexipodEnv(gym.Env):
         
         self.server = UDPServer(local_address,remote_address)
 
+        self._initRobotGraph(robot_folder)
         # start the simulation
         self.start()
         
+        
+    def _initRobotGraph(self,robot_folder):
+        """initialized and load the robot graph from file"""
+        t= time.time()
+        with open(f"{robot_folder}//robot.pickle","rb") as f:
+            self.graph = pickle.load(f)
+        print(f"Loading robot graph takes {time.time()-t:.1f} s.")
+        self.t_sensor = np.eye(4)
+        self.t_sensor[:3,3] = [0,0,-130.]
+        self.node_left_foot = self.graph.nodes[9]
+        self.node_right_foot = self.graph.nodes[12]
+        # t= eye(4), world thransform equivalent to root space transfrom
+        self.joint_pos = self.graph.getJointPosArrFast()
+        self.graph.setJointPosArrFast(self.joint_pos) # set initial joint pos to graph.joint_pos
+        self.graph.updateWorldTransformFast(np.eye(4))
+        # sensor x position in the robot root space
+        self.t_world_left_foot_sensor_x0 = (self.node_left_foot["world_transform"]@self.t_sensor)[0,3] # x
+        self.t_world_right_foot_sensor_x0 = (self.node_right_foot["world_transform"]@self.t_sensor)[0,3]
+        with np.printoptions(precision=2, suppress=True, threshold=5):
+            print(self.t_world_left_foot_sensor_x0)
+            print(self.t_world_right_foot_sensor_x0)
+        
+        from phase_indication import phaseIndicatorPair
+        self.phase_indicator_pair = phaseIndicatorPair(a=0.3, b=0.7, s=0.05, t0=0.25, t1=0.75)
+
+        
+    
+    def cyclicReward(self,t):
+        self.graph.setJointPosArrFast(self.joint_pos)
+        self.graph.updateWorldTransformFast(np.eye(4))
+        t_world_left_foot_sensor_x = (self.node_left_foot["world_transform"]@self.t_sensor)[0,3] # x
+        t_world_right_foot_sensor_x = (self.node_right_foot["world_transform"]@self.t_sensor)[0,3]
+        
+        i0,i1 =self.phase_indicator_pair.get(t)
+        c0 = 1-t_world_left_foot_sensor_x/self.t_world_left_foot_sensor_x0
+        c1 = 1-t_world_right_foot_sensor_x/self.t_world_right_foot_sensor_x0
+        r0 = c0*i0
+        r1 = c1*i1
+        return r0,r1
+        # with np.printoptions(precision=2, suppress=True, threshold=5):
+        #     print(c0,c1)
+        #     print(c0*i0,c1*i1)
         
     def _initObsACt(self,max_action,REC,OBS_NAME):
         """helper function to initialize the observation and action space"""
@@ -275,6 +324,10 @@ class FlexipodEnv(gym.Env):
         if(self.flatten_obs):
             self.raw_min_obs = self.raw_min_obs.ravel()
             self.raw_max_obs = self.raw_max_obs.ravel()
+            
+            # TODO MAKE IT CYCLIC
+            self.raw_min_obs = np.append(self.raw_min_obs,[0]).astype(np.float32)
+            self.raw_max_obs = np.append(self.raw_max_obs,[1]).astype(np.float32)
         
         if self.normalize: # conditionally normalize the action space
             self.action_space = gym.spaces.Box(low = - np.ones_like(self.raw_min_act),high = np.ones_like(self.raw_max_act))
@@ -328,6 +381,7 @@ class FlexipodEnv(gym.Env):
             self.com_z_offset = 0.62
             self.orientation_z_min = 0.56
             
+            
         else: # quadruped task
             self.joint_pos_limit = np.array([
                 # front left, TODO: CHANGE THIS RANGE
@@ -352,33 +406,53 @@ class FlexipodEnv(gym.Env):
             self.com_z_offset = 0.8
             self.orientation_z_min = 0.56
     
+    # def step(self,action = None):
+    #     if action is not None:
+    #         # map action -> action*max_acton
+    #         cmd_action = np.asarray(action,dtype=np.float32)
+    #         if self.normalize:
+    #             cmd_action = self.toRawAction(cmd_action)
+    #         # # # position difference control
+    #         # cmd_action += self.joint_pos # the actual position
+            
+    #         # if len(self.cd.getContactPoints(cmd_action))>0:
+    #         # step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
+    #         step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
+    #         num_bytes_send = self.server.send(step_cmd_b)
+    #     msg_rec = self.receive()
+    #     self.episode_steps+=1 # update episodic step counter
+    #     return self._processRecMsg(msg_rec)
+    
     def step(self,action = None):
         if action is not None:
             # map action -> action*max_acton
             cmd_action = np.asarray(action,dtype=np.float32)
             if self.normalize:
                 cmd_action = self.toRawAction(cmd_action)
-            # # # position difference control
-            # cmd_action += self.joint_pos # the actual position
+            # # position difference control
+            cmd_action += self.joint_pos # the actual position
             
             # if len(self.cd.getContactPoints(cmd_action))>0:
-            # step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
-            step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
+            step_cmd_b = self.packer.pack([self.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
+            # step_cmd_b = self.packer.pack([self.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
             num_bytes_send = self.server.send(step_cmd_b)
         msg_rec = self.receive()
         self.episode_steps+=1 # update episodic step counter
         return self._processRecMsg(msg_rec)
-
-    def _processRecMsg(self,msg_rec):
+    
+    def _processRecMsg(self,msg_rec,reset=False):
         """processed received message to state action pair"""
         # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
         # observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
         msg_rec_i = msg_rec[0]
+        t = msg_rec_i[self.ID_t] # time
+        if reset: # update episode_start_time
+            self.episode_start_time = t
         actuation = msg_rec_i[self.ID_actuation] # actuation (size=dof) of the latest observation
         com_z = msg_rec_i[self.ID_com_pos][2]
         # joint position (sin,cos->rad)
         joint_pos = msg_rec_i[self.ID_joint_pos]
-        _ = np.arctan2(joint_pos[1::2],joint_pos[::2],self.joint_pos,dtype=np.float32)
+        _ = np.arctan2(joint_pos[1::2],joint_pos[::2],self.joint_pos,dtype=np.float32) # setting self.joint_pos
         # print(f"self.joint_pos ={self.joint_pos}")
 
         com_acc = np.mean([m[self.ID_com_acc] for m in msg_rec],axis=0)
@@ -398,6 +472,9 @@ class FlexipodEnv(gym.Env):
 
         if self.flatten_obs:
             observation = observation.ravel()
+            # TODO make it cyclic
+            observation = np.append(observation,[t]).astype(np.float32)
+            
         if self.normalize: # normalize the observation
             observation = self.toNormalizedObservation(observation)            
 
@@ -427,17 +504,23 @@ class FlexipodEnv(gym.Env):
         r_quad_ctrl = max(0,1-0.1 * sum(np.square(actuation))) # quad control cost
         reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
 
-        done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
-        # done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps) or joint_out_of_range) else False
 
-        t = msg_rec_i[self.ID_t]
+        rc_0,rc_1 =  self.cyclicReward(t-self.episode_start_time)
+        reward = (0.5+rc_0+rc_1)*reward
+        
+        # done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
+        done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps) or joint_out_of_range) else False
+
+        
         if self.info:
             info = {'t':t,
                     'r_vel':r_vel,
                     'r_orientation':r_orientation,
                     'r_quad_ctrl':r_quad_ctrl,
                     'r_joint_limit':r_joint_limit,
-                    'r_acc':r_acc
+                    'r_acc':r_acc,
+                    'rc_0':rc_0,
+                    'rc_1':rc_1
                     }
         else:
             info = {'t':t}
@@ -452,8 +535,7 @@ class FlexipodEnv(gym.Env):
         time.sleep(1/50)
         msg_rec = self.receive()
         self.episode_steps = 0
-        observation,reward,done,info =  self._processRecMsg(msg_rec)
-        self.episode_start_time = info['t']
+        observation,reward,done,info =  self._processRecMsg(msg_rec,reset=True)
         return observation
     
     def render(self,mode="human"):
@@ -486,7 +568,7 @@ class FlexipodEnv(gym.Env):
 
 
 
-class FlexipodHumanoid(FlexipodEnv):
+class FlexipodHumanoidV10(FlexipodEnv):
     @property
     def humanoid_task(self):
         return self._humanoid_task

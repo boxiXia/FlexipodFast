@@ -268,7 +268,7 @@ void Simulation::runImgui() {
 				sprintf(label, "joint_pos_des_%d", i); 
 				ImGui::PushID(label);
 				//ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
-				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.005f, NULL, NULL, "%6.3f");
+				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
 				ImGui::PopID();
 
 				ImGui::SameLine();
