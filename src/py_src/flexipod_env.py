@@ -245,7 +245,7 @@ class FlexipodEnv(gym.Env):
                     "ang_vel","com_acc","com_vel","spring_strain")#,"com_pos")        
 
         # TODO-> position control
-        max_action = 0.05*max_action
+        max_action = 0.2*max_action
         
         self._initObsACt(max_action,REC,OBS_NAME) # initialize the observation and action space
 
@@ -473,7 +473,10 @@ class FlexipodEnv(gym.Env):
         if self.flatten_obs:
             observation = observation.ravel()
             # TODO make it cyclic
-            observation = np.append(observation,[t]).astype(np.float32)
+            
+            t_normalized = ((t-self.episode_start_time)*0.8)%1
+            
+            observation = np.append(observation,[t_normalized]).astype(np.float32)
             
         if self.normalize: # normalize the observation
             observation = self.toNormalizedObservation(observation)            
@@ -505,11 +508,11 @@ class FlexipodEnv(gym.Env):
         reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
 
 
-        rc_0,rc_1 =  self.cyclicReward(t-self.episode_start_time)
-        reward = (0.5+rc_0+rc_1)*reward
+        rc_0,rc_1 =  self.cyclicReward(t_normalized)
+        reward = (1+2*(rc_0+rc_1))*reward
         
-        # done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
-        done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps) or joint_out_of_range) else False
+        done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
+        # done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps) or joint_out_of_range) else False
 
         
         if self.info:
