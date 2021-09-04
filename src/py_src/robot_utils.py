@@ -991,35 +991,35 @@ class VolumeMesh(dict):
         return self
 ####################################################################################
 
-# # conda install pythonocc-core
-# from OCC.Extend.DataExchange import write_stl_file
-# from OCC.Core.STEPControl import STEPControl_Reader
-# def convertStepToSTL(
-#         in_file_name: str, out_file_name: str,
-#         mode='binary',
-#         linear_deflection=0.5,
-#         angular_deflection=0.3):
-#     """
-#     export stl given a step/stp model
-#     Input:
-#     in_file_name : str, Location of the file to be imported, file type should be stp/step
-#     out_file_name : str, Location of the file to be imported, file type should be stl
-#     mode: optional, "ascii" by default. Can either be "binary"
-#     linear_deflection: optional, default to 0.001. Lower, more occurate mesh
-#     angular_deflection: optional, default to 0.5. Lower, more accurate_mesh
-#     """
-#     # convert to absolute path
-#     in_file_name = os.path.abspath(in_file_name)
-#     out_file_name = os.path.abspath(out_file_name)
-#     step_reader = STEPControl_Reader()
-#     step_reader.ReadFile(in_file_name)
-#     step_reader.TransferRoot()
-#     myshape = step_reader.Shape()
-#     # Export to STL
-#     write_stl_file(
-#         myshape, out_file_name, mode=mode,
-#         linear_deflection=linear_deflection,
-#         angular_deflection=angular_deflection)
+# conda install pythonocc-core
+from OCC.Extend.DataExchange import write_stl_file
+from OCC.Core.STEPControl import STEPControl_Reader
+def convertStepToSTL(
+        in_file_name: str, out_file_name: str,
+        mode='binary',
+        linear_deflection=0.5,
+        angular_deflection=0.3):
+    """
+    export stl given a step/stp model
+    Input:
+    in_file_name : str, Location of the file to be imported, file type should be stp/step
+    out_file_name : str, Location of the file to be imported, file type should be stl
+    mode: optional, "ascii" by default. Can either be "binary"
+    linear_deflection: optional, default to 0.001. Lower, more occurate mesh
+    angular_deflection: optional, default to 0.5. Lower, more accurate_mesh
+    """
+    # convert to absolute path
+    in_file_name = os.path.abspath(in_file_name)
+    out_file_name = os.path.abspath(out_file_name)
+    step_reader = STEPControl_Reader()
+    step_reader.ReadFile(in_file_name)
+    step_reader.TransferRoot()
+    myshape = step_reader.Shape()
+    # Export to STL
+    write_stl_file(
+        myshape, out_file_name, mode=mode,
+        linear_deflection=linear_deflection,
+        angular_deflection=angular_deflection)
 
 
 # def discretize(msh_file,

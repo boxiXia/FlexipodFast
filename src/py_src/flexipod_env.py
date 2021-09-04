@@ -472,10 +472,9 @@ class FlexipodEnv(gym.Env):
 
         if self.flatten_obs:
             observation = observation.ravel()
+            
             # TODO make it cyclic
-            
             t_normalized = ((t-self.episode_start_time)*0.8)%1
-            
             observation = np.append(observation,[t_normalized]).astype(np.float32)
             
         if self.normalize: # normalize the observation
@@ -484,7 +483,7 @@ class FlexipodEnv(gym.Env):
         # x velocity
         com_vel_x = sum([msg_i[self.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
         # r_vel = 0.3*np.clip(com_vel_xy,0,1)+0.7 # velocity reward
-        r_vel = 1.0*np.clip(com_vel_x,-1.0,2.0)+1.0 # velocity reward
+        r_vel = .5*np.clip(com_vel_x,-1.0,1.0)+1.0 # velocity reward
 
     #         print(orientation_z,com_z)
         # r_orientation = max(0,orientation_z)*min(com_z+0.56,1)
@@ -496,7 +495,7 @@ class FlexipodEnv(gym.Env):
             orientation_z= ori[0]*ori[4] - ori[1]*ori[3] # z_z, local z vector projected to world z direction
 
 
-        r_orientation = (np.clip(orientation_z*1.03,0,1)**3)*min(com_z+self.com_z_offset,1)
+        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+self.com_z_offset,1)
 
         # x = np.linspace(0,1,400)
         # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3

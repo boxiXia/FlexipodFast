@@ -38,6 +38,7 @@ For external library that works with cpp but not with .cu, wrap host code with
 #include <glm/glm.hpp>// Include GLM
 #include <glm/gtc/matrix_transform.hpp>
 #include<glm/gtx/rotate_vector.hpp>
+#include<glm/gtx/norm.hpp>
 #include <cuda_gl_interop.h>
 
 #endif

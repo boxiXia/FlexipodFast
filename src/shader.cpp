@@ -38,7 +38,6 @@ void Camera::follow(const glm::vec3& target, const float interp_factor) {
         // interpolate position
         pos = glm::mix(pos, pos_desired, interp_factor);
 
-
         // interpolate the orientation // https://en.wikipedia.org/wiki/Slerp
         glm::vec3 dir_desired = glm::normalize(target - pos);
         dir = glm::normalize(slerp(dir, dir_desired, interp_factor));

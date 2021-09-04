@@ -1145,11 +1145,16 @@ void Simulation::updateGraphics() {
 
 			Vec3d com_pos = body.pos;// center of mass position (anchored body center)
 
+
+			glm::vec3 target_pos = glm::vec3(com_pos.x, com_pos.y, com_pos.z);
+
 			// Interpolate half way from original view to the new.
 			float interp_factor = T < 2.0 ? 1 : 0.01; // 0.0 == original, 1.0 == new
-
-			
-			glm::vec3 target_pos = glm::vec3(com_pos.x, com_pos.y, com_pos.z);
+			//if (glm::l2Norm(camera.pos - target_pos) > 100.) {
+			//	camera.pos = glm::vec3(1, 1, 0) + target_pos;
+			//	camera.dir = glm::vec3(1, 0, 0);
+			//	interp_factor = 1;
+			//}
 
 			camera.follow(target_pos, interp_factor);
 
