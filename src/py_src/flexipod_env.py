@@ -284,9 +284,8 @@ class FlexipodEnv(gym.Env):
             print(self.t_world_right_foot_sensor_x0)
         
         from phase_indication import phaseIndicatorPair
-        self.phase_indicator_pair = phaseIndicatorPair(a=0.3, b=0.7, s=0.05, t0=0.25, t1=0.75)
-
-        
+        self.phase_indicator_pair_0 = phaseIndicatorPair(a=0.3, b=0.7, s=0.05, t0=0.25, t1=0.75, ys = 1., y0=0.)
+        self.phase_indicator_pair_1 = phaseIndicatorPair(a=0.25, b=0.75, s=0.08, t0=0.25, t1=0.75, ys = 2., y0=-1.)
     
     def cyclicReward(self,t):
         self.graph.setJointPosArrFast(self.joint_pos)
@@ -294,12 +293,20 @@ class FlexipodEnv(gym.Env):
         t_world_left_foot_sensor_x = (self.node_left_foot["world_transform"]@self.t_sensor)[0,3] # x
         t_world_right_foot_sensor_x = (self.node_right_foot["world_transform"]@self.t_sensor)[0,3]
         
-        i0,i1 =self.phase_indicator_pair.get(t)
-        c0 = 1-t_world_left_foot_sensor_x/self.t_world_left_foot_sensor_x0
-        c1 = 1-t_world_right_foot_sensor_x/self.t_world_right_foot_sensor_x0
-        r0 = c0*i0
-        r1 = c1*i1
-        return r0,r1
+        i0_0,i0_1 =self.phase_indicator_pair_0.get(t)
+        c0_0 = 1-t_world_left_foot_sensor_x/self.t_world_left_foot_sensor_x0
+        c0_1 = 1-t_world_right_foot_sensor_x/self.t_world_right_foot_sensor_x0
+        r0_0 = c0_0*i0_0
+        r0_1 = c0_1*i0_1
+        
+        # hip
+        i1_0,i1_1 =self.phase_indicator_pair_1.get(t)
+        c1_0 = -self.joint_pos[6]
+        c1_1 =  self.joint_pos[9]
+        r1_0 = c1_0*i1_0
+        r1_1 = c1_1*i1_1
+        
+        return r0_0,r0_1,r1_0,r1_1
         # with np.printoptions(precision=2, suppress=True, threshold=5):
         #     print(c0,c1)
         #     print(c0*i0,c1*i1)
@@ -507,8 +514,10 @@ class FlexipodEnv(gym.Env):
         reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit
 
 
-        rc_0,rc_1 =  self.cyclicReward(t_normalized)
-        reward = (1+2*(rc_0+rc_1))*reward
+        r0_0,r0_1,r1_0,r1_1 =  self.cyclicReward(t_normalized)
+                # feet height reward,  hip joint reward
+        # reward = (1+2*(r0_0+r0_1))*(1+0.5*(r1_0+r1_1))*reward
+        reward = (1+0.8*(r1_0+r1_1))*reward
         
         done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps)) else False
         # done = True if ((orientation_z<self.orientation_z_min)or(com_z<self.com_z_min)or(self.episode_steps>=self._max_episode_steps) or joint_out_of_range) else False
@@ -521,8 +530,6 @@ class FlexipodEnv(gym.Env):
                     'r_quad_ctrl':r_quad_ctrl,
                     'r_joint_limit':r_joint_limit,
                     'r_acc':r_acc,
-                    'rc_0':rc_0,
-                    'rc_1':rc_1
                     }
         else:
             info = {'t':t}

@@ -34,16 +34,21 @@ def phaseIndicator(t,t0,a,b,s):
     ("s", numba.float32),
     ("t0", numba.float32),
     ("t1", numba.float32),
+    ("ys", numba.float32),
+    ("y0", numba.float32),
 ])
 class phaseIndicatorPair:
-    def __init__(self,a,b,s,t0,t1):
+    def __init__(self,a,b,s,t0,t1, ys = 1.,y0 = 0.):
         """ create a parir of phase indicator
         Args:
             a # separation point for increasing from 0 -> 1
             b # separation point for decreasing from 1 -> 0
             s # sigma, shared variance
             t0 # normlaized phase offset [0-1] for the 1st value in the pair
-            t1 # normlaized phase offset [0-1] for the 2nd value in the pair 
+            t1 # normlaized phase offset [0-1] for the 2nd value in the pair
+            ys # vertical scale
+            y0 # vertical offset
+            return 2 of phaseIndicator*ys +y0
         """
         
         self.a = a # separation point for increasing from 0 -> 1
@@ -51,9 +56,12 @@ class phaseIndicatorPair:
         self.s = s # variance
         self.t0 = t0 # normlaized phase offset [0-1] for the 1st value in the pair
         self.t1 = t1 # normlaized phase offset [0-1] for the 2nd value in the pair
+        self.ys = ys # vertical offset
+        self.y0 = y0 # vertical scale
     def get(self,t):
         """ return a pair of phase indicator values give noramlized time t"""
-        return phaseIndicator(t,self.t0,self.a,self.b,self.s),phaseIndicator(t,self.t1,self.a,self.b,self.s)
+        return phaseIndicator(t,self.t0,self.a,self.b,self.s)*self.ys+self.y0,\
+                phaseIndicator(t,self.t1,self.a,self.b,self.s)*self.ys+self.y0,
     
 
 if __name__ == "__main__":
