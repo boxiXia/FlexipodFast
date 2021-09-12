@@ -47,12 +47,16 @@ or to clone (HTTPS):
 git clone --recursive -j8 --branch pbd https://github.com/boxiXia/FlexipodFast.git
 ```
 ### 4. Modify the [CMakeLists.txt](./CMakeLists.txt) file
+Open the the cloned repository with visual studio and modify CMakeLists.txt
 find these lines, and modify according to your GPU architecture
 ```cmake
 ###### here you must modify to fit your GPU architecture #####
 # check https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
 string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
 ```
+
+### 5. build and run the simulation
+In visual studio, complie and run the flexipod.
 
 ## setup (python)
 
