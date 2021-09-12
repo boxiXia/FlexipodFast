@@ -1,8 +1,7 @@
 # Flexipod simulation
 The simulation engine for the flexipod project, it is built upon the original [Titan library](https://github.com/jacobaustin123/Titan)[[1]](#ref-1) from Jacob Austin.
 
-[![Alt text](https://img.youtube.com/vi/eENbrnjF_oA/0.jpg)](https://www.youtube.com/watch?v=eENbrnjF_oA)
-
+[![Alt text](https://img.youtube.com/vi/52yaNeKdhIc/0.jpg)](https://youtu.be/52yaNeKdhIc)
 
 ## Hardware Requirement:
 **Windows/Linux** machine with Nvidia Graphics card that has **Cuda** support, and with compute capability>=6.0. See a list of CUDA enabled graphics cards [here](https://developer.nvidia.com/cuda-gpus).
@@ -14,7 +13,7 @@ The simulation engine for the flexipod project, it is built upon the original [T
 and in the installation manager, install with **"Desktop development with c++"**
 
 ### 1. Install CUDA 
-Cuda tested with Cuda 10.2,preferably 10.0+,[link](https://developer.nvidia.com/cuda-downloads)
+Cuda tested with Cuda 11.3,[link](https://developer.nvidia.com/cuda-downloads)
 ### 2. Install vcpkg by following the [quick start guide](https://github.com/Microsoft/vcpkg#quick-start).
 
 For example in window, install vcpkg in ```C:\vcpkg``` using git bash:
@@ -40,12 +39,12 @@ vcpkg install --triplet x64-windows --head imgui[glfw-binding,opengl3-glew-bindi
 ### 3. Clone the repo
 either to clone (ssh):
 ```bash
-git clone --recurse-submodules git@github.com:boxiXia/FlexipodFast.git
+git clone --recursive -j8 --branch pbd git@github.com:boxiXia/FlexipodFast.git
 
 ```
 or to clone (HTTPS):
 ```bash
-git clone --recurse-submodules https://github.com/boxiXia/FlexipodFast.git
+git clone --recursive -j8 --branch pbd https://github.com/boxiXia/FlexipodFast.git
 ```
 ### 4. Modify the [CMakeLists.txt](./CMakeLists.txt) file
 find these lines, and modify according to your GPU architecture

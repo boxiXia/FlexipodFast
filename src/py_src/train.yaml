@@ -1,4 +1,6 @@
 # note: for training flexipod
+# to eval: python train.py num_eval_episodes=100 train=False env.max_episode_steps=20000 load_model=...
+
 defaults:
     - agent: sac
 
@@ -21,10 +23,7 @@ update_frequency: 16 #num of update is devided by this number
 
 
 load_model: False
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\5661138_2238.chpt
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\14140373_5727.chpt
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\9460682_617.chpt
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\7980571_640.chpt
+# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\3814408_22475.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1576903_9999.chpt
 train: True
 # train: False
@@ -45,7 +44,7 @@ num_eval_episodes: 1
 env:
     _target_: flexipod_env.make
     humanoid_task: True
-    max_episode_steps: 20000
+    max_episode_steps: 2000
     # humanoid_task: False
 
 
