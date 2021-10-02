@@ -52,10 +52,6 @@ int main(int argc, char* argv[])
 
 	Model bot(model_path_str); //defined in sim.h
 
-	/*bot.id_vertices: body_1,body_2,...,body_n,anchor,coord,the end
-	 bot.id_edges: body_1,body_2,...,body_n, anchors, rotsprings, fricsprings, 
-				   oxyz_self_springs, oxyz_anchor_springs, the end */
-
 
 	//for (const auto& i:bot.id_vertices["part"])
 	//	std::cout << i << ' ';
@@ -71,6 +67,15 @@ int main(int argc, char* argv[])
 	MASS& mass = sim.mass; // reference variable for sim.mass
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 	TRIANGLE triangle = sim.triangle;// reference variable for sim.triangle
+
+#ifdef MEASURE_CONSTRAINT
+	sim.id_vertices = bot.id_vertices;
+	sim.num_body = num_body;
+	sim.body_constraint_force.resize(num_body);
+
+#endif //MEASURE_CONSTRAINT
+
+
 
 #ifdef STRESS_TEST
 	sim.id_selected_edges = bot.id_selected_edges;
@@ -164,20 +169,12 @@ int main(int argc, char* argv[])
 		internal_vert[tri.y] = false;
 		internal_vert[tri.z] = false;
 	}
-
-	double scale_internal_spring = scale_soft/4.0; // multiplier for internal spring compliance
-	for (int i = 0; i < num_spring; i++) { // using rigid springs for internal constructions
-		auto e = spring.edge[i];
-		if ((internal_vert[e.x] && internal_vert[e.x])) {
-			spring.compliance[i] = spring.compliance[i] * scale_internal_spring;
-		}
-	}
-
-	//// fix the main body
-	//for (int i = bot.id_vertices.at("part").at(0); i < bot.id_vertices.at("part").at(1); i++) {
-	//	mass.flag[i].assignBit(MASS_FLAG_DOF_X_ID, false);
-	//	mass.flag[i].assignBit(MASS_FLAG_DOF_Y_ID, false);
-	//	mass.flag[i].assignBit(MASS_FLAG_DOF_Z_ID, false);
+	//double scale_internal_spring = scale_soft/4.0; // multiplier for internal spring compliance
+	//for (int i = 0; i < num_spring; i++) { // using rigid springs for internal constructions
+	//	auto e = spring.edge[i];
+	//	if ((internal_vert[e.x] && internal_vert[e.x])) {
+	//		spring.compliance[i] = spring.compliance[i] * scale_internal_spring;
+	//	}
 	//}
 
 
@@ -234,17 +231,25 @@ int main(int argc, char* argv[])
 
 	for (int i = bot.id_edges.at("coord").front(); i < bot.id_edges.at("coord").back(); i++)
 	{
-		spring.compliance[i] = spring_compliance_probe_self;// oxyz_self_springs
+		spring.compliance[i] = spring_compliance_probe_self;// coordinate_self_springs
 		spring.damping[i] = spring_damping_probe;
 	}
 	for (int i = bot.id_edges.at("coord_attach").front(); i < bot.id_edges.at("coord_attach").back(); i++)
 	{
-		spring.compliance[i] = spring_compliance_probe_anchor;// oxyz_anchor_springs
+		spring.compliance[i] = spring_compliance_probe_anchor;// coordinate_anchor_springs
 		spring.damping[i] = spring_damping_probe;
 	}
 
 	sim.joint.init(bot, true);
 	sim.d_joint.init(bot, false);
+
+	//
+	//for (int i = 0; i < length; i++)
+	//{
+
+	//}
+	//id_vertices["part"].front()
+
 
 	auto& joint = sim.joint; // set spring joint_id
 	for (int i = 0; i < joint.edge_num; i++) {
@@ -299,9 +304,16 @@ int main(int argc, char* argv[])
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0, 0);
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
+
 	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0.8, 0.7);
 
+		//// fix the main body
+		//for (int i = bot.id_vertices.at("part").at(0); i < bot.id_vertices.at("part").at(1); i++) {
+		//	//mass.flag[i].assignBit(MASS_FLAG_DOF_X_ID, false);
+		//	//mass.flag[i].assignBit(MASS_FLAG_DOF_Y_ID, false);
+		//	//mass.flag[i].assignBit(MASS_FLAG_DOF_Z_ID, false);
+		//}
 
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 	//sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.05f,0.1f);

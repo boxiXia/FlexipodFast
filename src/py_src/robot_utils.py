@@ -629,7 +629,32 @@ def gmshGeoAddCylinder(center, axis, radius: float, height: float):
     d = height*k  # vector pointing from center of the first disk to the second disk
     return gmsh.model.occ.addCylinder(p[0], p[1], p[2], d[0], d[1], d[2], radius)
 
-
+def gmshGeoAddRing(center, axis, radius_low,radius_high, height):
+    """
+    gmsh sub-pgrogram to add cylinder
+    input:
+        center: (x,y,z) of the cylinder center
+        axis: (dx,dy,dz) of the cylinder axis
+        radius_low: inner radius of the cylinder
+        radius_high: outer radius of the cylinder
+        height: height of the cylinder
+    """
+    #print(radius)
+    c0 = gmshGeoAddCylinder(center, axis, radius_high, height)
+    c1 = gmshGeoAddCylinder(center, axis, radius_low, height)
+    #print(c0,c1)
+    return gmsh.model.occ.cut([(3, c0)], [(3, c1)])
+        
+# # example:
+# cylinder_spec = dict(
+#     center=(0, 0, 0), 
+#     axis=(1, 0, 0),
+#     radius_low = 50,
+#     radius_high = 100,
+#     height=100
+# )
+# cylinder, _ = generateGmsh(gmshGeoFcn=gmshGeoAddRing, gmsh_geo_kwargs=cylinder_spec,
+#                         gmsh_args=gmsh_args, gmsh_args_3d=gmsh_args_3d, gui= True)
 ####################################################################################
 class VolumeMesh(dict):
     """
@@ -1476,9 +1501,6 @@ class RobotDescription(nx.OrderedDiGraph):
         gmsh_args = opt["gmsh_args"]
         gmsh_args_3d = opt["gmsh_args_3d"]
 
-        cylinder_spec = dict(center=(0, 0, 0), axis=(1, 0, 0),
-                             radius=joint_radius, height=joint_height)
-
         def createCylinders():
             cylinder, _ = generateGmsh(gmshGeoFcn=gmshGeoAddCylinder, gmsh_geo_kwargs=cylinder_spec,
                                     gmsh_args=gmsh_args, gmsh_args_3d=gmsh_args_3d, gui=False)
@@ -1486,6 +1508,18 @@ class RobotDescription(nx.OrderedDiGraph):
             fitness_k = np.linalg.norm(
                 moi.diagonal())/np.linalg.norm((moi[0, 1], moi[0, 2], moi[1, 2]))
             return cylinder, fitness_k
+        cylinder_spec = dict(center=(0, 0, 0), axis=(1, 0, 0),
+                             radius=joint_radius, height=joint_height)
+
+        # def createCylinders():
+        #     cylinder, _ = generateGmsh(gmshGeoFcn=gmshGeoAddRing, gmsh_geo_kwargs=cylinder_spec,
+        #                             gmsh_args=gmsh_args, gmsh_args_3d=gmsh_args_3d, gui=False)
+        #     moi = momentOfInertia(cylinder.points)
+        #     fitness_k = np.linalg.norm(
+        #         moi.diagonal())/np.linalg.norm((moi[0, 1], moi[0, 2], moi[1, 2]))
+        #     return cylinder, fitness_k
+        # cylinder_spec = dict(center=(0, 0, 0), axis=(1, 0, 0),
+        #                      radius=(joint_radius,min_radius), height=joint_height)
         
         cylinder_list,fitness_list = list(zip(*[createCylinders() for k in range(5)]))
         # choose the cylinder with best symmetry from 5 candidates

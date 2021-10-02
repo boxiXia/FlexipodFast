@@ -1,5 +1,17 @@
 #include "sim.h"
 
+#ifdef GRAPHICS
+#include "imgui.h" // imgui
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+#include "implot.h" // implot
+#endif
+
+#ifdef UDP
+#include "asio.hpp"
+#endif
+
+#ifdef GRAPHICS
 GLenum glCheckError_(const char* file, int line)
 {
 	GLenum errorCode;
@@ -20,7 +32,7 @@ GLenum glCheckError_(const char* file, int line)
 	}
 	return errorCode;
 }
-
+#endif
 
 Model::Model(const std::string& file_path, bool versbose) {
 	// get the msgpack robot model
@@ -43,6 +55,24 @@ Model::Model(const std::string& file_path, bool versbose) {
 
 #ifdef GRAPHICS
 
+
+//// utility structure for realtime plot
+//struct RollingBuffer {
+//	float Span;
+//	ImVector<ImVec2> Data;
+//	RollingBuffer() {
+//		Span = 10.0f;
+//		Data.reserve(2000);
+//	}
+//	void AddPoint(float x, float y) {
+//		float xmod = fmodf(x, Span);
+//		if (!Data.empty() && xmod < Data.back().x)
+//			Data.shrink(0);
+//		Data.push_back(ImVec2(xmod, y));
+//	}
+//};
+
+
 /*--------------------------------- ImGui ----------------------------------------*/
 
 // Implementing a simple custom widget using the public API.
@@ -51,6 +81,8 @@ Model::Model(const std::string& file_path, bool versbose) {
 static bool MyKnob(const char* label, float* p_value, float v_min, float v_max)
 {
 	ImGuiIO& io = ImGui::GetIO();
+
+	//io.SetClipboardTextFn
 	ImGuiStyle& style = ImGui::GetStyle();
 
 	float radius_outer = 40.0f;
@@ -100,21 +132,6 @@ static bool MyKnob(const char* label, float* p_value, float v_min, float v_max)
 }
 
 
-// Make the UI compact because there are so many fields. ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
-static void PushStyleCompact()
-{
-	ImGuiStyle& style = ImGui::GetStyle();
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2((float)(int)(style.FramePadding.x * 0), (float)(int)(style.FramePadding.y *0)));
-	//ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2((float)(int)(style.ItemSpacing.x * 0), (float)(int)(style.ItemSpacing.y *0)));
-	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2((float)(int)(style.CellPadding.x * 0), (float)(int)(style.CellPadding.y * 0)));
-
-}
-
-static void PopStyleCompact()
-{
-	ImGui::PopStyleVar(2);
-}
-
 
 // Helper to display a little (?) mark which shows a tooltip when hovered.
 // In your own code you may want to display an actual icon if you are using a merged icon fonts (see docs/FONTS.md)
@@ -137,6 +154,9 @@ void Simulation::startupImgui() {
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
+
+	ImPlot::CreateContext();
+
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -170,8 +190,10 @@ void Simulation::startupImgui() {
 	std::string font_path = (getProgramDir() + "\\Cousine-Regular.ttf");
 
 	io.Fonts->AddFontFromFileTTF(font_path.c_str(), 16.0f * xscale);
-	ImGui::GetStyle().ScaleAllSizes(xscale);
-
+	// set style
+	auto& style = ImGui::GetStyle();
+	style.ScaleAllSizes(xscale);
+	style.FramePadding.y /= 2.0; // reduce vertical padding
 }
 
 
@@ -190,35 +212,44 @@ void Simulation::runImgui() {
 	static float rec_fps = 0;
 
 	if (show_imgui) {// show imgui window
-		
+
 		// Start the Dear ImGui frame
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		//// ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
-		//bool show_demo_window = true;
-		//ImGui::ShowDemoWindow(&show_demo_window);
-		//ImGui::ShowMetricsWindow();
-		//ImGui::ShowStyleEditor();
 
+		//// ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
+		//static bool show_demo_window = true;
+		//if (ImGui::Button("show_demo")) { show_demo_window = true; }
+		//if (show_demo_window) {
+		//	ImGui::ShowDemoWindow(&show_demo_window);
+		//	ImGui::ShowMetricsWindow(&show_demo_window);
+		//	ImGui::ShowStyleEditor();
+		//	ImPlot::ShowDemoWindow(&show_demo_window);
+		//}
+
+		// 
 		// measure simulation speed
 		auto t = std::chrono::steady_clock::now();
 		float duration = (float)std::chrono::duration_cast<std::chrono::milliseconds>(t - t_prev).count() / 1000.;//[seconds]
 		if (duration > 0.3) {
 			float sim_duration = T - t_sim_prev;
 			sim_speed = sim_duration / duration;
+#ifdef UDP			
 			rec_fps = (float(udp_server.counter_rec - counter_rec)) / sim_duration; // frame per simulation seconds
 			counter_rec = udp_server.counter_rec;
+#endif // UDP
 			t_sim_prev = T;
 			t_prev = t;
 		}
-
 		ImGui::Begin("Debug console", &show_imgui);
 
 		// simulation time | simulation speed | rendering FPS
-		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed,ImGui::GetIO().Framerate);
-		ImGui::Text("UDP rec %.2f FPSS", rec_fps); 
+		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed, ImGui::GetIO().Framerate);
+#ifdef UDP	
+		ImGui::Text("UDP rec %.2f FPSS", rec_fps);
+#endif // UDP
 
 		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
 		ImGui::SameLine();
@@ -235,14 +266,14 @@ void Simulation::runImgui() {
 			static double dt_min = 1e-7;
 			static double dt_max = 1e-3;
 			ImGui::DragScalar("dt", ImGuiDataType_Double, &dt, 1e-7, &dt_min, &dt_max, "%5.3e");
-			ImGui::DragScalarN("gravity", ImGuiDataType_Double, &global_acc, 3, 0.1,&gravity_min, &gravity_max, "%.2f");
+			ImGui::DragScalarN("gravity", ImGuiDataType_Double, &global_acc, 3, 0.1, &gravity_min, &gravity_max, "%.2f");
 		}
 
 		//ImGui::PlotLines
 		// 
 
 		// joint control
-		if (joint_control.size() > 0 && ImGui::CollapsingHeader("joint control")) {
+		if (joint_control.size() > 0 && ImGui::CollapsingHeader("Joint control")) {
 
 			float width = ImGui::GetContentRegionAvail().x;
 			float cursor_pos_x = ImGui::GetCursorPosX();
@@ -254,9 +285,7 @@ void Simulation::runImgui() {
 
 			ImGui::SameLine(); ImGui::SetCursorPosX(width * 0.7f);
 			HelpMarker("   v_d   ", "velocity desired [rad/s]");
-			
-			//PushStyleCompact();
-			
+
 			ImGui::PushItemWidth(width * 0.3f);
 
 			char label[20];
@@ -264,15 +293,15 @@ void Simulation::runImgui() {
 			{
 				ImGui::Text("%2d  %+6.3f", i, joint_control.pos[i]);
 				ImGui::SameLine();
-				
-				sprintf(label, "joint_pos_des_%d", i); 
+
+				sprintf(label, "joint_pos_des_%d##00349234", i);
 				ImGui::PushID(label);
 				//ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
 				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
 				ImGui::PopID();
 
 				ImGui::SameLine();
-				sprintf(label, "joint_vel_des_%d", i);
+				sprintf(label, "joint_vel_des_%d##00349234", i);
 				ImGui::PushID(label);
 				//ImGui::Text("%+4.3f", joint_control.vel_desired[i]);
 				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
@@ -281,41 +310,56 @@ void Simulation::runImgui() {
 			ImGui::PopItemWidth();
 			ImGui::Separator();
 
-			//PopStyleCompact();
-
 			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
-			const char* elem_name = (joint_control.mode == JointControlMode::vel)?  "vel":"pos";
+			const char* elem_name = (joint_control.mode == JointControlMode::vel) ? "vel" : "pos";
 			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
+		
 		}
-		if (ImGui::CollapsingHeader("info")) {
+		if (ImGui::CollapsingHeader("Info")) {
 			auto info = body.print();
 			ImGui::Text(info);
 		}
-		if (ImGui::CollapsingHeader("constraint")) {
-			static std::vector<float> arr = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60};
+#ifdef MEASURE_CONSTRAINT
+		if (ImGui::CollapsingHeader("Constraint")) {
+			static std::vector<float> arr = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60 };
 			static int values_offset = 0;
 			ImGui::Text("fc: %+6.1f %+6.1f %+6.1f N", force_constraint.x, force_constraint.y, force_constraint.z);
 			ImGui::Text("fc_max: %+6.1f N", fc_max);
+			if (ImGui::TreeNode("Per body constraint [N]##2")) {
+				char info_str[1000];
+				int n_char = 0;
+				for (int i = 0; i < body_constraint_force.size(); i++)
+				{
+					auto& cfi = body_constraint_force[i];
+					n_char += snprintf(info_str + n_char, 300, "%3d %+7.1f %+7.1f %+7.1f\n", i, cfi.x, cfi.y, cfi.z);
+				}
+				ImGui::Text(info_str);
+				ImGui::TreePop();
+			}
 
-			//ImGui::SliderInt("values_offset", &values_offset, 0, arr.size()-1);
-			//ImGui::PlotLines("fx",arr.data(), arr.size(), values_offset,NULL, -0.0f, 60.0f, ImVec2(0, 80.0f));
-			ImGui::PlotLines("fc_x", fc_arr_x.data(), fc_arr_x.size(), fc_arr_idx, NULL, -20, 20, ImVec2(0, 80.0f));
-			ImGui::PlotLines("fc_y", fc_arr_y.data(), fc_arr_y.size(), fc_arr_idx, NULL, -20, 20, ImVec2(0, 80.0f));
-			ImGui::PlotLines("fc_z", fc_arr_z.data(), fc_arr_z.size(), fc_arr_idx, NULL, -200, 200, ImVec2(0, 80.0f));
-
+			double t_scale = NUM_QUEUED_KERNELS * dt;
+		/*	static float history = fc_arr.num * t_scale;
+			ImGui::SliderFloat("History", &history, t_scale, fc_arr.num * t_scale, "%.1f s");
+			int t_count = history / t_scale;
+			ImPlot::SetNextPlotLimitsX(t_scale, history, ImGuiCond_Always);*/
+			ImPlot::SetNextPlotLimitsX(0, std::max(fc_arr.num,1) * t_scale, ImGuiCond_Always);
+			int t_count = fc_arr.num;
+			if (ImPlot::BeginPlot("constraint force [N]##5469", NULL, NULL, ImVec2(-1, 0),
+				ImPlotFlags_None, ImPlotAxisFlags_NoTickLabels, ImPlotAxisFlags_None)) {
+				ImPlot::PlotLine("fx", (double*)fc_arr.data, t_count, t_scale, 0, fc_arr.idx, sizeof(Vec3d));
+				ImPlot::PlotLine("fy", (double*)fc_arr.data + 1, t_count, t_scale, 0, fc_arr.idx, sizeof(Vec3d));
+				ImPlot::PlotLine("fz", (double*)fc_arr.data + 2, t_count, t_scale, 0, fc_arr.idx, sizeof(Vec3d));
+				ImPlot::EndPlot();
+			}
 		}
-
-
-		if (ImGui::CollapsingHeader("options")) {
+#endif //MEASURE_CONSTRAINT
+		if (ImGui::CollapsingHeader("Options")) {
 			ImGui::Checkbox("draw mesh", &show_triangle);
 			ImGui::Checkbox("camera follow", &camera.should_follow);
 			ImGui::Checkbox("use PBD", &USE_PBD);
 		}
-		
 
 		ImGui::End();
-
-
 		// Rendering
 		ImGui::Render();
 		int display_w, display_h;
@@ -329,9 +373,175 @@ void Simulation::runImgui() {
 
 /* imgui Cleanup and shutdown */
 void Simulation::shutdownImgui() {
+	ImPlot::DestroyContext();
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 }
 /*-------------------------------------------------------------------------------*/
 #endif // GRAPHICS
+
+
+
+#ifdef UDP
+
+
+void asioUdpServer::_doReceive()
+{
+	// receiver
+	asio::io_context io_context;
+	asio::ip::udp::socket socket_recv(io_context); // receiver socket
+
+	asio::ip::address local_address = asio::ip::make_address(ip_local);
+	asio::ip::udp::endpoint listen_endpoint(local_address.is_v4() ?
+		asio::ip::udp::v4() : asio::ip::udp::v6(), port_local);
+	socket_recv.open(listen_endpoint.protocol());
+	socket_recv.set_option(asio::ip::udp::socket::reuse_address(true));
+	if (local_address.is_multicast()) { // Join the multicast group.
+		socket_recv.set_option(asio::ip::multicast::join_group(local_address));
+	}
+	// set timeout [ms] without using async function,  
+	// ref: https://newbedev.com/how-to-set-a-timeout-on-blocking-sockets-in-boost-asio
+	// asio async offical example: 
+	// https://github.com/chriskohlhoff/asio/blob/master/asio/src/examples/cpp11/timeouts/blocking_udp_client.cpp
+	socket_recv.set_option(asio::detail::socket_option::integer<SOL_SOCKET, SO_RCVTIMEO>{ 100 });
+	socket_recv.bind(listen_endpoint);
+
+	// buffer
+	const int buffer_size = 1024;
+	std::array<char, buffer_size> data_recv = { 0 };
+	auto buffer_recv = asio::mutable_buffer(data_recv.data(), data_recv.size());
+
+	// reset counter and flags
+	flag_new_received = false;
+	counter_rec = 0;
+
+	// loop
+	while (UDP_SHOULD_RUN) {
+		try {
+			size_t nbytes = socket_recv.receive(buffer_recv);
+			if (nbytes > 0) {
+				msg_recv_queue.emplace_back(std::string(data_recv.data(), nbytes)); // push to msg queue
+				flag_new_received = true;
+				counter_rec++;
+				//std::cout.write(data_recv.data(), nbytes);
+				//std::cout << std::endl;
+			}
+		}
+		catch (asio::system_error& e) { // timed out
+			//printf("Caught exception %s,line %d: %s \n", __FILE__, __LINE__, e.what());
+			continue;
+		}
+		catch (const std::exception& e) {
+			printf("Caught exception %s,line %d: %s \n", __FILE__, __LINE__, e.what());
+		}
+		//try {
+		//	// do something with the obj
+		//	while (msg_recv_queue.size() > 0) {
+		//		auto& data_recv = msg_recv_queue.front(); // oldest message
+		//		// Unpack data
+		//		msgpack::object_handle oh = msgpack::unpack(data_recv.data(), data_recv.size());
+		//		msgpack::object obj = oh.get();
+		//		std::cout << obj << std::endl;
+		//		//std::cout << obj.as<int>() << std::endl;
+		//		msg_recv_queue.pop_front();
+		//		flag_new_received = false;
+		//	}
+		//}
+		//catch (const std::bad_cast& e) { // msgpack obj.as<T> error
+		//	printf("Error converting %s,line %d: %s \n", __FILE__, __LINE__, e.what());
+		//}
+
+		//sim->updateUdpReceive();
+	}
+}
+
+void asioUdpServer::_doSend()
+{
+	asio::io_context io_context;
+	asio::ip::udp::socket socket_send(io_context); // receiver socket
+	// sender
+	asio::ip::udp::endpoint remote_endpoint = asio::ip::udp::endpoint(asio::ip::make_address(ip_remote), port_remote);
+	socket_send.open(remote_endpoint.protocol());
+	socket_send.connect(remote_endpoint); // "connect" to remote endpoint
+
+	while (UDP_SHOULD_RUN) {
+		// do gether msg to send to msg_send_queue here...
+		//msg_send_queue.emplace_back("message");
+		//std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		// 
+		//sim->updateUdpSend();
+
+		while (msg_send_queue.size() > 0) {
+			auto& message_ = msg_send_queue.front(); // oldest message
+			std::size_t length = socket_send.send(asio::const_buffer(message_.data(), message_.size()));
+			//std::size_t length = socket_send.send_to(asio::buffer(message_), remote_endpoint);
+			msg_send_queue.pop_front();
+		}
+	}
+}
+
+
+
+
+/*-----------------------------------------------------------------------------------------------*/
+DataSend::DataSend(
+	const UDP_HEADER& header,
+	const Simulation* s) : header(header), T(s->T)
+{
+	const auto& joint_control = s->joint_control;
+	const auto& body = s->body;
+	int num_joint = joint_control.size();
+	joint_pos = std::vector<float>(2 * num_joint, 0);
+	joint_vel = std::vector<float>(joint_control.vel, joint_control.vel + joint_control.size());
+	joint_act = std::vector<float>(num_joint, 0);
+
+	//joint_pos = std::vector<float>(joint_control.pos, joint_control.pos + joint_control.size());
+
+	for (auto i = 0; i < joint_control.size(); i++) {
+		joint_pos[i * 2] = cosf(joint_control.pos[i]);
+		joint_pos[i * 2 + 1] = sinf(joint_control.pos[i]);
+		joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize		
+	}
+	body.acc.fillArray(com_acc);
+	body.vel.fillArray(com_vel);
+	body.pos.fillArray(com_pos);
+	body.ang_vel.fillArray(ang_vel);
+	// body orientation
+	orientation[0] = body.rot.m00;
+	orientation[1] = body.rot.m10;
+	orientation[2] = body.rot.m20;
+	orientation[3] = body.rot.m01;
+	orientation[4] = body.rot.m11;
+	orientation[5] = body.rot.m21;
+
+#ifdef STRESS_TEST
+	constexpr int NUM_SPRING_STRAIN = 0;
+#if NUM_SPRING_STRAIN>0:
+	if (s->id_selected_edges.size() > 0 && (NUM_SPRING_STRAIN > 0)) { // only update if there selected edges exists
+		int step_spring_strain = s->id_selected_edges.size() / NUM_SPRING_STRAIN;
+		spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
+		for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
+		{
+			int i = s->id_selected_edges[k * step_spring_strain];
+			Vec2i e = s->spring.edge[i];
+			Vec3d s_vec = s->mass.pos[e.y] - s->mass.pos[e.x];// the vector from left to right
+			double length = s_vec.norm(); // current spring length
+			spring_strain[k] = (length - s->spring.rest[i]) / s->spring.rest[i];
+		}
+	}
+#endif
+#endif // STRESS_TEST
+	
+#ifdef MEASURE_CONSTRAINT
+	//TODO change it!
+	float total_weight = s->total_mass * s->global_acc.norm();
+	constraint_force.resize(s->body_constraint_force.size());
+	for (int i = 0; i < s->body_constraint_force.size(); i++){ // normalized by total_weight
+		constraint_force[i] = s->body_constraint_force[i].norm()/ total_weight;
+	}
+#endif //MEASURE_CONSTRAINT
+
+}
+
+#endif

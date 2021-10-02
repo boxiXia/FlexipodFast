@@ -21,17 +21,12 @@ For external library that works with cpp but not with .cu, wrap host code with
 
 #include "object.h"
 #include "vec.h"
-#include "shader.h"
+#include "comonUtils.h"
 
 #include <msgpack.hpp>
 
 #ifdef GRAPHICS
 #include "shader.h"
-
-// imgui
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
 
 #include <GL/glew.h>// Include GLEW
 #include <GLFW/glfw3.h>// Include GLFW
@@ -40,26 +35,22 @@ For external library that works with cpp but not with .cu, wrap host code with
 #include<glm/gtx/rotate_vector.hpp>
 #include<glm/gtx/norm.hpp>
 #include <cuda_gl_interop.h>
-
 #endif
 
 #include <cuda_device_runtime_api.h>
 #include <cuda_runtime.h>
 #include <cuda.h>
-
-//#include <cuda_device_runtime_api.h>
-#include <cuda_gl_interop.h>
-#include <exception>
 #include <device_launch_parameters.h>
 //#include <cooperative_groups.h>
-
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
+#include <exception>
 #include <algorithm>
 #include <list>
 #include <vector>
+#include <deque>
 #include <set>
 #include <numeric>      // std::accumulate
 
@@ -69,22 +60,15 @@ For external library that works with cpp but not with .cu, wrap host code with
 
 #include <sstream>
 #include <fstream>
-#include<iostream>
-#include<string>
+#include <iostream>
+#include <string>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
 
-#ifdef UDP
-#include "Network.h"
-#endif
-
-#include "comonUtils.h"
-
-// header for getWorkingDir() and  getProgramDir()
-#include<string>
 
 
+class Simulation;
 
 constexpr const int NUM_CUDA_STREAM = 4; // number of cuda stream excluding the default stream
 constexpr const int CUDA_DYNAMICS_STREAM = 0;  // stream to run the dynamics update
@@ -104,11 +88,10 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 	}
 }
 
-GLenum glCheckError_(const char* file, int line); 
+#ifdef GRAPHICS
+GLenum glCheckError_(const char* file, int line);
 #define glCheckError() glCheckError_(__FILE__, __LINE__) //helper function to check OpenGL error
-
-
-
+#endif
 
 
 /*  helper function to free device/host memory given host_or_device_ptr */
@@ -125,20 +108,22 @@ inline cudaFreeFcnType FreeMemoryFcn(void* host_or_device_ptr) {
 	return freeMemory;
 }
 
-/*  helper function to allocate device/host memory
-	choose the appropriate device/host free memory function given a array pointer, e.g:
-	cudaMallocFcnType allocateMemory = allocateMemoryFcn(on_host);// choose approipate malloc function
-	allocateMemory((void**)&m, num * sizeof(double));
-	// to free memory...
-	cudaFreeFcnType freeMemory = FreeMemoryFcn((void*)m);
-	freeMemory((void*)m);*/
-using cudaMallocFcnType = cudaError_t(*)(void**, size_t);
-inline cudaMallocFcnType allocateMemoryFcn(bool on_host) {// ref: https://www.cprogramming.com/tutorial/function-pointers.html
-	cudaMallocFcnType allocateMemory;
-	if (on_host) { allocateMemory = &cudaMallocHost; }// if allocateMemory = cudaMallocHost: allocate on host
-	else { allocateMemory = &cudaMalloc; }
-	return allocateMemory;
+template<class T>
+bool isHostPointer(T* host_or_device_ptr) {
+	cudaPointerAttributes attributes;
+	cudaPointerGetAttributes(&attributes, (void*)host_or_device_ptr);
+	return bool(attributes.type == cudaMemoryTypeHost);
 }
+
+/*  helper function to free device/host memory
+	choose the appropriate device/host free memory function given a array pointer ptr */
+template<class T>
+cudaError_t __stdcall freeMemory(const bool on_host, T* ptr) {
+	// if allocateMemory = cudaMallocHost: allocate on host
+	if (on_host) { return cudaFreeHost(ptr); }
+	else { return cudaFree(ptr); }
+}
+
 
 /*  helper function to allocate device/host memory
 	choose the appropriate device/host free memory function given a array pointer ptr
@@ -150,18 +135,16 @@ cudaError_t __stdcall allocateMemory(const bool on_host, const size_t size, T*& 
 	else { return cudaMalloc((void**)&ptr, size * sizeof(T)); }
 }
 
-/*
-helper function to set host/device memory
+/* helper function to set host/device memory
 Args:
-	on_host: if true, set host memory, else set device memory
-	value: Value to set for each byte of specified memory
-	size: number of <T> in the array
 	ptr: pointer to host/device memory
-*/
+	value: Value (converted to usigned char) to set for each byte of specified memory
+	size: number of <T> in the array
+	on_host: if true, set host memory, else set device memory */
 template<class T>
-void __stdcall setMemory(const bool on_host, int value, const size_t size, T*& ptr) {
-	if (on_host) { memset(vel, value, size * sizeof(T)); }
-	else { cudaMemset(vel, value, size * sizeof(T)); }
+void __stdcall setMemory(T* ptr, int value, const size_t size, const bool on_host) {
+	if (on_host) { memset(ptr, value, size * sizeof(T)); }
+	else { cudaMemset(ptr, value, size * sizeof(T)); }
 }
 
 
@@ -179,7 +162,7 @@ struct StdJoint {
 
 class Model {
 public:
-	double radius_poisson=0;// poisson discretization radius
+	double radius_poisson = 0;// poisson discretization radius
 	std::vector<Vec3d> vertices;// the mass xyzs
 	std::vector<Vec2i> edges;//the spring ids
 	std::vector<Vec3i> triangles; // the triangle indices
@@ -190,7 +173,7 @@ public:
 	std::vector<StdJoint> joints;// the joints
 	std::vector<int> id_selected_edges; // # selected edges for spring strain
 #ifndef __CUDACC__
-	MSGPACK_DEFINE_MAP(radius_poisson, vertices, edges, triangles, is_surface, 
+	MSGPACK_DEFINE_MAP(radius_poisson, vertices, edges, triangles, is_surface,
 		id_vertices, id_edges, colors, joints, id_selected_edges); // write the member variables that you want to pack
 #endif
 	Model() {}
@@ -220,7 +203,6 @@ struct MASS {
 	Vec3d* force_extern = nullptr; // (input) external force
 	Vec3d* force_constraint = nullptr;// (measured) constrain force
 	Vec3d* color = nullptr;
-
 	Vec8b* flag = nullptr; // flag:(0-2:dof,3 constrain)
 
 	int num = 0;
@@ -249,18 +231,26 @@ struct MASS {
 		allocateMemory(on_host, num, flag);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
-		if (on_host) {// set vel,acc to 0
-			memset(vel, 0, num * sizeof(Vec3d));
-			memset(acc, 0, num * sizeof(Vec3d));
-			memset(flag, MASS_FLAG_DOF, num * sizeof(Vec8b));
-		}
-		else {
-			cudaMemset(vel, 0, num * sizeof(Vec3d));
-			cudaMemset(acc, 0, num * sizeof(Vec3d));
-			cudaMemset(flag, MASS_FLAG_DOF, num * sizeof(Vec8b));
-
-		}
+		// set inital values
+		setMemory(vel, 0, num, on_host);
+		setMemory(acc, 0, num, on_host);
+		setMemory(flag, MASS_FLAG_DOF, num, on_host);// set dof flag
 	}
+
+	//~MASS() {
+	//	std::cout << "****memory free****\n";
+	//	//bool on_host = isHostPointer(pos);
+	//	//freeMemory(on_host, inv_m);
+	//	//freeMemory(on_host, pos);
+	//	//freeMemory(on_host, pos_prev);
+	//	//freeMemory(on_host, vel);
+	//	//freeMemory(on_host, acc);
+	//	//freeMemory(on_host, force);
+	//	//freeMemory(on_host, force_extern);
+	//	//freeMemory(on_host, force_constraint);
+	//	//freeMemory(on_host, color);
+	//	//freeMemory(on_host, flag);
+	//}
 
 	void copyFrom(const MASS& other, cudaStream_t stream = (cudaStream_t)0) {
 		//cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
@@ -286,9 +276,9 @@ struct MASS {
 	void CopyPosFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
 		cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
 	}
-	void CopyPosFrom(MASS& other,const int& index,const int& range = 1, cudaStream_t stream = (cudaStream_t)0) {
-		assert(index+range<=num);//"index out of range"
-		cudaMemcpyAsync(pos+index*sizeof(Vec3d), other.pos + index * sizeof(Vec3d), sizeof(Vec3d)*range, cudaMemcpyDefault, stream);
+	void CopyPosFrom(MASS& other, const int& index, const int& range = 1, cudaStream_t stream = (cudaStream_t)0) {
+		assert(index + range <= num);//"index out of range"
+		cudaMemcpyAsync(pos + index * sizeof(Vec3d), other.pos + index * sizeof(Vec3d), sizeof(Vec3d) * range, cudaMemcpyDefault, stream);
 	}
 	void CopyConstraintForceFrom(MASS& other, cudaStream_t stream = (cudaStream_t)0) {
 		cudaMemcpyAsync(force_constraint, other.force_constraint, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
@@ -342,11 +332,11 @@ struct SPRING {
 };
 
 // for displaying triangle mesh
-struct TRIANGLE { 
+struct TRIANGLE {
 	Vec3i* triangle = nullptr; // triangle indices
 	int num = 0; // number of triangles
 	inline int size() { return num; }
-	TRIANGLE(){}
+	TRIANGLE() {}
 	TRIANGLE(int num, bool on_host) {
 		init(num, on_host);
 	}
@@ -364,35 +354,43 @@ struct TRIANGLE {
 		cudaMemcpyAsync(triangle, other.triangle, num * sizeof(Vec3i), cudaMemcpyDefault, stream);
 		gpuErrchk(cudaPeekAtLastError());
 		//this->num = other.num;
-	} 
+	}
 };
 
+/**********************************/
+template <typename T>
+struct RollingBuffer {
+	T* data;
+	int idx = 0;
+	int num = 0;
+	RollingBuffer(int num, bool on_host = true) :num(num) { allocateMemory(on_host, num, data); }
+	void add(T value) { data[idx] = value; idx = (idx + 1) % num; }
+	void clear() { setMemory(data, 0, num, isHostPointer(data)); idx = 0; }
+	inline int size() { return num; }
+};
+/**********************************/
+
+
 struct JOINT {
-	/*------------ joint-----------------------*/
+	/*--------------- joint-----------------------*/
 	int num; // num of joint
 	Vec2i* anchor; // index of the (left,right) anchor of the joint
 	double* theta;// the angular increment per joint update
 	double* pos; // joint position [rad] (-pi,pi]
 	double* pos_desired; // desired joint position [rad] (-pi,pi]
 	double* vel_desired; // desired joint velocity [rad/s]
-	int* left_coord; // the index of left coordintate (oxyz) start for all joints (flat view)
-	int* right_coord;// the index of right coordintate (oxyz) start for all joints (flat view)
-
-	/*------------ vertices ----------------------*/
+	int* left_coord; // the index of left coordintate (x,y,z,-x,-y,-z) start for all joints (flat view)
+	int* right_coord;// the index of right coordintate (x,y,z,-x,-y,-z) start for all joints (flat view)
+	/*-------------- vertices ---------------------*/
 	int vert_num; // number of vertices
 	int* vert_id; // mass index of the left mass and right mass
 	int* vert_joint_id;// e.g, k: index of the joint the point belongs to
 	int* vert_dir; // direction: left=-1,right=+1
-
-	/*------------- edges ------------------------*/
+	/*--------------- edges -----------------------*/
 	int edge_num; // number of edges
 	int* edge_id; // spring index of the left mass and right mass
 	int* edge_joint_id; // e.g, k: index of the joint the edge belongs to
 	Vec3d* edge_c; // edge constant (c0,c1,phase)
-	//double* edge_c0; // edge constant c0
-	//double* edge_c1; // edge constant c1
-	//double* edge_ph;// relative position (phase)
-
 
 	// return num of joints
 	inline int size() const { return num; }
@@ -402,11 +400,11 @@ struct JOINT {
 
 	/* initialize and copy the state from other JOINT object. must keep the second argument*/
 	JOINT(JOINT other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
-		init(other.num,other.vert_num,other.edge_num, on_host);
+		init(other.num, other.vert_num, other.edge_num, on_host);
 		copyFrom(other, stream);
 	}
 
-	void init(int num,int vert_num,int edge_num, bool on_host) {
+	void init(int num, int vert_num, int edge_num, bool on_host) {
 		// joint
 		this->num = num;
 		allocateMemory(on_host, num, anchor);
@@ -452,7 +450,7 @@ struct JOINT {
 	}
 
 	void init(const Model& robot, bool on_host = true) {
-		
+
 		const auto& fri_spring = robot.id_edges.at("fri_spring");//edges ids
 		const auto& mass_pos = robot.vertices;
 		const auto& std_joints = robot.joints;
@@ -463,7 +461,7 @@ struct JOINT {
 			vert_num += std_joint.left.size() + std_joint.right.size();
 		edge_num = fri_spring.back() - fri_spring.front();
 
-		init(num,vert_num,edge_num, on_host);
+		init(num, vert_num, edge_num, on_host);
 		if (on_host) { // copy the std_joints to this
 			int vert_offset = 0;//offset the vert index by vert_offset
 			int edge_offset = 0;//offset the edge index by edge_offset
@@ -475,12 +473,12 @@ struct JOINT {
 				left_coord[jid] = std_joint.left_coord;
 				right_coord[jid] = std_joint.right_coord;
 
-				Vec3d rotation_axis = (mass_pos[anchor[jid].y] - 
+				Vec3d rotation_axis = (mass_pos[anchor[jid].y] -
 					mass_pos[anchor[jid].x]).normalize();
 				// 0  1  2  3  4  5
 				// x  y  z -x -y -z
-				Vec3d y_left = mass_pos[left_coord[jid] + 1] - mass_pos[left_coord[jid]+4];//oxyz
-				Vec3d y_right = mass_pos[right_coord[jid] + 1] - mass_pos[right_coord[jid]+4];//oxyz
+				Vec3d y_left = mass_pos[left_coord[jid] + 1] - mass_pos[left_coord[jid] + 4];//(x,y,z,-x,-y,-z)
+				Vec3d y_right = mass_pos[right_coord[jid] + 1] - mass_pos[right_coord[jid] + 4];//(x,y,z,-x,-y,-z)
 				pos[jid] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 				// pos_desired[jid] = pos[jid];
 				/*----------- joint vertices ------------------*/
@@ -488,7 +486,7 @@ struct JOINT {
 					// ref: https://docs.microsoft.com/en-us/cpp/cpp/lambda-expressions-in-cpp
 					for (auto i = 0; i < vert.size(); i++)
 					{
-						vert_id[vert_offset + i] =vert[i];
+						vert_id[vert_offset + i] = vert[i];
 						vert_joint_id[vert_offset + i] = jid;
 						vert_dir[vert_offset + i] = dir;
 					}
@@ -496,13 +494,13 @@ struct JOINT {
 				};
 				flattenVert(std_joint.left, -1);
 				flattenVert(std_joint.right, 1);
-			
+
 				/*----------- joint fri_spring ----------------*/
 				Vec3d p_anchor_0 = mass_pos[anchor[jid].x]; // anchor_0 vertex pos
 				double joint_pos = pos[jid]; // joint position [rad]
 
 				int fri_spring_start = fri_spring[jid]; // fri_spring index start (inclusive)
-				int fri_spring_end = fri_spring[jid+1]; // fri_spring index end (exclusive)
+				int fri_spring_end = fri_spring[jid + 1]; // fri_spring index end (exclusive)
 				int fri_len = fri_spring_end - fri_spring_start;
 				for (auto i = 0; i < fri_len; i++)
 				{
@@ -561,7 +559,7 @@ enum class JointControlMode {
 
 
 struct JointControl {
-	
+
 	JointControlMode mode = JointControlMode::vel;
 
 	double* pos; // (measured) joint angle array in rad
@@ -631,8 +629,8 @@ struct JointControl {
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
 			// 0  1  2  3  4  5
 			// x  y  z -x -y -z
-			Vec3d y_left = mass.pos[joint.left_coord[i] + 1] - mass.pos[joint.left_coord[i]+4];//oxyz
-			Vec3d y_right = mass.pos[joint.right_coord[i] + 1] - mass.pos[joint.right_coord[i]+4];//oxyz
+			Vec3d y_left = mass.pos[joint.left_coord[i] + 1] - mass.pos[joint.left_coord[i] + 4];//(x,y,z,-x,-y,-z)
+			Vec3d y_right = mass.pos[joint.right_coord[i] + 1] - mass.pos[joint.right_coord[i] + 4];//(x,y,z,-x,-y,-z)
 			pos[i] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
 			pos_desired[i] = pos[i];//keep it still
 		}
@@ -640,18 +638,18 @@ struct JointControl {
 
 	/*update the jointcontrol state, ndt is the delta time between jointcontrol update*/
 	void update(const MASS& mass, const JOINT& joint, double ndt) {
-//#pragma omp simd
+		//#pragma omp simd
 		for (int i = 0; i < num; i++) // compute joint angles and angular velocity
 		{
 			Vec2i anchor_edge = joint.anchor[i];
 			Vec3d rotation_axis = (mass.pos[anchor_edge.y] - mass.pos[anchor_edge.x]).normalize();
 			// 0  1  2  3  4  5
 			// x  y  z -x -y -z
-			Vec3d y_left = mass.pos[joint.left_coord[i] + 1] - mass.pos[joint.left_coord[i]+4];//oxyz
-			Vec3d y_right = mass.pos[joint.right_coord[i] + 1] - mass.pos[joint.right_coord[i]+4];//oxyz
+			Vec3d y_left = mass.pos[joint.left_coord[i] + 1] - mass.pos[joint.left_coord[i] + 4];//(x,y,z,-x,-y,-z)
+			Vec3d y_right = mass.pos[joint.right_coord[i] + 1] - mass.pos[joint.right_coord[i] + 4];//(x,y,z,-x,-y,-z)
 			// angle is within (-pi,pi]
 			double angle = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
-			
+
 			double delta_angle = angle - pos[i];
 			// assuming delta_angle is within (-pi,pi)
 			// there may be a huge chage from -pi to pi, but really it only moves a little bit
@@ -659,7 +657,7 @@ struct JointControl {
 			vel[i] = delta_angle / ndt;
 
 			pos[i] = angle;
-			
+
 			// update cmd with position PD control: clamp to (-max_vel,max_vel)
 			double dv;
 			double vel_desired_proxy;
@@ -678,7 +676,7 @@ struct JointControl {
 				//TODO FIX THIS
 				vel_desired_proxy = vel_desired[i];
 				dv = max_acc * ndt;
-				clampInplace(vel_desired_proxy, joint.vel_desired[i] -dv, joint.vel_desired[i] + dv);
+				clampInplace(vel_desired_proxy, joint.vel_desired[i] - dv, joint.vel_desired[i] + dv);
 				// set joint velocity
 				joint.vel_desired[i] = vel_desired_proxy;
 				cmd[i] = vel_desired_proxy;
@@ -691,7 +689,7 @@ struct JointControl {
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
 
-				vel_desired_proxy = 10 * pos_error[i] - 0.1*vel[i];
+				vel_desired_proxy = 10 * pos_error[i] - 0.1 * vel[i];
 
 				dv = max_acc * ndt;
 				//clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
@@ -735,7 +733,7 @@ struct JointControl {
 			switch (mode)
 			{
 			case JointControlMode::vel: // changed to velocity control
-				for (int i = 0; i < num; i++) { 
+				for (int i = 0; i < num; i++) {
 					vel_desired[i] = 0;
 					//vel_desired[i] = vel[i];
 				}
@@ -763,29 +761,31 @@ struct RigidBody {
 	//Vec3d uz; // z unit vector of the body frame
 	Mat3d rot;// rotation matrix = [ux,uy,uz] of the frame
 	Vec3d ang_vel;//angular velocity in body space
+	int id_start; // start mass index of the coordinate frame
 
-	MSGPACK_DEFINE_ARRAY(pos, vel, acc,rot,ang_vel);
+	MSGPACK_DEFINE_ARRAY(pos, vel, acc, rot, ang_vel);
 	/// <summary>
 	/// initialize the rigidbody, assuming the coordinate frame is at index id_start
 	/// </summary>
 	/// <param name="mass"> MASS struct storing the coordinate frame of the rigidbody</param>
 	/// <param name="id_start"> start index of the coordinate frame</param>
 	/// <param name="w"> initial angular velocity in body frame</param>
-	void init(const MASS& mass, const int& id_start,Vec3d w = Vec3d(0,0,0)) {
+	void init(const MASS& mass, const int& id_start, Vec3d w = Vec3d(0, 0, 0)) {
+		// com
 		// 0  1  2  3  4  5
 		// x  y  z -x -y -z
-		// com
+		this->id_start = id_start;
 		pos = std::accumulate(mass.pos + id_start, mass.pos + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
 		vel = std::accumulate(mass.vel + id_start, mass.vel + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
 		acc = std::accumulate(mass.acc + id_start, mass.acc + id_start + 6, Vec3d(0., 0., 0.)) / 6.;
-		Vec3d ux = (mass.pos[id_start] - mass.pos[id_start+3]).normalize();
-		Vec3d uy = (mass.pos[id_start+1] - mass.pos[id_start + 4]);
+		Vec3d ux = (mass.pos[id_start] - mass.pos[id_start + 3]).normalize();
+		Vec3d uy = (mass.pos[id_start + 1] - mass.pos[id_start + 4]);
 		uy = (uy - uy.dot(ux) * ux).normalize();
 		Vec3d uz = cross(ux, uy);
 		rot = Mat3d(ux, uy, uz, false);
 		this->ang_vel = w;
 	}
-	void update(const MASS& mass, const int& id_start,const double& dt) {
+	void update(const MASS& mass, const double& dt) {
 		// instead of directly estimating the acc,
 		// estimate from vel backward difference
 
@@ -793,7 +793,7 @@ struct RigidBody {
 
 		//Vec3d pos_new = mass.pos[id_start];
 		Vec3d vel_new = (pos_new - pos) / dt;
-		acc = (vel_new - vel) / dt; 
+		acc = (vel_new - vel) / dt;
 		vel = vel_new;
 		//pos = mass.pos[id_start];
 		pos = pos_new;
@@ -805,7 +805,7 @@ struct RigidBody {
 		Vec3d uz = cross(ux, uy).normalize();
 		Mat3d rot_new = Mat3d(ux, uy, uz, false);
 
- 		ang_vel = Mat3d::angularVelocityFromRotation(rot, rot_new, dt, true);
+		ang_vel = Mat3d::angularVelocityFromRotation(rot, rot_new, dt, true);
 
 		rot = rot_new;
 	}
@@ -833,15 +833,15 @@ struct RigidBody {
 		//printf("%d\n",n);
 		return out;
 	}
-	
+
 };
 
 
 struct BreakPoint {
 	double t;
 	bool should_end;
-	BreakPoint(double t = 0, bool should_end=false):t(t), should_end(should_end){}
-	constexpr bool operator() (BreakPoint const& p1, BreakPoint const& p2) const{
+	BreakPoint(double t = 0, bool should_end = false) :t(t), should_end(should_end) {}
+	constexpr bool operator() (BreakPoint const& p1, BreakPoint const& p2) const {
 		return p1.t < p2.t;
 	}
 };
@@ -873,69 +873,35 @@ public:
 	std::vector<float> joint_vel; // joint angular velocity [rad/s],{-1,1}
 	std::vector<float> joint_act; // acutation of the joint,{-1,1}
 	float orientation[6] = { 0 }; // orientation of the body,{-1,1}
-	float ang_vel [3];
+	float ang_vel[3];
 	float com_acc[3];
 	float com_vel[3];
 	float com_pos[3];
+#ifdef MEASURE_CONSTRAINT
+	std::vector<float> constraint_force; // acutation of the joint,{-1,1}
+#endif //MEASURE_CONSTRAINT
 #ifdef STRESS_TEST
 	std::vector<float> spring_strain;
-	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel,spring_strain, com_pos);
-#else
-	MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel, com_pos);
 #endif //STRESS_TEST
+	//MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel, com_pos, constraint_force, spring_strain);
+	template <typename Packer>
+	void msgpack_pack(Packer& msgpack_pk) const {
+		msgpack::type::make_define_array(
+			header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel, com_pos
+#ifdef MEASURE_CONSTRAINT
+			, constraint_force
+#endif
+#ifdef STRESS_TEST
+			, spring_strain
+#endif
+		).msgpack_pack(msgpack_pk);
+	}
+
 	DataSend() {}// defualt constructor
 
-	DataSend(const UDP_HEADER& header, const double& T,
-		const JointControl& joint_control, const RigidBody& body
-#ifdef STRESS_TEST
-		, const std::vector<int>& id_selected_edges, // spring stress test id end
-		const MASS& mass, const SPRING& spring
-#endif //STRESS_TEST
-	) {
-		this->header = header;
-		this->T = T;
-
-		int num_joint = joint_control.size();
-		joint_pos = std::vector<float>(2 * num_joint, 0);
-		joint_vel = std::vector<float>(num_joint, 0);
-		joint_act = std::vector<float>(num_joint, 0);
-
-		for (auto i = 0; i < joint_control.size(); i++)
-		{
-			joint_pos[i * 2] = cosf(joint_control.pos[i]);
-			joint_pos[i * 2 +1] = sinf(joint_control.pos[i]);
-			joint_vel[i] = joint_control.vel[i];
-			joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize		
-		}
-		body.acc.fillArray(com_acc);
-		body.vel.fillArray(com_vel);
-		body.pos.fillArray(com_pos);
-		body.ang_vel.fillArray(ang_vel);
-		// body orientation
-		orientation[0] = body.rot.m00;
-		orientation[1] = body.rot.m10;
-		orientation[2] = body.rot.m20;
-		orientation[3] = body.rot.m01;
-		orientation[4] = body.rot.m11;
-		orientation[5] = body.rot.m21;
-
-#ifdef STRESS_TEST
-		constexpr int NUM_SPRING_STRAIN = 0;
-		if (id_selected_edges.size() > 0 && (NUM_SPRING_STRAIN>0)) { // only update if there selected edges exists
-			int step_spring_strain = id_selected_edges.size() / NUM_SPRING_STRAIN;
-			spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
-			for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
-			{
-				int i = id_selected_edges[k * step_spring_strain];
-				Vec2i e = spring.edge[i];
-				Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
-				double length = s_vec.norm(); // current spring length
-				spring_strain[k] = (length - spring.rest[i]) / spring.rest[i];
-			}
-		}
-#endif // STRESS_TEST
-
-	}
+	DataSend(
+		const UDP_HEADER& header,
+		const Simulation* s);
 
 };
 
@@ -955,8 +921,57 @@ public:
 	}
 };
 
-typedef WsaUdpServer< DataReceive, std::deque<DataSend>> UdpServer;
+//typedef WsaUdpServer< DataReceive, std::deque<DataSend>> UdpServer;
 
+
+/// <summary>
+/// 
+/// </summary>
+class asioUdpServer
+{
+public:
+
+	std::string ip_local; uint16_t port_local;
+	std::string ip_remote; uint16_t port_remote;
+
+	bool UDP_SHOULD_RUN = true;// flag indicating whether to stop sending/receiving
+	bool flag_new_received = false; // flag indicating a new message has received
+	int counter_rec = 0; //  a counter for counting received message
+
+	std::thread thread_send; // thread for sending udp
+	std::thread thread_recv; // thread for receiving udp
+
+	std::deque<std::string> msg_send_queue; // queue of data to be sent, new messages added to the back
+	std::deque<std::string> msg_recv_queue; // queue of data received, new messages added to the back
+
+	asioUdpServer() {};
+
+	asioUdpServer(std::string ip_local, uint16_t port_local,
+		std::string ip_remote, uint16_t port_remote) :
+		ip_local(ip_local), port_local(port_local), ip_remote(ip_remote), port_remote(port_remote) {}
+
+	/*run this to start receiving and sending udp*/
+	void run() {
+		UDP_SHOULD_RUN = true;
+		thread_recv = std::thread([=]() { this->_doReceive(); });
+		thread_send = std::thread([=]() { this->_doSend(); });
+	}
+	void close() {
+		UDP_SHOULD_RUN = false;
+		_joinThread();
+	}
+
+	~asioUdpServer() { _joinThread(); }
+
+private:
+	void _doReceive();
+	void _doSend();
+
+	inline void _joinThread() {
+		if (thread_send.joinable()) { thread_send.join(); }
+		if (thread_recv.joinable()) { thread_recv.join(); }
+	}
+};
 #endif // UDP
 
 
@@ -968,19 +983,14 @@ public:
 	double T = 0; //simulation time
 	Vec3d global_acc = Vec3d(0, 0, 0); // global acceleration
 
-	int id_restable_spring_start = 0; // resetable springs start index (inclusive)
-	int id_resetable_spring_end = 0; // resetable springs start index (exclusive)
-
-	int id_oxyz_start = 0;// coordinate oxyz start index (inclusive)
-	int id_oxyz_end = 0; // coordinate oxyz end index (exclusive)
+	int id_oxyz_start = 0;// coordinate (x,y,z,-x,-y,-z) start index (inclusive)
+	int id_oxyz_end = 0; //  coordinate (x,y,z,-x,-y,-z) end index (exclusive)
 
 	// cuda and udp update parameters (should be constant during the simualtion)
 	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 #ifdef UDP
 	int udp_num_obs = 5;// send udp_num_obs at once (number of observations)
 	int udp_step = 4; // udp observations is stepped by this factor
-
-	bool UDP_INIT = true; // bool to inform the udp thread to initialize
 #endif
 	// host
 	MASS mass; // a flat fiew of all masses
@@ -1004,16 +1014,19 @@ public:
 #ifdef STRESS_TEST
 	std::vector<int> id_selected_edges;
 #endif //STRESS_TEST
-	
+
 #ifdef MEASURE_CONSTRAINT
 	Vec3d force_constraint;
 	float fc_max = 0; // maximum force constraint
-	std::array<float, 1000> fc_arr_x{};
-	std::array<float, 1000> fc_arr_y{};
-	std::array<float, 1000> fc_arr_z{};
-	int fc_arr_idx = 0;
+	RollingBuffer<Vec3d> fc_arr{ 1024 };
+
+	std::map < std::string, std::vector<int>> id_vertices;// the edge id of the vertices
+	int num_body = 0; // number of body, should be assigned when initializing
+	std::vector<Vec3d> body_constraint_force;
+
+	float total_mass = 0;// total mass weight in [kg]
 #endif //MEASURE_CONSTRAINT
-	
+
 	void backupState();//backup the robot mass/spring/joint state
 	void resetState();// restore the robot mass/spring/joint state to the backedup state
 
@@ -1043,14 +1056,14 @@ public:
 	void setAll();
 	// Global constraints (can be rendered)
 	// creates half-space ax + by + cz < d
-	void createPlane(const Vec3d& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0, 
+	void createPlane(const Vec3d& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0,
 		/*rendering:*/float square_size = 0.5f, float plane_radius = 5);
 	void createBall(const Vec3d& center, const double r); // creates ball with radius r at position center
 	void clearConstraints(); // clears global constraints only
 
-	void setBreakpoint(const double time,const bool should_end=false); // tell the program to stop at the set time (doesn't hang).
+	void setBreakpoint(const double time, const bool should_end = false); // tell the program to stop at the set time (doesn't hang).
 	void start();
-	void pause(const double t=0);//pause the simulation at (simulation) time t [s]
+	void pause(const double t = 0);//pause the simulation at (simulation) time t [s]
 	void resume();
 
 	void updatePhysics();
@@ -1064,15 +1077,16 @@ public:
 
 
 #ifdef UDP
-	//Todo
 public:
-	std::string ip_remote = "127.0.0.1"; // remote ip
-	int port_remote = 33300; // remote port
-	int port_local = 33301;
+	//                                       ip_local,port_local,ip_remote,port_remote
+	asioUdpServer udp_server = asioUdpServer("127.0.0.1", 33301, "127.0.0.1", 33300);
 
-	UdpServer udp_server;
+	bool updateUdpReceive();
+	void updateUdpSend();
+	bool SHOULD_SEND_UDP = false; // update and send udp
+	bool UDP_INIT = true; // bool to inform the udp thread to initialize
 
-	bool ReceiveUdpMessage();
+	std::thread thread_msg_update; // update udp message;
 #endif //UDP
 
 private:
@@ -1086,13 +1100,6 @@ private:
 	std::thread thread_graphics_update;
 	bool GRAPHICS_ENDED = false; // a flag set by thread_graphics_update to notify its termination
 #endif //GRAPHICS
-
-#ifdef UDP
-	std::thread thread_msg_update; // update udp message;
-	void updateUdpMessage();
-	bool SHOULD_SEND_UDP = false; // update and send udp
-	bool UDP_ENDED = false; // a flag set by thread_msg_update to notify its termination
-#endif // UDP
 
 	std::set<BreakPoint, BreakPoint> bpts; // list of breakpoints
 
@@ -1127,7 +1134,7 @@ private:
 public:
 	void setViewport(const glm::vec3& camera_position, const glm::vec3& target_location, const glm::vec3& up_vector);
 	void moveViewport(const glm::vec3& displacement);
-	
+
 	glm::vec4 clear_color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f); // rgba, clearing window color when calling glClearColor 
 	int contex_version_major = 4; // for GLFW_CONTEXT_VERSION_MAJOR
 	int contex_version_minor = 6; // for GLFW_CONTEXT_VERSION_MINOR
@@ -1138,7 +1145,7 @@ public:
 
 	Shader shader; // shader object, its handel is shader.ID, call shader.use() to use
 	GLuint VertexArrayID; // handle for the vertex array object
-	
+
 	/*--------------shadow----------------------------*/
 	Shader simpleDepthShader;
 	GLuint depthMapFBO; // depth map frame buffer object

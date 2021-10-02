@@ -101,7 +101,6 @@ __device__ void CudaContactPlane::applyForce(Vec3d& force, const Vec3d& pos, con
 
 
 __device__  void CudaContactPlane::solveDist(
-	Vec3d& force,
 	Vec3d& pos,
 	Vec3d& pos_prev,
 	Vec3d& vel,

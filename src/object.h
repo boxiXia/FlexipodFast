@@ -152,7 +152,6 @@ struct CudaContactPlane {
     __device__  void applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel);
 
     __device__  void solveDist(
-        Vec3d& force, 
         Vec3d& pos, 
         Vec3d& pos_prev, 
         Vec3d& vel,

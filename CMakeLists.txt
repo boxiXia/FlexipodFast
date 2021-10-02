@@ -72,11 +72,11 @@ message(STATUS "CMAKE_CUDA_FLAGS=" ${CMAKE_CUDA_FLAGS})
 find_package(glm CONFIG REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
-#find_package(glad CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED) # GUI
+find_package(implot CONFIG REQUIRED) # GUI plot
 find_package(msgpack CONFIG REQUIRED)
 find_package(clipp CONFIG REQUIRED)
-#find_package(asio CONFIG REQUIRED)
+find_package(asio CONFIG REQUIRED)
 #find_package(ghc_filesystem CONFIG REQUIRED)
 
 # include directories
@@ -84,13 +84,10 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src)
 
 add_definitions(-DGRAPHICS) # enable this definition to display graphics
-#add_definitions(-DVERLET) # enable this definition to integrate via Verlet integration
 add_definitions(-DROTATION) # enable this to support rotation in dynamics update
 #add_definitions(-DDEBUG_ENERGY) # enable this to debug energy
-#add_subdirectory(src/Titan)
 add_definitions(-DSTRESS_TEST) # enable stress testing (spring info)
 add_definitions(-DMEASURE_CONSTRAINT) # enable constraint measurement
-
 
 
 # macro to create a symbolic link
@@ -111,16 +108,17 @@ option(USE_UDP "Enter UDP mode" ON)
 if(USE_UDP)
     message(STATUS "UDP ON")
     add_definitions(-DUDP) # enable this definition to send info via DUP
-    #target_link_libraries(flexipod PRIVATE asio asio::asio)
-    target_sources(flexipod PRIVATE src/network.h src/network.cpp)
+    target_link_libraries(flexipod PRIVATE asio asio::asio)
+    #target_sources(flexipod PRIVATE src/network.h src/network.cpp)
 endif()
 
 target_include_directories(flexipod PUBLIC ${CUDA_INCLUDE_DIRS} src)
 target_link_libraries(flexipod PUBLIC 
     OpenMP::OpenMP_CXX
-    glm::glm GLEW::GLEW glfw imgui::imgui # glad::glad 
-    cuda # cudart
+    glm::glm GLEW::GLEW glfw imgui::imgui implot::implot # glad::glad 
+    cuda # ref: https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html
     clipp::clipp
+    msgpackc-cxx
     #ghcFilesystem::ghc_filesystem
 )
 
@@ -138,18 +136,6 @@ foreach(data ${msgpack_list})
 endforeach()
 
 
-add_executable(testNetwork
-    "src/testNetwork.cu"
-    src/network.h
-    src/network.cpp
-)
-target_link_libraries(testNetwork PRIVATE msgpackc-cxx)
-#target_link_libraries(testNetwork PRIVATE asio asio::asio)
-target_link_libraries(testNetwork PRIVATE cuda)
-target_include_directories(testNetwork PUBLIC ${CUDA_INCLUDE_DIRS} src)
-
-
-
 add_executable(mathTest
     src/mathTest.cu
     src/vec.h src/vec.cu
@@ -161,19 +147,15 @@ target_link_libraries(mathTest PRIVATE clipp::clipp)
 target_include_directories(mathTest PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
 
-add_executable(jasonTest
-    "src/testjson.cu"    
-    "src/vec.h" "src/vec.cu"
-    "src/testjsonHeader.h" "src/testjsonHeader.cpp"
- "src/comonUtils.h" "src/comonUtils.cpp")
-target_include_directories(jasonTest PUBLIC ${CUDA_INCLUDE_DIRS} src)
-target_link_libraries(jasonTest PRIVATE msgpackc-cxx)
-target_link_libraries(jasonTest PUBLIC cuda)
-target_link_libraries(jasonTest PUBLIC OpenMP::OpenMP_CXX)
+#find_package(Thrust CONFIG REQUIRED)
+add_executable(async_reduce src/async_reduce.cu)
+target_link_libraries(async_reduce PRIVATE cuda)
+target_include_directories(async_reduce PUBLIC ${CUDA_INCLUDE_DIRS} src)
+
 
 
 # set properties for all targets
-set_target_properties(flexipod mathTest jasonTest testNetwork
+set_target_properties(flexipod mathTest async_reduce
     PROPERTIES
     CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES} # set target cuda architecture
     POSITION_INDEPENDENT_CODE ${CMAKE_POSITION_INDEPENDENT_CODE}    

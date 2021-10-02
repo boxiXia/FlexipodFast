@@ -45,7 +45,6 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 
 class Vec8b; // boolean bit set
 
-
 /*
 index 2 (int)
 */

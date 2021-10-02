@@ -10,6 +10,7 @@ import pickle
 import pybullet as p
 import pybullet_utils.bullet_client as bc
 from torch import Graph
+from udp_server import UDPServer
 
 def linearMinMaxConversionCoefficient(a,b,c,d):
     """
@@ -30,87 +31,6 @@ def linearMapFcn(a,b,c,d):
     def y(x):
         return k*x +m
     return y
-
-
-class UDPServer:
-    def __init__(
-        s,  # self
-        local_address=("127.0.0.1", 33300),
-        remote_address=("127.0.0.1", 33301)
-    ):
-        s.local_address = local_address
-        s.remote_address = remote_address
-        s.BUFFER_LEN = 65536  # in bytes
-
-        # udp socket for sending
-        s.send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.send_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        # udp socket for receving
-        s.recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.recv_sock.settimeout(0)  # timeout immediately
-#         s.recv_sock.setblocking(False)
-        s.recv_sock.bind(s.local_address)  # Bind the socket to the port
-
-    def clearRecvBuffer(s):
-        """clear old messages that exits in receive socket buffer"""
-        try:
-            while True:
-                _ = s.recv_sock.recv(s.BUFFER_LEN)
-        except Exception:
-            pass
-
-    def receive(s,
-                max_attempts: int = 1000000,
-                clear_buf: bool = True,
-                newest: bool = True):
-        """ return the recived data at local port
-            Input:
-                max_attempts: int, max num of attempts to receive data
-                clear_buff: bool, if True clear prior messages in receive socket
-                newest: bool, if True only get the newest data 
-        """
-        # clear receive socket buffer, any old messages prior to
-        # receive will be cleared
-        if clear_buf:
-            try:
-                while True:
-                    _ = s.recv_sock.recv(s.BUFFER_LEN)
-            except Exception:
-                pass
-        # try max_attempts times to receive at least one message
-        for k in range(max_attempts):
-            try:
-                recv_data = s.recv_sock.recv(s.BUFFER_LEN)
-                break
-            except Exception:
-                continue
-        # only get the newest data if True
-        if newest:
-            try:
-                for k in range(max_attempts):
-                    recv_data = s.recv_sock.recv(s.BUFFER_LEN)
-            except Exception:
-                pass
-        try:
-            return recv_data
-        except UnboundLocalError:
-            raise TimeoutError("tried too many times")
-
-    def send(s, data):
-        """send the data to remote address, return num_bytes_send"""
-        return s.send_sock.sendto(data, s.remote_address)
-
-    def close(s):
-        try:
-            s.recv_sock.shutdown(socket.SHUT_RDWR)
-            s.recv_sock.close()
-        except Exception as e:
-            print(e)
-        print(f"shutdown UDP server:{s.local_address},{s.remote_address}")
-
-    def __del__(s):
-        s.close()
 
 
 class BulletCollisionDetect:
@@ -552,7 +472,7 @@ class FlexipodEnv(gym.Env):
 
     def start(self):
         try: # check if the simulation is opened
-            msg_rec = self.receive(max_attempts=2,verbose=False)
+            msg_rec = self.receive(max_attempts=20000,verbose=False)
         except TimeoutError: # program not opened
             # path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"./run_flexipod.bat")
             path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"..\\..\\build\\flexipod.exe")
@@ -562,7 +482,7 @@ class FlexipodEnv(gym.Env):
     def endSimulation(self):
         self.server.send(self.close_cmd_b)
 
-    def receive(self,max_attempts:int = 1000000,verbose=True):
+    def receive(self,max_attempts:int = 500000,verbose=True):
         data = self.server.receive(max_attempts=max_attempts)
         data_unpacked = msgpack.unpackb(data,use_list=False)
         return data_unpacked 

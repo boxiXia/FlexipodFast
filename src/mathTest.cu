@@ -4,8 +4,7 @@
 
 #ifdef __CUDACC__
 #define CUDA_CALLABLE_MEMBER __host__ __device__
-#else
-#define CUDA_CALLABLE_MEMBER
+#else LLABLE_MEMBER
 #endif
 #ifdef __CUDACC__
 #define CUDA_DEVICE __device__
@@ -35,6 +34,8 @@
 #include "vec.h"
 
 int main() {
+	//std::cout << sizeof(int) << std::endl;//size of int in bytes
+
 	Mat3d a(1, 2, 3, 4, 5, 6, 7, 8, 9);
 	Mat3d b(a);
 	Vec3d v1(1, 2, 3);
