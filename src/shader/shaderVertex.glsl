@@ -11,7 +11,6 @@ layout(location = 2) out vec3 fragNormal; // fragment normal
 layout(location = 3) out vec4 fragPosLightSpace; //fragment position in light space
 
 // Values that stay constant for the whole mesh.
-// uniform mat4 MVP;       // model view projection matrix
 uniform mat4 lightSpaceMatrix; // light space matrix
 uniform mat4 model; // model matrix
 uniform mat4 view; // view matrix

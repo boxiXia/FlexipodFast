@@ -32,7 +32,6 @@ class UDPServer:
         # udp socket for receving
         (family, type, proto, canonname, s.local_address) = socket.getaddrinfo(*local_address)[0]
         s.recv_sock = socket.socket(family=family, type=socket.SOCK_DGRAM)
-        # s.recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # allow reuse of local address 
         s.recv_sock.settimeout(0)  # timeout immediately
         if ip_address(s.local_address[0]).is_multicast:
             group_bin = socket.inet_pton(family,s.local_address[0]) # multicast address in bytes

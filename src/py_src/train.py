@@ -74,13 +74,16 @@ class Workspace(object):
             self.video_recorder.init(enabled=(episode == 0))
             done = False
             episode_reward = 0
+            episode_step = 0
             while not done:
                 with evalMode(self.agent):
                     action = self.agent.act(obs, sample=False)
                 obs, reward, done, _ = self.env.step(action)
                 self.video_recorder.record(self.env)
                 episode_reward += reward
-
+                episode_step += 1
+                if episode_step == self.env.max_episode_steps:
+                    break # breaks reached max episode stesp
             average_episode_reward += episode_reward
             self.video_recorder.save(f'{self.step}.mp4')
         average_episode_reward /= self.cfg.num_eval_episodes
@@ -91,6 +94,10 @@ class Workspace(object):
 
     def run(self):
         start_time = time.time()
+        
+        if self.cfg.load_replay_buffer: # load replay buffer folder path
+            self.replay_buffer.load(self.cfg.load_replay_buffer)
+        
         num_train_steps = self.cfg.num_train_steps  # total training steps
         num_seed_steps = self.cfg.num_seed_steps  # steps prior to training
         eval_frequency = self.cfg.eval_frequency  # evaluate every x steps
@@ -103,11 +110,12 @@ class Workspace(object):
         env = self.env
         batch_size = self.cfg.agent.batch_size
         update_frequency = self.cfg.update_frequency
-        # reset agent and env
-        self.agent.reset()
-        obs = env.reset()
+
         episode, episode_step, episode_reward, done = 0, 0, 0.0, False
-        
+        # # reset agent and env
+        # self.agent.reset()
+        # obs = env.reset()
+                
         # ref: replay buffer emphasizing recent experience
         # https://arxiv.org/abs/1906.04009
         eta_0 = 1
@@ -118,31 +126,76 @@ class Workspace(object):
         num_saved_model = self.cfg.num_saved_model
         h_saved_model = [] # container for heapq (priority queue): 
         
-        # training loop
-        while self.step < num_train_steps:
+        #################################################
+        exp = env.exampleAction()
+        num_example_steps = num_seed_steps*2
+        
+        
+        def computeAction(self,obs):
             # sample action for data collection
-            if self.step < num_seed_steps:
-                action = env.action_space.sample()
+            if self.step< num_example_steps:
+                if self.step < num_seed_steps:
+                    action = env.action_space.sample()
+                else: # example step 
+                    action = next(exp) 
                 with evalMode(self.agent): #TODO artificially added here to increase delay
-                    _ = self.agent.act(obs, sample=True)
+                    _ = self.agent.act(obs, sample=True)          
             else:
                 with evalMode(self.agent):
                     action = self.agent.act(obs, sample=True)
-
-            next_obs, reward, done, _ = env.step(action)
+            return action
+                    
+                    
+        # training loop
+        while self.step < num_train_steps:
+            if episode_step==0: # initialization
+                # reset agent and env
+                self.agent.reset()
+                obs = env.reset()
+                # a <- pi(s0)
+                action = computeAction(self,obs)
+                # take action
+                env.act(action)
+            
+            next_action = computeAction(self,obs)
+            next_obs, reward, done, _ = env.observe()
+            
+            if not done:
+                env.act(next_action)
+            
+            # # sample action for data collection
+            # if self.step< num_example_steps:
+            #     if self.step < num_seed_steps:
+            #         action = env.action_space.sample()
+            #     # example step   
+            #     else:
+            #         action = next(exp)
+                
+            #     with evalMode(self.agent): #TODO artificially added here to increase delay
+            #         _ = self.agent.act(obs, sample=True)          
+            # else:
+            #     with evalMode(self.agent):
+            #         action = self.agent.act(obs, sample=True)
+            # next_obs, reward, done, _ = env.step(action)
+            
             # allow infinite bootstrap
-            done = float(done)
-            done_no_max = 0 if episode_step + 1 == env._max_episode_steps else done
-
+            not_done = float(not done)
+            not_done_no_max = 1.0 if episode_step + 1 == env.max_episode_steps else not_done
+            # done = float(done)
+            # done_no_max = 0 if episode_step + 1 == env.max_episode_steps else done
             episode_reward += reward
 
-            self.replay_buffer.add(obs, action, reward, next_obs, done,
-                                   done_no_max)
+            # self.replay_buffer.add(obs, action, reward, next_obs, done, done_no_max)
+            self.replay_buffer.add(obs, action, reward, next_obs, not_done, not_done_no_max)
+            
             obs = next_obs
+            ###
+            action = next_action
+            ###
             episode_step += 1
             self.step += 1
                             
-            if done:
+            if done or episode_step==env.max_episode_steps:
                 self.logger.log('train/duration',
                                 time.time() - start_time, self.step)
                 
@@ -196,13 +249,12 @@ class Workspace(object):
                 
                 # reset agent and env
                 episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
-                self.agent.reset()
-                obs = env.reset()
+                # self.agent.reset()
+                # obs = env.reset()
                 start_time = time.time()
                 
 @hydra.main(config_path=".", config_name='train')
 def main(cfg):
-
     print(torch.cuda.device_count())
     workspace = Workspace(cfg)
     if cfg.load_model:

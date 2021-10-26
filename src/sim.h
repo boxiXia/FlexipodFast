@@ -381,6 +381,7 @@ struct JOINT {
 	double* vel_desired; // desired joint velocity [rad/s]
 	int* left_coord; // the index of left coordintate (x,y,z,-x,-y,-z) start for all joints (flat view)
 	int* right_coord;// the index of right coordintate (x,y,z,-x,-y,-z) start for all joints (flat view)
+	double* torque; // computed torque
 	/*-------------- vertices ---------------------*/
 	int vert_num; // number of vertices
 	int* vert_id; // mass index of the left mass and right mass
@@ -414,6 +415,7 @@ struct JOINT {
 		allocateMemory(on_host, num, vel_desired);
 		allocateMemory(on_host, num, left_coord);
 		allocateMemory(on_host, num, right_coord);
+		allocateMemory(on_host, num, torque);
 		// joint vertices
 		this->vert_num = vert_num;
 		allocateMemory(on_host, vert_num, vert_id);
@@ -437,6 +439,7 @@ struct JOINT {
 		cudaMemcpyAsync(vel_desired, other.vel_desired, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(left_coord, other.left_coord, num * sizeof(int), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(right_coord, other.right_coord, num * sizeof(int), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(torque, other.torque, num * sizeof(double), cudaMemcpyDefault, stream);
 		// joint vertices
 		cudaMemcpyAsync(vert_id, other.vert_id, vert_num * sizeof(int), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vert_joint_id, other.vert_joint_id, vert_num * sizeof(int), cudaMemcpyDefault, stream);
@@ -991,6 +994,7 @@ public:
 #ifdef UDP
 	int udp_num_obs = 5;// send udp_num_obs at once (number of observations)
 	int udp_step = 4; // udp observations is stepped by this factor
+	int udp_delay_step = 0; // udp obervation is delayed by this step
 #endif
 	// host
 	MASS mass; // a flat fiew of all masses
@@ -1156,12 +1160,12 @@ public:
 
 	DirectionLight light; // directional light
 
-	glm::mat4 MVP; // model-view-projection matrix
 	glm::mat4 model_matrix;// model_matrix matrix
 	glm::mat4 view_matrix; // view matrix
 	glm::mat4 projection_matrix; // projection matrix
 
 	Camera camera;
+	glm::vec3 camera_target_offset{0,0,0};
 
 
 	void computeMVP(bool update_view = true); // compute MVP

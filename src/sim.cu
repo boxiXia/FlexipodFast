@@ -14,7 +14,8 @@ __global__ void pbdSolveDist(
 	const MASS mass,
 	const SPRING spring,
 	const JOINT joint,
-	const double dt
+	const double dt,
+	const bool compute_torque = false
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < spring.num) {
@@ -29,15 +30,6 @@ __global__ void pbdSolveDist(
 		double c = d - spring.rest[i]; // distance constraint magnitude
 		n /= (d > 1e-13 ? d : 1e-13);// normalized to unit vector (direction),
 
-		// joint spring
-		if (spring.resetable[i]) {
-			int jid = spring.joint_id[i];
-			Vec3d c = joint.edge_c[jid]; // joint edge constant
-			double joint_pos = joint.pos[joint.edge_joint_id[jid]];
-			spring.rest[i] = sqrt(c.x + c.y * cos(joint_pos + c.z));
-			//spring.rest[i] = 0.99 * d + 0.01 * sqrt(c.x + c.y * cos(joint_pos + c.z));
-		}
-
 		double dt2 = dt * dt;
 		//double alpha_bar = spring.compliance[i] / dt2;
 		//double delta_lambda = -c / (w + alpha_bar);
@@ -50,17 +42,32 @@ __global__ void pbdSolveDist(
 		// velocity damping
 		p -= n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt2, 1.0) / w * n;
 
+
+		// joint spring rest lenght correction (delayed by 1 time step)
+		if (spring.resetable[i]) {
+			int edge_id = spring.joint_id[i]; // joint edge index of this spring
+			Vec3d c = joint.edge_c[edge_id]; // joint edge constant
+			double joint_pos = joint.pos[joint.edge_joint_id[edge_id]];
+			spring.rest[i] = sqrt(c.x + c.y * cos(joint_pos + c.z));
+			//spring.rest[i] = 0.99 * d + 0.01 * sqrt(c.x + c.y * cos(joint_pos + c.z));
+			
+			if (compute_torque) {
+				int joint_id = joint.edge_joint_id[edge_id];
+				Vec2i anchor = joint.anchor[joint_id];// indices of the anchor mass
+				Vec3d a0 = mass.pos[anchor.x];// mass pos of anchor 0
+				Vec3d a1 = mass.pos[anchor.y];// mass pos of anchor 1
+				Vec3d vt = (a1 - a0).normalize(); // vector of normalized rotation axis
+
+				Vec3d v0 = mass.pos[e.x] - a0;
+				double torque = -cross(v0, p).dot(vt) / dt2;
+				atomicAdd(&(joint.torque[joint_id]), torque);
+			}
+		}
+
 		Vec8b flag_x = mass.flag[e.x];
 		Vec8b flag_y = mass.flag[e.y];
 		if (flag_x & MASS_FLAG_DOF) { mass.pos[e.x].atomicVecAdd(-w1 * p * flag_x); }
 		if (flag_y & MASS_FLAG_DOF) { mass.pos[e.y].atomicVecAdd(w2 * p * flag_y); }
-
-		//#ifdef ROTATION
-		//		if (spring.resetable[i]) {
-		//			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
-		//			spring.rest[i] = spring.rest[i] * 0.1 + 0.9 * d;//reset the spring rest length if this spring is restable
-		//		}
-		//#endif // ROTATION
 	}
 }
 
@@ -114,9 +121,6 @@ __global__ void pbdSolveContact(
 		//_vel_ *= flag;
 		pos = _pos_ * (~flag) + pos * flag;
 		pos_prev = _pos_prev_ * (~flag) + pos_prev * flag;
-
-		
-
 
 		// accumulate result
 		mass.pos_prev[i] = pos_prev;
@@ -205,9 +209,6 @@ __global__ void updateMass(
 	const double dt) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
-
-
-
 		if (mass.flag[i] & MASS_FLAG_DOF) {
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
@@ -590,32 +591,26 @@ void Simulation::updatePhysics() { // repeatedly start next
 #ifdef UDP
 		updateUdpReceive(); // receive udp message whenever there is new
 #endif // UDP
-
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
-		// update joint speed
-		for (int i = 0; i < joint.size(); i++) { // compute joint angles and angular velocity
-			joint.theta[i] = joint_control.cmd[i] * NUM_UPDATE_PER_ROTATION * dt;// update joint speed
-			joint.pos_desired[i] = joint_control.pos_desired[i];
-		}
-		cudaMemcpyAsync(d_joint.theta, joint.theta, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
-		cudaMemcpyAsync(d_joint.pos_desired, joint.pos_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
-		cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
-
-
 		// invoke cuda kernel for dynamics update
-
 		if (USE_PBD) {
+			cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+
 			static bool graphCreated = false;
 			static cudaGraph_t graph;
 			static cudaGraphExec_t instance;
 			if (!graphCreated) {
 				// ref https://developer.nvidia.com/blog/cuda-graphs/
 				cudaStreamBeginCapture(stream[CUDA_DYNAMICS_STREAM], cudaStreamCaptureModeGlobal);
+				
+				cudaMemsetAsync(d_joint.torque, 0, d_joint.num * sizeof(double), stream[CUDA_DYNAMICS_STREAM]);
 				/*------------ pbd kernel start -----------*/
 				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-					pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, d_joint, dt);
+					pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, d_joint, dt,i== NUM_QUEUED_KERNELS-1? true:false);
 					pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, d_joint, dt);
 				}
+				cudaMemcpyAsync(joint.torque, d_joint.torque, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+
 				/*------------ pbd kernel end -----------*/
 				cudaStreamEndCapture(stream[CUDA_DYNAMICS_STREAM], &graph);
 				cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
@@ -624,6 +619,13 @@ void Simulation::updatePhysics() { // repeatedly start next
 			cudaGraphLaunch(instance, stream[CUDA_DYNAMICS_STREAM]);
 		}
 		else {
+			// update joint speed
+			for (int i = 0; i < joint.size(); i++) { // compute joint angles and angular velocity
+				joint.theta[i] = joint_control.cmd[i] * NUM_UPDATE_PER_ROTATION * dt;// update joint speed
+			}
+			cudaMemcpyAsync(d_joint.theta, joint.theta, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+			//cudaMemcpyAsync(d_joint.pos_desired, joint.pos_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+
 			static bool graphCreated = false;
 			static cudaGraph_t graph;
 			static cudaGraphExec_t instance;
@@ -788,7 +790,7 @@ void Simulation::updateUdpSend() {
 
 	gpuErrchk(cudaSetDevice(device)); // set cuda device
 
-	/*static*/ auto _msg_send = std::deque<DataSend>();
+	/*static*/ auto msg_send_deque = std::deque<DataSend>(); // send queue
 	/*static*/ auto msg_send = std::vector<DataSend>(udp_num_obs); // actual messages
 	/*static*/ double _T = -1; // time at last send
 
@@ -817,25 +819,27 @@ void Simulation::updateUdpSend() {
 				force_constraint = _fc;
 #endif //MEASURE_CONSTRAINT
 				body.update(mass, NUM_QUEUED_KERNELS * dt);
-				_msg_send.emplace_front(DataSend(UDP_HEADER::ROBOT_STATE_REPORT, this));
+				msg_send_deque.emplace_front(DataSend(UDP_HEADER::ROBOT_STATE_REPORT, this));
 			}
+			int msg_send_deque_max_size = udp_num_obs * udp_step + udp_delay_step; // maximun size of the msg_send_deque
 			if (UDP_INIT) {
 #ifdef MEASURE_CONSTRAINT
 				fc_arr.clear(); // TODO: fix first example always lost
 				fc_max = 0;
 #endif //MEASURE_CONSTRAINT
-				for (int i = 1; i < udp_num_obs * udp_step; i++) { // replicate up to udp_num_obs*udp_step times
-					_msg_send.push_front(_msg_send.front());
+				for (int i = 1; i < msg_send_deque_max_size; i++) { // replicate up to udp_num_obs*udp_step times
+					msg_send_deque.push_front(msg_send_deque.front());
 					//printf("udp init # %d\n", udp_server.msg_send.size());
 				}
 				UDP_INIT = false;
 			}
-			while (_msg_send.size() > udp_num_obs * udp_step) {
-				_msg_send.pop_back();
+
+			while (msg_send_deque.size() > msg_send_deque_max_size) {
+				msg_send_deque.pop_back();
 			}
 			// sending..
 			for (int i = 0; i < udp_num_obs; i++) { // replicate up to udp_num_obs times
-				msg_send[i] = _msg_send[i * udp_step];
+				msg_send[i] = msg_send_deque[i * udp_step + udp_delay_step];
 			}
 			// pack and add to msg_send_queue
 			std::stringstream send_stream;
@@ -1185,16 +1189,10 @@ void Simulation::updateGraphics() {
 
 			Vec3d com_pos = body.pos;// center of mass position (anchored body center)
 
-
-			glm::vec3 target_pos = glm::vec3(com_pos.x, com_pos.y, com_pos.z);
+			glm::vec3 target_pos = glm::vec3(com_pos.x, com_pos.y, com_pos.z) + camera_target_offset;
 
 			// Interpolate half way from original view to the new.
 			float interp_factor = T < 2.0 ? 1 : 0.01; // 0.0 == original, 1.0 == new
-			//if (glm::l2Norm(camera.pos - target_pos) > 100.) {
-			//	camera.pos = glm::vec3(1, 1, 0) + target_pos;
-			//	camera.dir = glm::vec3(1, 0, 0);
-			//	interp_factor = 1;
-			//}
 
 			camera.follow(target_pos, interp_factor);
 
@@ -1239,7 +1237,6 @@ void Simulation::updateGraphics() {
 			/*---- 2. render scene as normal using the generated depth/shadow map--*/
 			shader.use(); // use the shader
 			light.set(shader.ID, "light"); // set the light uniform
-			//shader.setMat4("MVP", MVP); // set MVP
 			shader.setMat4("model", model_matrix); // set model matrix
 			shader.setMat4("view", view_matrix);// set view matrix
 			shader.setMat4("projection", projection_matrix); // set projection matrix
@@ -1428,8 +1425,6 @@ void Simulation::moveViewport(const glm::vec3& displacement) {
 }
 void Simulation::computeMVP(bool update_view) {
 	// http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#cumulating-transformations--the-modelviewprojection-matrix
-
-
 	int iconified = glfwGetWindowAttrib(window, GLFW_ICONIFIED);// whether window is iconified
 	int width, height;
 	glfwGetFramebufferSize(window, &width, &height); // check if window is resized
@@ -1445,9 +1440,6 @@ void Simulation::computeMVP(bool update_view) {
 		model_matrix = glm::mat4(1.0f);// model matrix
 		// Camera matrix
 		this->view_matrix = camera.getViewMatrix();
-	}
-	if (is_resized || update_view) {
-		this->MVP = model_matrix * projection_matrix * view_matrix; // Remember, matrix multiplication is the other way around
 	}
 }
 

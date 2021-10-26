@@ -23,6 +23,7 @@ update_frequency: 16 #num of update is devided by this number
 
 
 load_model: False
+load_replay_buffer: False
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\3814408_22475.chpt
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1576903_9999.chpt
 train: True

@@ -68,18 +68,9 @@ int main(int argc, char* argv[])
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 	TRIANGLE triangle = sim.triangle;// reference variable for sim.triangle
 
-#ifdef MEASURE_CONSTRAINT
-	sim.id_vertices = bot.id_vertices;
-	sim.num_body = num_body;
-	sim.body_constraint_force.resize(num_body);
-
-#endif //MEASURE_CONSTRAINT
 
 
 
-#ifdef STRESS_TEST
-	sim.id_selected_edges = bot.id_selected_edges;
-#endif
 
 
 	sim.dt = 6e-5; // timestep
@@ -305,15 +296,15 @@ int main(int argc, char* argv[])
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
 
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
+	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7,0.5,20);
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0.8, 0.7);
 
-		//// fix the main body
-		//for (int i = bot.id_vertices.at("part").at(0); i < bot.id_vertices.at("part").at(1); i++) {
-		//	//mass.flag[i].assignBit(MASS_FLAG_DOF_X_ID, false);
-		//	//mass.flag[i].assignBit(MASS_FLAG_DOF_Y_ID, false);
-		//	//mass.flag[i].assignBit(MASS_FLAG_DOF_Z_ID, false);
-		//}
+	//// fix the main body
+	//for (int i = bot.id_vertices.at("part").at(0); i < bot.id_vertices.at("part").at(1); i++) {
+	//	mass.flag[i].assignBit(MASS_FLAG_DOF_X_ID, false);
+	//	mass.flag[i].assignBit(MASS_FLAG_DOF_Y_ID, false);
+	//	//mass.flag[i].assignBit(MASS_FLAG_DOF_Z_ID, false);
+	//}
 
 	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7);
 	//sim.createPlane(Vec3d(0, 0, -1), -0.6, 0.9, 0.8,0.05f,0.1f);
@@ -330,6 +321,24 @@ int main(int argc, char* argv[])
 
 
 	
+#ifdef MEASURE_CONSTRAINT
+	sim.id_vertices = bot.id_vertices;
+	sim.num_body = num_body;
+	sim.body_constraint_force.resize(num_body);
+	sim.total_mass = total_mass;
+#endif //MEASURE_CONSTRAINT
+
+#ifdef STRESS_TEST
+		sim.id_selected_edges = bot.id_selected_edges;
+#endif
+
+
+#ifdef UDP
+		sim.udp_delay_step = 0;//offset by 3 timesteps
+		double udp_delay_ms = sim.udp_delay_step * sim.dt * sim.NUM_QUEUED_KERNELS * 1000;
+		printf("UDP is delayed by %d step (%.3f ms) \n", sim.udp_delay_step, udp_delay_ms);
+#endif // UDP
+
 	sim.start();
 	
 	//while (sim.RUNNING) {

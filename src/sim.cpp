@@ -5,6 +5,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "implot.h" // implot
+#include <cfloat>
 #endif
 
 #ifdef UDP
@@ -245,17 +246,18 @@ void Simulation::runImgui() {
 		}
 		ImGui::Begin("Debug console", &show_imgui);
 
-		// simulation time | simulation speed | rendering FPS
-		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed, ImGui::GetIO().Framerate);
-#ifdef UDP	
-		ImGui::Text("UDP rec %.2f FPSS", rec_fps);
-#endif // UDP
-
 		if (ImGui::Button("Reset")) { RESET = true; SHOULD_RUN = true; }// reset state
 		ImGui::SameLine();
 
 		if (RUNNING) { if (ImGui::Button("Pause ")) { pause(0); } } // pause
 		else if (ImGui::Button("Resume")) { resume(); }// resume
+		ImGui::SameLine();
+
+		// simulation time | simulation speed | rendering FPS
+		ImGui::Text("%.2f s | % 5.2f X | %.1f FPS", T, sim_speed, ImGui::GetIO().Framerate);
+#ifdef UDP	
+		ImGui::Text("UDP rec %.2f FPSS", rec_fps);
+#endif // UDP
 
 		//static float v_knob = 0;
 		//MyKnob("knob", &v_knob, -3.142, 3.14
@@ -269,52 +271,61 @@ void Simulation::runImgui() {
 			ImGui::DragScalarN("gravity", ImGuiDataType_Double, &global_acc, 3, 0.1, &gravity_min, &gravity_max, "%.2f");
 		}
 
-		//ImGui::PlotLines
-		// 
-
 		// joint control
 		if (joint_control.size() > 0 && ImGui::CollapsingHeader("Joint control")) {
+			if (ImGui::BeginTable("split", 5, ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBodyUntilResize)){
+				// We could also set ImGuiTableFlags_SizingFixedFit on the table and all columns will default to ImGuiTableColumnFlags_WidthFixed.
+				ImGui::TableSetupColumn("id", ImGuiTableColumnFlags_WidthFixed); // Default to 100.0f
+				ImGui::TableSetupColumn("x", ImGuiTableColumnFlags_WidthFixed); // Default to 200.0f
+				ImGui::TableSetupColumn("x_d", ImGuiTableColumnFlags_WidthFixed,150.f);       // Default to auto
+				ImGui::TableSetupColumn("v_d", ImGuiTableColumnFlags_WidthFixed, 150.f);       // Default to auto
+				ImGui::TableSetupColumn("torque", ImGuiTableColumnFlags_WidthFixed);       // Default to auto
 
-			float width = ImGui::GetContentRegionAvail().x;
-			float cursor_pos_x = ImGui::GetCursorPosX();
-			ImGui::Text("id"); ImGui::SameLine();
-			HelpMarker("   x   ", "position [rad]");
+				ImGui::TableHeadersRow();
 
-			ImGui::SameLine();
-			HelpMarker("   x_d   ", "position desired [rad]");
+				char label[20];
 
-			ImGui::SameLine(); ImGui::SetCursorPosX(width * 0.7f);
-			HelpMarker("   v_d   ", "velocity desired [rad/s]");
+				for (int i = 0; i < joint_control.size(); i++) {
+					if (i == 0) {
+						for (int col = 0; col < 5; col++) {
+							ImGui::TableSetColumnIndex(col);
+							ImGui::PushItemWidth(-FLT_MIN); // Right-aligned
+						}
+					}
+					ImGui::TableNextRow();
 
-			ImGui::PushItemWidth(width * 0.3f);
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("%2d", i);
 
-			char label[20];
-			for (int i = 0; i < joint_control.size(); i++)
-			{
-				ImGui::Text("%2d  %+6.3f", i, joint_control.pos[i]);
-				ImGui::SameLine();
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%+6.3f", joint_control.pos[i]);
 
-				sprintf(label, "joint_pos_des_%d##00349234", i);
-				ImGui::PushID(label);
-				//ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
-				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
-				ImGui::PopID();
+					ImGui::TableSetColumnIndex(2);
+					sprintf(label, "joint_pos_des_%d##00349234", i);
+					ImGui::PushID(label);
+					//ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
+					ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
+					ImGui::PopID();
 
-				ImGui::SameLine();
-				sprintf(label, "joint_vel_des_%d##00349234", i);
-				ImGui::PushID(label);
-				//ImGui::Text("%+4.3f", joint_control.vel_desired[i]);
-				ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
-				ImGui::PopID();
+					ImGui::TableSetColumnIndex(3);
+					sprintf(label, "joint_vel_des_%d##00349234", i);
+					ImGui::PushID(label);
+					//ImGui::Text("%+4.3f", joint_control.vel_desired[i]);
+					ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
+					ImGui::PopID();
+
+					ImGui::TableSetColumnIndex(4);
+					ImGui::Text("%+6.3f", joint.torque[i]);
+				}
+				ImGui::EndTable();
 			}
-			ImGui::PopItemWidth();
-			ImGui::Separator();
-
+			
 			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
 			const char* elem_name = (joint_control.mode == JointControlMode::vel) ? "vel" : "pos";
 			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
 		
 		}
+
 		if (ImGui::CollapsingHeader("Info")) {
 			auto info = body.print();
 			ImGui::Text(info);
@@ -356,9 +367,13 @@ void Simulation::runImgui() {
 		if (ImGui::CollapsingHeader("Options")) {
 			ImGui::Checkbox("draw mesh", &show_triangle);
 			ImGui::Checkbox("camera follow", &camera.should_follow);
+			static float offset_min = -1;
+			static float offset_max = 1;
+			ImGui::DragScalarN("camera offset", ImGuiDataType_Float, &camera_target_offset, 3, 0.01, &offset_min, &offset_max, "%.2f");
+
 			ImGui::Checkbox("use PBD", &USE_PBD);
 		}
-
+		
 		ImGui::End();
 		// Rendering
 		ImGui::Render();
@@ -501,7 +516,9 @@ DataSend::DataSend(
 	for (auto i = 0; i < joint_control.size(); i++) {
 		joint_pos[i * 2] = cosf(joint_control.pos[i]);
 		joint_pos[i * 2 + 1] = sinf(joint_control.pos[i]);
-		joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize		
+		//joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize		
+		//joint_act[i] = joint_control.cmd[i];
+		joint_act[i] = s->joint.torque[i];
 	}
 	body.acc.fillArray(com_acc);
 	body.vel.fillArray(com_vel);
@@ -538,7 +555,8 @@ DataSend::DataSend(
 	float total_weight = s->total_mass * s->global_acc.norm();
 	constraint_force.resize(s->body_constraint_force.size());
 	for (int i = 0; i < s->body_constraint_force.size(); i++){ // normalized by total_weight
-		constraint_force[i] = s->body_constraint_force[i].norm()/ total_weight;
+		//constraint_force[i] = s->body_constraint_force[i].norm();
+		constraint_force[i] = s->body_constraint_force[i].norm()/ total_weight>0.05? 1.0:0;
 	}
 #endif //MEASURE_CONSTRAINT
 
