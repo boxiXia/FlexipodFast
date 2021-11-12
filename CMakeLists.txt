@@ -1,28 +1,27 @@
-message(STATUS "${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}") # print cmake version
 cmake_minimum_required(VERSION 3.14)
 project(SoftSim LANGUAGES C CXX CUDA) # use CXX, CUDA by default (since CUDA is a language, don't need cuda_add_executable)
-
-# https://cliutils.gitlab.io/modern-cmake/chapters/packages/CUDA.html
-set(CMAKE_CUDA_STANDARD 17) # set cuda cmake standard to c++17
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_SEPARABLE_COMPILATION ON) # cuda separable compilation
-set(CMAKE_POSITION_INDEPENDENT_CODE ON) # position independent code
+message(STATUS "${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}") # print cmake version
 
 set(CMAKE_CXX_STANDARD 17) # set c++ standard to 17
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF) # https://cmake.org/cmake/help/git-stage/prop_tgt/CXX_EXTENSIONS.html
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # If enabled, generates a compile_commands.json file of compiler calls
+message(STATUS "CMAKE_CXX_STANDARD=" ${CMAKE_CXX_STANDARD})
+
+# cuda related setup
+# https://cliutils.gitlab.io/modern-cmake/chapters/packages/CUDA.html
+set(CMAKE_CUDA_STANDARD 17) # set cuda cmake standard to c++17
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_SEPARABLE_COMPILATION ON) # cuda separable compilation
+set(CMAKE_POSITION_INDEPENDENT_CODE ON) # position independent code
 if(MSVC)
     SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-std:c++${CMAKE_CXX_STANDARD}") # -Xcompiler=-std:c++latest"
 endif()
-
 message(STATUS "CMAKE_CUDA_STANDARD=" ${CMAKE_CUDA_STANDARD})
-message(STATUS "CMAKE_CXX_STANDARD=" ${CMAKE_CXX_STANDARD})
 
-
-# https://github.com/microsoft/vcpkg/blob/master/docs/users/integration.md#using-an-environment-variable-instead-of-a-command-line-option
 # SET CMAKE_TOOLCHAIN_FILE
 # you can add VCPKG_ROOT= your/vcpkg/root/folder as environment variable
+# https://github.com/microsoft/vcpkg/blob/master/docs/users/integration.md#using-an-environment-variable-instead-of-a-command-line-option
 if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       CACHE STRING "")
@@ -60,7 +59,6 @@ IF (OPENMP_FOUND)
     else()
         SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=${OpenMP_CXX_FLAGS}")
     endif()
-    #SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_CXX_FLAGS}") 
 ENDIF()
 
 
@@ -77,7 +75,6 @@ find_package(implot CONFIG REQUIRED) # GUI plot
 find_package(msgpack CONFIG REQUIRED)
 find_package(clipp CONFIG REQUIRED)
 find_package(asio CONFIG REQUIRED)
-#find_package(ghc_filesystem CONFIG REQUIRED)
 
 # include directories
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -109,7 +106,6 @@ if(USE_UDP)
     message(STATUS "UDP ON")
     add_definitions(-DUDP) # enable this definition to send info via DUP
     target_link_libraries(flexipod PRIVATE asio asio::asio)
-    #target_sources(flexipod PRIVATE src/network.h src/network.cpp)
 endif()
 
 target_include_directories(flexipod PUBLIC ${CUDA_INCLUDE_DIRS} src)
@@ -119,9 +115,9 @@ target_link_libraries(flexipod PUBLIC
     cuda # ref: https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html
     clipp::clipp
     msgpackc-cxx
-    #ghcFilesystem::ghc_filesystem
 )
 
+# bypass the stack size limit
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:50000000")
 
 # create symbolic link for *.glsl and *.msgpack (this may require administrator privileges)
@@ -143,19 +139,11 @@ add_executable(mathTest
 target_link_libraries(mathTest PRIVATE msgpackc-cxx)
 target_link_libraries(mathTest PRIVATE cuda)
 target_link_libraries(mathTest PRIVATE clipp::clipp)
-#target_link_libraries(mathTest PRIVATE ghcFilesystem::ghc_filesystem)
 target_include_directories(mathTest PUBLIC ${CUDA_INCLUDE_DIRS} src)
 
 
-#find_package(Thrust CONFIG REQUIRED)
-add_executable(async_reduce src/async_reduce.cu)
-target_link_libraries(async_reduce PRIVATE cuda)
-target_include_directories(async_reduce PUBLIC ${CUDA_INCLUDE_DIRS} src)
-
-
-
 # set properties for all targets
-set_target_properties(flexipod mathTest async_reduce
+set_target_properties(flexipod mathTest
     PROPERTIES
     CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES} # set target cuda architecture
     POSITION_INDEPENDENT_CODE ${CMAKE_POSITION_INDEPENDENT_CODE}    

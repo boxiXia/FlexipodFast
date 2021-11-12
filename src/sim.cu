@@ -9,6 +9,33 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, �Titan: A Paral
 #define GLM_FORCE_PURE
 #include "sim.h"
 
+/* we need these includes for CUDA's random number*/
+#include <curand.h>
+#include <curand_kernel.h>
+// host random
+#include <random>
+
+__global__ void randomizeFriction(
+	const CUDA_GLOBAL_CONSTRAINTS c,
+	const double fiction_low,
+	const double fiction_high,
+	const double T
+) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < c.num_planes) {
+		/* CUDA's random number library uses curandState_t to keep track of the seed value
+		we will store a random state for every thread  */
+		curandState_t state;
+		/* we have to initialize the state */
+		curand_init(T * 1000, /* the seed controls the sequence of random values that are produced */
+			0, /* the sequence number is only important with multiple cores */
+			0, /* the offset is how much extra we advance in the sequence for each call, can be 0 */
+			&state);
+		c.d_planes[i]._FRICTION_K = fiction_low + (fiction_high - fiction_low) * curand_uniform_double(&state);
+		printf("%f\n", c.d_planes[i]._FRICTION_K);
+	}
+}
+
 
 __global__ void pbdSolveDist(
 	const MASS mass,
@@ -1007,6 +1034,19 @@ void Simulation::resetState() {//TODO...fix bug
 	//joint_control.update(backup_mass, backup_joint, dt);
 	body.init(backup_mass, id_oxyz_start); // init body frame
 	cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
+
+	// TODO: randomization
+	randomizeFriction <<< 1, 1, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_constraints, 0.6, 1.0, T);
+
+	//std::random_device rd{};  // Will be used to obtain a seed for the random number engine
+	//std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+	//std::uniform_real_distribution<> dis(-1, 1);
+	//global_acc.z = 9.8+0.1*dis(gen);
+	//global_acc.x = 0.1*dis(gen);
+	//global_acc.y = 0.1*dis(gen);
+	//global_acc /= global_acc.norm();
+	//global_acc *= 9.8;
+
 
 #ifdef UDP
 	UDP_INIT = true; // tell the udp thread to initiailze

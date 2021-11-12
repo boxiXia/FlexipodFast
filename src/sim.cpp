@@ -56,81 +56,7 @@ Model::Model(const std::string& file_path, bool versbose) {
 
 #ifdef GRAPHICS
 
-
-//// utility structure for realtime plot
-//struct RollingBuffer {
-//	float Span;
-//	ImVector<ImVec2> Data;
-//	RollingBuffer() {
-//		Span = 10.0f;
-//		Data.reserve(2000);
-//	}
-//	void AddPoint(float x, float y) {
-//		float xmod = fmodf(x, Span);
-//		if (!Data.empty() && xmod < Data.back().x)
-//			Data.shrink(0);
-//		Data.push_back(ImVec2(xmod, y));
-//	}
-//};
-
-
 /*--------------------------------- ImGui ----------------------------------------*/
-
-// Implementing a simple custom widget using the public API.
-// You may also use the <imgui_internal.h> API to get raw access to more data/helpers, however the internal API isn't guaranteed to be forward compatible.
-// FIXME: Need at least proper label centering + clipping (internal functions RenderTextClipped provides both but api is flaky/temporary)
-static bool MyKnob(const char* label, float* p_value, float v_min, float v_max)
-{
-	ImGuiIO& io = ImGui::GetIO();
-
-	//io.SetClipboardTextFn
-	ImGuiStyle& style = ImGui::GetStyle();
-
-	float radius_outer = 40.0f;
-	ImVec2 pos = ImGui::GetCursorScreenPos();
-	ImVec2 center = ImVec2(pos.x + radius_outer, pos.y + radius_outer);
-	float line_height = ImGui::GetTextLineHeight();
-	ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-	float ANGLE_MIN = 3.141592f * -1.0f;
-	float ANGLE_MAX = 3.141592f * 1.0f;
-
-	ImGui::InvisibleButton(label, ImVec2(radius_outer * 2, radius_outer * 2 + line_height + style.ItemInnerSpacing.y));
-	bool value_changed = false;
-	bool is_active = ImGui::IsItemActive();
-	bool is_hovered = ImGui::IsItemActive();
-	if (is_active && ((io.MouseDelta.x != 0.0f) || (io.MouseDelta.y != 0.0f)))
-	{
-
-		float step = (v_max - v_min) / 200.0f;
-		//*p_value += io.MouseDelta.x * step;
-		//*p_value += atan2f(io.MouseDelta.y, io.MouseDelta.x)* step;
-		*p_value += (io.MouseDelta.y + io.MouseDelta.x) * step;
-
-		if (*p_value < v_min) *p_value = v_min;
-		if (*p_value > v_max) *p_value = v_max;
-		value_changed = true;
-	}
-
-	float t = (*p_value - v_min) / (v_max - v_min);
-	float angle = ANGLE_MIN + (ANGLE_MAX - ANGLE_MIN) * t;
-	float angle_cos = cosf(angle), angle_sin = sinf(angle);
-	float radius_inner = radius_outer * 0.20f;
-	draw_list->AddCircleFilled(center, radius_outer, ImGui::GetColorU32(ImGuiCol_FrameBg), 16);
-	draw_list->AddLine(ImVec2(center.x + angle_cos * radius_inner, center.y + angle_sin * radius_inner), ImVec2(center.x + angle_cos * (radius_outer - 2), center.y + angle_sin * (radius_outer - 2)), ImGui::GetColorU32(ImGuiCol_SliderGrabActive), 2.0f);
-	draw_list->AddCircleFilled(center, radius_inner, ImGui::GetColorU32(is_active ? ImGuiCol_FrameBgActive : is_hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), 16);
-	draw_list->AddText(ImVec2(pos.x, pos.y + radius_outer * 2 + style.ItemInnerSpacing.y), ImGui::GetColorU32(ImGuiCol_Text), label);
-
-	if (is_active || is_hovered)
-	{
-		ImGui::SetNextWindowPos(ImVec2(pos.x - style.WindowPadding.x, pos.y - line_height - style.ItemInnerSpacing.y - style.WindowPadding.y));
-		ImGui::BeginTooltip();
-		ImGui::Text("%.3f", *p_value);
-		ImGui::EndTooltip();
-	}
-
-	return value_changed;
-}
 
 
 
@@ -166,19 +92,12 @@ void Simulation::startupImgui() {
 	ImGui::StyleColorsDark();
 	//ImGui::StyleColorsClassic();
 
-	// fonts
-	//io.Fonts->AddFontDefault();
-	//io.Fonts->TexDesiredWidth = 20;
-	//ImGui::SetWindowFontScale(2);
-	//ImGui::GetFont()->FontSize = 20;
-
 	// Setup Platform/Renderer backends
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	//const char* glsl_version = "#version 460"; //TODO change this in header
 	std::ostringstream glsl_version;
 	glsl_version << "#version " << contex_version_major << contex_version_minor << "0";
 	ImGui_ImplOpenGL3_Init(glsl_version.str().c_str());
-
 
 	//scale for high dpi 
 	// https://doc.magnum.graphics/magnum/classMagnum_1_1ImGuiIntegration_1_1Context.html#ImGuiIntegration-Context-dpi
@@ -191,8 +110,7 @@ void Simulation::startupImgui() {
 	std::string font_path = (getProgramDir() + "\\Cousine-Regular.ttf");
 
 	io.Fonts->AddFontFromFileTTF(font_path.c_str(), 16.0f * xscale);
-	// set style
-	auto& style = ImGui::GetStyle();
+	auto& style = ImGui::GetStyle(); // set style
 	style.ScaleAllSizes(xscale);
 	style.FramePadding.y /= 2.0; // reduce vertical padding
 }
@@ -258,9 +176,6 @@ void Simulation::runImgui() {
 #ifdef UDP	
 		ImGui::Text("UDP rec %.2f FPSS", rec_fps);
 #endif // UDP
-
-		//static float v_knob = 0;
-		//MyKnob("knob", &v_knob, -3.142, 3.14
 
 		// physics
 		if (joint_control.size() > 0 && ImGui::CollapsingHeader("physics")) {
@@ -353,7 +268,7 @@ void Simulation::runImgui() {
 			ImGui::SliderFloat("History", &history, t_scale, fc_arr.num * t_scale, "%.1f s");
 			int t_count = history / t_scale;
 			ImPlot::SetNextPlotLimitsX(t_scale, history, ImGuiCond_Always);*/
-			ImPlot::SetNextPlotLimitsX(0, std::max(fc_arr.num,1) * t_scale, ImGuiCond_Always);
+			ImPlot::SetupAxisLimits(ImAxis_X1,0, std::max(fc_arr.num,1) * t_scale, ImGuiCond_Always);
 			int t_count = fc_arr.num;
 			if (ImPlot::BeginPlot("constraint force [N]##5469", NULL, NULL, ImVec2(-1, 0),
 				ImPlotFlags_None, ImPlotAxisFlags_NoTickLabels, ImPlotAxisFlags_None)) {

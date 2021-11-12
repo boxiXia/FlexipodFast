@@ -41,9 +41,12 @@ ref: J. Austin, R. Corrales-Fatou, S. Wyetzner, and H. Lipson, “Titan: A Paral
 
 #include <msgpack.hpp>
 
-
-
+struct Vec2i; // index 2 (int)
+struct Vec3i; // index 3 (int)
+struct Vec3d; // vector 3 (double)
+struct Mat3d; // matrix 3x3 (double)
 class Vec8b; // boolean bit set
+
 
 /*
 index 2 (int)
@@ -385,172 +388,6 @@ struct MY_ALIGN(8) Vec3d {
 };
 
 float lerp(float a, float b, float f);
-
-
-
-//template<class T>
-//class MY_ALIGN(8) Vec3 {
-//public:
-//	T x, y, z;
-////#ifndef __CUDACC__
-//	MSGPACK_DEFINE_ARRAY(x, y, z);
-////#endif
-//
-//	
-//
-//	CUDA_CALLABLE_MEMBER Vec3() {
-//		x = 0;
-//		y = 0;
-//		z = 0;
-//	} // default
-//
-//	CUDA_CALLABLE_MEMBER Vec3(const Vec3<T>& v) {
-//		x = v.x;
-//		y = v.y;
-//		z = v.z;
-//	} // copy constructor
-//
-//	Vec3(const std::vector<T>& v) {
-//		x = v[0];
-//		y = v[1];
-//		z = v[2];
-//	}
-//
-//	Vec3<T>& operator=(const std::vector<T>& v) {
-//		x = v[0];
-//		y = v[1];
-//		z = v[2];
-//		return *this;
-//	}
-//	CUDA_CALLABLE_MEMBER Vec3<T>& operator=(const Vec3<T>& v) {
-//		x = v.x;
-//		y = v.y;
-//		z = v.z;
-//		return *this;
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER Vec3<T>& operator+=(const Vec3<T>& v) {
-//		x += v.x;
-//		y += v.y;
-//		z += v.z;
-//		return *this;
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER Vec3<T>& operator-=(const Vec3<T>& v) {
-//		x -= v.x;
-//		y -= v.y;
-//		z -= v.z;
-//		return *this;
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER Vec3<T>& operator*=(const Vec3<T>& v) {
-//		x *= v.x;
-//		y *= v.y;
-//		z *= v.z;
-//		return *this;
-//	}
-//	inline CUDA_CALLABLE_MEMBER Vec3<T>& operator*=(const T& d) {
-//		x *= d;
-//		y *= d;
-//		z *= d;
-//		return *this;
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER Vec3<T>& operator/=(const Vec3<T>& v) {
-//		x /= v.x;
-//		y /= v.y;
-//		z /= v.z;
-//		return *this;
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER Vec3<T>& operator/=(const T& d) {
-//		x /= d;
-//		y /= d;
-//		z /= d;
-//		return *this;
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER Vec3<T> operator-() const {
-//		return Vec3<T>(-x, -y, -z);
-//	}
-//
-//	CUDA_CALLABLE_MEMBER T& operator [] (int data) {
-//		switch (data) {
-//		case 0:
-//			return x;
-//		case 1:
-//			return y;
-//		case 2:
-//			return z;
-//		default:
-//			printf("C FILE %s LINE %d:operator [data] out of range!\data", __FILE__, __LINE__);
-//			exit(-1);
-//		} // to do remove this
-//	}
-//
-//	CUDA_CALLABLE_MEMBER const T& operator [] (int data) const {
-//		switch (data) {
-//		case 0:
-//			return x;
-//		case 1:
-//			return y;
-//		case 2:
-//			return z;
-//		default:
-//			printf("C FILE %s LINE %d:operator [data] out of range!\data", __FILE__, __LINE__);
-//			return x;
-//		} // to do remove this
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER friend Vec3<T> operator+(const Vec3<T>& v1, const Vec3<T>& v2) {
-//		return Vec3<T>(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
-//	}
-//	inline CUDA_CALLABLE_MEMBER friend Vec3<T> operator-(const Vec3<T>& v1, const Vec3<T>& v2) {
-//		return Vec3<T>(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z);
-//	}
-//	inline CUDA_CALLABLE_MEMBER friend Vec3<T> operator*(const T x, const Vec3<T>& v) {
-//		return Vec3<T>(v.x * x, v.y * x, v.z * x);
-//	}
-//	inline CUDA_CALLABLE_MEMBER friend Vec3<T> operator*(const Vec3<T>& v, const T x) {
-//		return x * v;
-//	} // double times Vec3d
-//	inline CUDA_CALLABLE_MEMBER friend bool operator==(const Vec3<T>& v1, const Vec3<T>& v2) {
-//		return (v1.x == v2.x && v1.y == v2.y && v1.z == v2.z);
-//	}
-//	inline CUDA_CALLABLE_MEMBER friend Vec3<T> operator*(const Vec3<T>& v1, const Vec3<T>& v2) {
-//		return Vec3<T>(v1.x * v2.x, v1.y * v2.y, v1.z * v2.z);
-//	} // Multiplies two Vecs (elementwise)
-//	inline CUDA_CALLABLE_MEMBER friend Vec3<T> operator/(const Vec3<T>& v, const double x) {
-//		return Vec3<T>(v.x / x, v.y / x, v.z / x);
-//	} //  vector over double
-//	inline CUDA_CALLABLE_MEMBER friend Vec3<T> operator/(const Vec3<T>& v1, const Vec3<T>& v2) {
-//		return Vec3<T>(v1.x / v2.x, v1.y / v2.y, v1.z / v2.z);
-//	} // divides two Vecs (elementwise)
-//
-//	friend std::ostream& operator << (std::ostream& strm, const Vec3d& v) {
-//		return strm << "(" << v[0] << ", " << v[1] << ", " << v[2] << ")";
-//	} // print
-//
-//	inline CUDA_CALLABLE_MEMBER void setZero() {
-//		x = 0;
-//		y = 0;
-//		z = 0;
-//	}
-//
-//	CUDA_CALLABLE_MEMBER void print() {
-//		printf("(%2f, %2f, %2f)\data", x, y, z);
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER  double SquaredSum() const {
-//		return x * x + y * y + z * z;
-//	}
-//
-//	inline CUDA_CALLABLE_MEMBER double sum() const {
-//		return x + y + z;
-//	} // sums all components of the vector
-//
-//};
-
 
 
 struct MY_ALIGN(8) Mat3d {
@@ -965,12 +802,6 @@ CUDA_CALLABLE_MEMBER Vec3d& Vec3d::operator*=(const Vec8b& v) {
 }
 
 /*----------------------------------------------------------------------*/
-
-
-
-
-
-
 
 
 

@@ -990,11 +990,12 @@ public:
 	int id_oxyz_end = 0; //  coordinate (x,y,z,-x,-y,-z) end index (exclusive)
 
 	// cuda and udp update parameters (should be constant during the simualtion)
-	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+	int NUM_QUEUED_KERNELS = 100; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 #ifdef UDP
 	int udp_num_obs = 5;// send udp_num_obs at once (number of observations)
-	int udp_step = 4; // udp observations is stepped by this factor
+	int udp_step = 2; // udp observations is stepped by this factor
 	int udp_delay_step = 0; // udp obervation is delayed by this step
+	// combination that works:NUM_QUEUED_KERNELS = 50,udp_step=4,udp_num_obs=5
 #endif
 	// host
 	MASS mass; // a flat fiew of all masses

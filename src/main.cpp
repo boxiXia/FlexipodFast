@@ -334,7 +334,7 @@ int main(int argc, char* argv[])
 
 
 #ifdef UDP
-		sim.udp_delay_step = 0;//offset by 3 timesteps
+		sim.udp_delay_step = 0;//offset by x timesteps
 		double udp_delay_ms = sim.udp_delay_step * sim.dt * sim.NUM_QUEUED_KERNELS * 1000;
 		printf("UDP is delayed by %d step (%.3f ms) \n", sim.udp_delay_step, udp_delay_ms);
 #endif // UDP

@@ -670,7 +670,7 @@ class FlexipodEnv(gym.Env):
         s.gait_frequency = s.toRawGaitFrequency(gait_frequency)
         
         s.server.send(s.reset_cmd_b)
-        time.sleep(1/50)
+        time.sleep(1/20)
         msg_rec = s.receive()
         s.episode_steps = 0
         observation,reward,done,info =  s._processRecMsg(msg_rec,reset=True)

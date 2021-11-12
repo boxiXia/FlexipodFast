@@ -28,7 +28,7 @@ dependencies:
   - point_cloud_utils
   - pydot
   - pythonocc-core
-  - cudatoolkit=11.1
+  - cudatoolkit=11.3
   - pytorch
   - torchaudio
   - torchvision
