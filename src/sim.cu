@@ -680,33 +680,6 @@ void Simulation::updatePhysics() { // repeatedly start next
 		}
 		//cudaStreamSynchronize(stream[CUDA_DYNAMICS_STREAM]);
 
-
-
-//		if (USE_PBD) {
-//			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-//				pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, d_joint, dt);
-//				pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, d_joint, dt);
-//				//pbdSolveVel << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
-//			}
-//		}
-//		else {
-//			for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-//#ifdef ROTATION
-//				if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
-//					updateJointMass << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_mass.flag, d_joint);
-//					updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-//				}
-//				else {
-//					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-//				}
-//				k_rot++;
-//#else
-//				updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-//#endif // ROTATION
-//				updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-//			}
-//		}
-
 		mass.CopyPosFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]);
 		mass.CopyConstraintForceFrom(d_mass, stream[CUDA_DYNAMICS_STREAM]); // copy force_constraint
 		//gpuErrchk(cudaPeekAtLastError());
@@ -1178,54 +1151,9 @@ void Simulation::updateGraphics() {
 			}
 			//cudaDeviceSynchronize(); // synchronize before updating the springs and mass positions
 
-
-
-			double speed_multiplier = 0.2;
-			double pos_multiplier = 0.1;
-
-			if (glfwGetKey(window, GLFW_KEY_UP)) {
-				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == JointControlMode::vel) {
-						joint_control.vel_desired[i] += i < 2 ? speed_multiplier : -speed_multiplier;
-					}
-					else if (joint_control.mode == JointControlMode::pos) {
-						joint_control.pos_desired[i] += i < 2 ? pos_multiplier : -pos_multiplier;
-					}
-				}
-			}
-			else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
-				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == JointControlMode::vel) {
-						joint_control.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
-					}
-					else if (joint_control.mode == JointControlMode::pos) {
-						joint_control.pos_desired[i] -= i < 2 ? pos_multiplier : -pos_multiplier;
-					}
-				}
-			}
-			if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == JointControlMode::vel) {
-						joint_control.vel_desired[i] -= speed_multiplier;
-					}
-					else if (joint_control.mode == JointControlMode::pos) {
-						joint_control.pos_desired[i] -= pos_multiplier;
-					}
-				}
-			}
-			else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-				for (int i = 0; i < joint.size(); i++) {
-					if (joint_control.mode == JointControlMode::vel) {
-						joint_control.vel_desired[i] += speed_multiplier;
-					}
-					else if (joint_control.mode == JointControlMode::pos) {
-						joint_control.pos_desired[i] += pos_multiplier;
-					}
-				}
-			}
-			else if (glfwGetKey(window, GLFW_KEY_0)) { // zero speed
-				joint_control.reset(mass, joint);
-			}
+			// process additional keyboard event
+			if (keyboardCallback != nullptr) {keyboardCallback(this);}
+			
 
 			Vec3d com_pos = body.pos;// center of mass position (anchored body center)
 
@@ -1483,6 +1411,7 @@ void Simulation::computeMVP(bool update_view) {
 	}
 }
 
+
 void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 { // ref: https://www.glfw.org/docs/latest/input_guide.html#input_key
 	Simulation& sim = *(Simulation*)glfwGetWindowUserPointer(window);
@@ -1516,19 +1445,6 @@ void Simulation::key_callback(GLFWwindow* window, int key, int scancode, int act
 		else if (key == GLFW_KEY_O) {//step
 			if (!sim.RUNNING) { sim.resume(); }
 			sim.setBreakpoint(sim.T + sim.NUM_QUEUED_KERNELS * sim.dt);
-		}
-		else if (key == GLFW_KEY_C) {
-			switch (sim.joint_control.mode)
-			{
-			case JointControlMode::vel: // change to position control
-				sim.joint_control.updateControlMode(JointControlMode::pos);
-				printf("joint position control\n");
-				break;
-			case JointControlMode::pos: // change to velocity control
-				sim.joint_control.updateControlMode(JointControlMode::vel);
-				printf("joint speed control\n");
-				break;
-			}
 		}
 		else if (key == GLFW_KEY_M) {
 			sim.show_imgui = !sim.show_imgui;
