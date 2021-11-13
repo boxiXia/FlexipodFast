@@ -29,7 +29,7 @@ load_replay_buffer: False
 train: True
 # train: False
 
-num_saved_model: 20 # saving the top x models
+num_saved_model: 800 # saving the top x models
 
 num_seed_steps: 40000
 

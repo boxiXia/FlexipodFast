@@ -592,13 +592,17 @@ class FlexipodEnv(gym.Env):
 #                                            for v,item_slice in zip(itemgetter(*s.OBS_IDS)(msg_i),s.OBS_ITEM_SLICE)]) 
 #                                 for msg_i in msg]).astype(np.float32)
         
+        
+        # ramping up desired speed
+        desired_vel = min(s.episode_steps/160.,1)*s.desired_vel
+        
         if s.flatten_obs:
             observation = observation.ravel()
             # TODO make it cyclic
             # s.t_normalized = ((t-s.episode_start_time)*1.5)%1
             s.t_normalized = ((t-s.episode_start_time)*s.gait_frequency)%1
             
-            observation = np.append(observation,[s.t_normalized,s.desired_vel,s.gait_frequency]).astype(np.float32)
+            observation = np.append(observation,[s.t_normalized,desired_vel,s.gait_frequency]).astype(np.float32)
             
         if s.normalize: # normalize the observation
             observation = s.toNormalizedObservation(observation)            
@@ -607,7 +611,7 @@ class FlexipodEnv(gym.Env):
         com_vel_x = sum([msg_i[s.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
         # r_vel = 0.3*np.clip(com_vel_xy,0,1)+0.7 # velocity reward
         # r_vel = 5*np.clip(com_vel_x,-0.2,0.5)+1.0 # velocity reward worked
-        r_vel = 2.0-min(0.4,abs(s.desired_vel-com_vel_x))*5 # com velocity reward
+        r_vel = 2.0-min(0.4,abs(desired_vel-com_vel_x))*5 # com velocity reward
         
     #         print(orientation_z,com_z)
         # r_orientation = max(0,orientation_z)*min(com_z+0.56,1)

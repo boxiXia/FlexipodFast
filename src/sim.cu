@@ -31,8 +31,12 @@ __global__ void randomizeFriction(
 			0, /* the sequence number is only important with multiple cores */
 			0, /* the offset is how much extra we advance in the sequence for each call, can be 0 */
 			&state);
-		c.d_planes[i]._FRICTION_K = fiction_low + (fiction_high - fiction_low) * curand_uniform_double(&state);
-		printf("%f\n", c.d_planes[i]._FRICTION_K);
+
+		double fiction_k = fiction_low + (fiction_high - fiction_low) * curand_uniform_double(&state);
+		c.d_planes[i]._FRICTION_K = fiction_k;
+		c.d_planes[i]._FRICTION_S = fiction_k * (1+0.2*curand_uniform_double(&state));
+
+		printf("plane friction s,k = %3.2f,%3.2f\r", c.d_planes[i]._FRICTION_S,c.d_planes[i]._FRICTION_K);
 	}
 }
 
@@ -1009,7 +1013,7 @@ void Simulation::resetState() {//TODO...fix bug
 	cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
 
 	// TODO: randomization
-	randomizeFriction <<< 1, 1, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_constraints, 0.6, 1.0, T);
+	randomizeFriction <<< 1, 1, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_constraints, 0.6, 0.8, T);
 
 	//std::random_device rd{};  // Will be used to obtain a seed for the random number engine
 	//std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
