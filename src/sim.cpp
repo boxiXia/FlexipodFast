@@ -58,8 +58,6 @@ Model::Model(const std::string& file_path, bool versbose) {
 
 /*--------------------------------- ImGui ----------------------------------------*/
 
-
-
 // Helper to display a little (?) mark which shows a tooltip when hovered.
 // In your own code you may want to display an actual icon if you are using a merged icon fonts (see docs/FONTS.md)
 // ref: https://github.com/ocornut/imgui/blob/master/imgui_demo.cpp
@@ -264,11 +262,7 @@ void Simulation::runImgui() {
 			}
 
 			double t_scale = NUM_QUEUED_KERNELS * dt;
-		/*	static float history = fc_arr.num * t_scale;
-			ImGui::SliderFloat("History", &history, t_scale, fc_arr.num * t_scale, "%.1f s");
-			int t_count = history / t_scale;
-			ImPlot::SetNextPlotLimitsX(t_scale, history, ImGuiCond_Always);*/
-			ImPlot::SetupAxisLimits(ImAxis_X1,0, std::max(fc_arr.num,1) * t_scale, ImGuiCond_Always);
+			//ImPlot::SetupAxisLimits(ImAxis_X1,0, std::max(fc_arr.num,1) * t_scale, ImGuiCond_Always);
 			int t_count = fc_arr.num;
 			if (ImPlot::BeginPlot("constraint force [N]##5469", NULL, NULL, ImVec2(-1, 0),
 				ImPlotFlags_None, ImPlotAxisFlags_NoTickLabels, ImPlotAxisFlags_None)) {
@@ -396,16 +390,10 @@ void asioUdpServer::_doSend()
 	socket_send.connect(remote_endpoint); // "connect" to remote endpoint
 
 	while (UDP_SHOULD_RUN) {
-		// do gether msg to send to msg_send_queue here...
-		//msg_send_queue.emplace_back("message");
 		//std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		// 
-		//sim->updateUdpSend();
-
 		while (msg_send_queue.size() > 0) {
 			auto& message_ = msg_send_queue.front(); // oldest message
 			std::size_t length = socket_send.send(asio::const_buffer(message_.data(), message_.size()));
-			//std::size_t length = socket_send.send_to(asio::buffer(message_), remote_endpoint);
 			msg_send_queue.pop_front();
 		}
 	}
@@ -426,13 +414,9 @@ DataSend::DataSend(
 	joint_vel = std::vector<float>(joint_control.vel, joint_control.vel + joint_control.size());
 	joint_act = std::vector<float>(num_joint, 0);
 
-	//joint_pos = std::vector<float>(joint_control.pos, joint_control.pos + joint_control.size());
-
 	for (auto i = 0; i < joint_control.size(); i++) {
 		joint_pos[i * 2] = cosf(joint_control.pos[i]);
 		joint_pos[i * 2 + 1] = sinf(joint_control.pos[i]);
-		//joint_act[i] = joint_control.cmd[i] / joint_control.max_vel;//normalize		
-		//joint_act[i] = joint_control.cmd[i];
 		joint_act[i] = s->joint.torque[i];
 	}
 	body.acc.fillArray(com_acc);

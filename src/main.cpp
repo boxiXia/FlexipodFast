@@ -14,6 +14,8 @@
 
 namespace fs = std::filesystem;
 
+void keyboardCallback(Simulation* sim);
+
 int main(int argc, char* argv[])
 {
 	// for time measurement
@@ -339,6 +341,8 @@ int main(int argc, char* argv[])
 		printf("UDP is delayed by %d step (%.3f ms) \n", sim.udp_delay_step, udp_delay_ms);
 #endif // UDP
 
+		//sim.keyboardCallback = keyboardCallback;
+
 	sim.start();
 	
 	//while (sim.RUNNING) {
@@ -353,3 +357,52 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+
+void keyboardCallback(Simulation* sim) {
+	constexpr double speed_multiplier = 0.2;
+	constexpr double pos_multiplier = 0.1;
+
+	if (sim->getKey(GLFW_KEY_UP)) {
+		for (int i = 0; i < sim->joint.size(); i++) {
+			if (sim->joint_control.mode == JointControlMode::vel) {
+				sim->joint_control.vel_desired[i] += i < 2 ? speed_multiplier : -speed_multiplier;
+			}
+			else if (sim->joint_control.mode == JointControlMode::pos) {
+				sim->joint_control.pos_desired[i] += i < 2 ? pos_multiplier : -pos_multiplier;
+			}
+		}
+	}
+	else if (sim->getKey(GLFW_KEY_DOWN)) {
+		for (int i = 0; i < sim->joint.size(); i++) {
+			if (sim->joint_control.mode == JointControlMode::vel) {
+				sim->joint_control.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
+			}
+			else if (sim->joint_control.mode == JointControlMode::pos) {
+				sim->joint_control.pos_desired[i] -= i < 2 ? pos_multiplier : -pos_multiplier;
+			}
+		}
+	}
+	if (sim->getKey(GLFW_KEY_LEFT)) {
+		for (int i = 0; i < sim->joint.size(); i++) {
+			if (sim->joint_control.mode == JointControlMode::vel) {
+				sim->joint_control.vel_desired[i] -= speed_multiplier;
+			}
+			else if (sim->joint_control.mode == JointControlMode::pos) {
+				sim->joint_control.pos_desired[i] -= pos_multiplier;
+			}
+		}
+	}
+	else if (sim->getKey(GLFW_KEY_RIGHT)) {
+		for (int i = 0; i < sim->joint.size(); i++) {
+			if (sim->joint_control.mode == JointControlMode::vel) {
+				sim->joint_control.vel_desired[i] += speed_multiplier;
+			}
+			else if (sim->joint_control.mode == JointControlMode::pos) {
+				sim->joint_control.pos_desired[i] += pos_multiplier;
+			}
+		}
+	}
+	else if (sim->getKey(GLFW_KEY_0)) { // zero speed
+		sim->joint_control.reset(sim->mass, sim->joint);
+	}
+}

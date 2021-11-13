@@ -1174,6 +1174,13 @@ public:
 	// imgui
 	bool show_imgui = true; // show imgui window
 
+	// function pointer to process additional callback
+	void (*keyboardCallback)(Simulation*) = nullptr;
+
+	// glfwGetKey for additional keyboard processing
+	int getKey(int key) { return glfwGetKey(window, key); }
+
+
 private:
 	/*--------------------------------- ImGui ----------------------------------------*/
 	void startupImgui();
