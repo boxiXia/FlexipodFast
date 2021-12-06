@@ -3,6 +3,7 @@
 
 defaults:
     - agent: sac
+    - _self_
 
 seed: 1
 

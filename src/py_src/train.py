@@ -67,7 +67,6 @@ class Workspace(object):
 
     def evaluate(self):
         average_episode_reward = 0
-        # print(f"evaluation #{self.step}")
         for episode in range(self.cfg.num_eval_episodes):
             obs = self.env.reset()
             self.agent.reset()
@@ -255,7 +254,12 @@ class Workspace(object):
                 
 @hydra.main(config_path=".", config_name='train')
 def main(cfg):
-    print(torch.cuda.device_count())
+    # device = 1
+    # torch.cuda.set_device(device)
+    
+    print(f"torch.cuda.device_count()={torch.cuda.device_count()}")
+    print(f"torch.cuda.current_device()={torch.cuda.current_device()}")
+    
     workspace = Workspace(cfg)
     if cfg.load_model:
         workspace.agent.load(cfg.load_model)

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numba
 import copy
 # from scipy.ndimage.morphology import binary_dilation, binary_erosion
-# from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation
 import tempfile
 import gmsh
 import meshio
