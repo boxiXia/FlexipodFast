@@ -9,6 +9,7 @@ import numpy as np
 import socket
 import struct
 from ipaddress import ip_address # https://python.readthedocs.io/en/latest/library/ipaddress.html
+import time
 
 class UDPServer:
     def __init__(
@@ -16,76 +17,91 @@ class UDPServer:
         local_address=("224.3.29.71", 33300), # （ipv4/6 local address, local port)
         remote_address=("224.3.29.71", 33301), #（ipv4/6 remote address, remote port)
         ttl:int = 1, # time-to-live, increase to reach beyond local network
-        buffer_len:int = 65536 # buffer length in bytes
+        buffer_len:int = 65536, # buffer length in bytes
     ):
         s.BUFFER_LEN = buffer_len  # in bytes
+        s._local_address = local_address
+        s._remote_address = remote_address
+        s.ttl = ttl
+        s._start()
 
+    def _start(s):
         # udp socket for sending
-        (family, type, proto, canonname, s.remote_address) = socket.getaddrinfo(*remote_address)[0]
-        s.send_sock = socket.socket(family=family, type=socket.SOCK_DGRAM)
-        ttl_bin = struct.pack('@i', ttl) # time-to-live, increase to reach beyond local networkt
-        if family== socket.AF_INET: # IPv4
+        s._makeSendScoket()
+        # udp socket for receving
+        s._makeRecvSocket()
+
+    def _makeSendScoket(s):
+        """prepare udp socket for sending"""
+        print(s._remote_address)
+        (s.send_family, type, proto, canonname, s.remote_address) = socket.getaddrinfo(*s._remote_address)[0]
+        s.send_sock = socket.socket(family=s.send_family, type=socket.SOCK_DGRAM)
+        ttl_bin = struct.pack('@i', s.ttl) # time-to-live, increase to reach beyond local networkt
+        if s.send_family== socket.AF_INET: # IPv4
             s.send_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_bin)
         else: # IPv6
             s.send_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, ttl_bin)
 
+    def _makeRecvSocket(s):
+        """prepare udp socket for receiving"""
         # udp socket for receving
-        (family, type, proto, canonname, s.local_address) = socket.getaddrinfo(*local_address)[0]
-        s.recv_sock = socket.socket(family=family, type=socket.SOCK_DGRAM)
-        s.recv_sock.settimeout(0)  # timeout immediately
+        (s.recv_family, type, proto, canonname, s.local_address) = socket.getaddrinfo(*s._local_address)[0]
+        s.recv_sock = socket.socket(family=s.recv_family, type=socket.SOCK_DGRAM)
         if ip_address(s.local_address[0]).is_multicast:
-            group_bin = socket.inet_pton(family,s.local_address[0]) # multicast address in bytes
+            group_bin = socket.inet_pton(s.recv_family,s.local_address[0]) # multicast address in bytes
             mreq = group_bin + struct.pack('=I', socket.INADDR_ANY)
-            if family== socket.AF_INET: # IPv4
+            if s.recv_family== socket.AF_INET: # IPv4
                 s.recv_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
             else: # IPv6
                 s.recv_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
         s.recv_sock.bind(("",s.local_address[1]))  # Bind socket to local port
-        
+
+
     def clearRecvBuffer(s):
         """clear old messages that exits in receive socket buffer"""
+        timeout = s.recv_sock.gettimeout() # original timeout
+        s.recv_sock.settimeout(0) # timeout immediately
         try:
             while True:
                 _ = s.recv_sock.recv(s.BUFFER_LEN)
         except Exception:
             pass
+        s.recv_sock.settimeout(timeout)
+        
 
     def receive(s,
-                max_attempts: int = 1000000,
+                timeout: float = 1, # timeout [seconds]
                 clear_buf: bool = True,
                 newest: bool = True):
         """ return the recived data at local port
             Input:
-                max_attempts: int, max num of attempts to receive data
-                clear_buff: bool, if True clear prior messages in receive socket
-                newest: bool, if True only get the newest data 
+                timeout: [second] longest duration to wait before failing
+                clear_buff: bool, if True clear messages prior to receive()
+                newest: bool, if True only get the newest data after receive() is called
         """
         # clear receive socket buffer, any old messages prior to
         # receive will be cleared
-        if clear_buf:
+
+
+        if clear_buf or newest:
+            s.recv_sock.settimeout(0) # timeout immediately
             try:
                 while True:
-                    _ = s.recv_sock.recv(s.BUFFER_LEN)
-            except Exception:
-                pass
-        # try max_attempts times to receive at least one message
-        for k in range(max_attempts):
-            try:
-                recv_data = s.recv_sock.recv(s.BUFFER_LEN)
-                break
-            except Exception:
-                continue
-        # only get the newest data if True
-        if newest:
-            try:
-                for k in range(max_attempts):
                     recv_data = s.recv_sock.recv(s.BUFFER_LEN)
-            except Exception:
-                pass
-        try:
-            return recv_data
-        except UnboundLocalError:
-            raise TimeoutError("tried too many times")
+            except Exception as e:
+                if newest:
+                    s.recv_sock.settimeout(timeout)
+                    return s.recv_sock.recv(s.BUFFER_LEN)
+                else:
+                    try:
+                        return recv_data
+                    except NameError: # data is not received
+                        s.recv_sock.settimeout(timeout)
+                        return s.recv_sock.recv(s.BUFFER_LEN)
+        else:
+            s.recv_sock.settimeout(timeout)
+            return s.recv_sock.recv(s.BUFFER_LEN)
+
 
     def send(s, data):
         """send the data to remote address, return num_bytes_send"""
@@ -97,7 +113,7 @@ class UDPServer:
             s.recv_sock.close()
         except Exception as e:
             print(e)
-        print(f"shutdown UDP server:{s.local_address},{s.remote_address}")
+        print(f"shutdown UDP server:{s._local_address},{s._remote_address}")
 
     def __del__(s):
         s.close()
