@@ -816,18 +816,18 @@ struct RigidBody {
 	char* print() {
 		char out[300];
 		int n = snprintf(out, 300,
-			"com pos %+6.2f %+6.2f %+6.2f\n"
-			"com vel %+6.2f %+6.2f %+6.2f\n"
-			"com acc %+6.2f %+6.2f %+6.2f\n"
-			"ang vel %+6.2f %+6.2f %+6.2f\n"
+			"com pos %+6.2f %+6.2f %+6.2f |%6.2f|\n"
+			"com vel %+6.2f %+6.2f %+6.2f |%6.2f|\n"
+			"com acc %+6.2f %+6.2f %+6.2f |%6.2f|\n"
+			"ang vel %+6.2f %+6.2f %+6.2f |%6.2f|\n"
 			"rotation:\n"
 			"%+7.3f %+7.3f %+7.3f\n"
 			"%+7.3f %+7.3f %+7.3f\n"
 			"%+7.3f %+7.3f %+7.3f\n",
-			pos.x, pos.y, pos.z,
-			vel.x, vel.y, vel.z,
-			acc.x, acc.y, acc.z,
-			ang_vel.x, ang_vel.y, ang_vel.z,
+			pos.x, pos.y, pos.z,pos.norm(),
+			vel.x, vel.y, vel.z,vel.norm(),
+			acc.x, acc.y, acc.z,acc.norm(),
+			ang_vel.x, ang_vel.y, ang_vel.z, ang_vel.norm(),
 			rot.m00, rot.m01, rot.m02,
 			rot.m10, rot.m11, rot.m12,
 			rot.m20, rot.m21, rot.m22
@@ -990,10 +990,10 @@ public:
 	int id_oxyz_end = 0; //  coordinate (x,y,z,-x,-y,-z) end index (exclusive)
 
 	// cuda and udp update parameters (should be constant during the simualtion)
-	int NUM_QUEUED_KERNELS = 100; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
+	int NUM_QUEUED_KERNELS = 50; // number of kernels to queue at a given time (this will reduce the frequency of updates from the CPU by this factor
 #ifdef UDP
 	int udp_num_obs = 5;// send udp_num_obs at once (number of observations)
-	int udp_step = 2; // udp observations is stepped by this factor
+	int udp_step = 4; // udp observations is stepped by this factor
 	int udp_delay_step = 0; // udp obervation is delayed by this step
 	// combination that works:NUM_QUEUED_KERNELS = 50,udp_step=4,udp_num_obs=5
 #endif

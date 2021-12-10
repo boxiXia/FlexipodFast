@@ -1012,8 +1012,8 @@ void Simulation::resetState() {//TODO...fix bug
 	body.init(backup_mass, id_oxyz_start); // init body frame
 	cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
 
-	// TODO: randomization
-	randomizeFriction <<< 1, 1, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_constraints, 0.6, 0.8, T);
+	//// TODO: randomization
+	//randomizeFriction <<< 1, 1, 0, stream[CUDA_DYNAMICS_STREAM] >>> (d_constraints, 0.6, 0.8, T);
 
 	//std::random_device rd{};  // Will be used to obtain a seed for the random number engine
 	//std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()

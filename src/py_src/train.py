@@ -74,15 +74,17 @@ class Workspace(object):
             done = False
             episode_reward = 0
             episode_step = 0
-            while not done:
-                with evalMode(self.agent):
+            
+            with evalMode(self.agent): 
+                while not done:
                     action = self.agent.act(obs, sample=False)
-                obs, reward, done, _ = self.env.step(action)
-                self.video_recorder.record(self.env)
-                episode_reward += reward
-                episode_step += 1
-                if episode_step == self.env.max_episode_steps:
-                    break # breaks reached max episode stesp
+                    obs, reward, done, _ = self.env.step(action)
+                    self.video_recorder.record(self.env)
+                    episode_reward += reward
+                    episode_step += 1
+                    if episode_step == self.env.max_episode_steps:
+                        break # breaks reached max episode stesp
+                
             average_episode_reward += episode_reward
             self.video_recorder.save(f'{self.step}.mp4')
         average_episode_reward /= self.cfg.num_eval_episodes
@@ -92,7 +94,6 @@ class Workspace(object):
         return average_episode_reward
 
     def run(self):
-        start_time = time.time()
         
         if self.cfg.load_replay_buffer: # load replay buffer folder path
             self.replay_buffer.load(self.cfg.load_replay_buffer)
@@ -109,11 +110,6 @@ class Workspace(object):
         env = self.env
         batch_size = self.cfg.agent.batch_size
         update_frequency = self.cfg.update_frequency
-
-        episode, episode_step, episode_reward, done = 0, 0, 0.0, False
-        # # reset agent and env
-        # self.agent.reset()
-        # obs = env.reset()
                 
         # ref: replay buffer emphasizing recent experience
         # https://arxiv.org/abs/1906.04009
@@ -126,136 +122,98 @@ class Workspace(object):
         h_saved_model = [] # container for heapq (priority queue): 
         
         #################################################
-        exp = env.exampleAction()
-        num_example_steps = num_seed_steps*2
-        
+        num_example_steps = num_seed_steps*2        
         
         def computeAction(self,obs):
-            # sample action for data collection
-            if self.step< num_example_steps:
+            with evalMode(self.agent):
+                action = self.agent.act(obs, sample=True)
+            if self.step< num_example_steps:  # sample action for data collection
                 if self.step < num_seed_steps:
                     action = env.action_space.sample()
                 else: # example step 
-                    action = next(exp) 
-                with evalMode(self.agent): #TODO artificially added here to increase delay
-                    _ = self.agent.act(obs, sample=True)          
-            else:
-                with evalMode(self.agent):
-                    action = self.agent.act(obs, sample=True)
+                    action = env.exampleAction()
             return action
                     
-                    
+        episode = -1
+        
         # training loop
         while self.step < num_train_steps:
-            if episode_step==0: # initialization
-                # reset agent and env
-                self.agent.reset()
-                obs = env.reset()
-                # a <- pi(s0)
-                action = computeAction(self,obs)
-                # take action
-                env.act(action)
+            episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
+            start_time = time.time() # for logging episode training duration
+            # initialization: reset agent and env
+            self.agent.reset()
+            obs = env.reset()
+            # a <- pi(s0)
+            action = computeAction(self,obs)
+            # take action
+            env.act(action)
             
-            next_action = computeAction(self,obs)
-            next_obs, reward, done, _ = env.observe()
-            
-            if not done:
+            while (not done) and (episode_step<env.max_episode_steps):
+                next_action = computeAction(self,obs)
+                next_obs, reward, done, _ = env.observe()
                 env.act(next_action)
-            
-            # # sample action for data collection
-            # if self.step< num_example_steps:
-            #     if self.step < num_seed_steps:
-            #         action = env.action_space.sample()
-            #     # example step   
-            #     else:
-            #         action = next(exp)
                 
-            #     with evalMode(self.agent): #TODO artificially added here to increase delay
-            #         _ = self.agent.act(obs, sample=True)          
-            # else:
-            #     with evalMode(self.agent):
-            #         action = self.agent.act(obs, sample=True)
-            # next_obs, reward, done, _ = env.step(action)
-            
-            # allow infinite bootstrap
-            not_done = float(not done)
-            not_done_no_max = 1.0 if episode_step + 1 == env.max_episode_steps else not_done
-            # done = float(done)
-            # done_no_max = 0 if episode_step + 1 == env.max_episode_steps else done
-            episode_reward += reward
+                # allow infinite bootstrap
+                not_done = float(not done)
+                not_done_no_max = 1.0 if episode_step + 1 == env.max_episode_steps else not_done
+                episode_reward += reward
 
-            # self.replay_buffer.add(obs, action, reward, next_obs, done, done_no_max)
-            self.replay_buffer.add(obs, action, reward, next_obs, not_done, not_done_no_max)
+                self.replay_buffer.add(obs, action, reward, next_obs, not_done, not_done_no_max)
+                
+                ### next->current
+                obs = next_obs
+                action = next_action
+                episode_step += 1
+                self.step += 1
+                       
+            # if done or episode_step==env.max_episode_steps:
+            self.logger.log('train/duration',time.time() - start_time, self.step)
             
-            obs = next_obs
-            ###
-            action = next_action
-            ###
-            episode_step += 1
-            self.step += 1
-                            
-            if done or episode_step==env.max_episode_steps:
-                self.logger.log('train/duration',
-                                time.time() - start_time, self.step)
+            if self.step >= num_seed_steps and self.step >=batch_size and self.step > update_step: # agent update
+                num_updates = (self.step-update_step)//update_frequency
+                update_step = self.step
+                try:env.pause()
+                except Exception:pass
+                # t1 = time.time()
                 
-                if self.step >= num_seed_steps and self.step >=batch_size and self.step > update_step: # agent update
-                    num_updates = (self.step-update_step)//update_frequency
-                    update_step = self.step
-                    try:
-                        env.pause()
-                    except Exception:
-                        pass
-                    t1 = time.time()
-                    
-                    # compute the annealed eta
-                    eta = eta_0 + (eta_T-eta_0)* self.step/num_train_steps
-                    
-                    for k in range(num_updates):
-                        # update using the most recent num_recent samples
-                        self.replay_buffer.num_recent = int(max(self.step*eta**(k*1000.0/num_updates),min_sample_size))
-                        # print(self.replay_buffer.num_recent)
-                        self.agent.update(self.replay_buffer,self.logger, self.step)
-                    # print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
+                # compute the annealed eta
+                eta = eta_0 + (eta_T-eta_0)* self.step/num_train_steps
+                
+                for k in range(num_updates): # update several rounds
+                    # update using the most recent num_recent samples
+                    self.replay_buffer.num_recent = int(max(self.step*eta**(k*1000.0/num_updates),min_sample_size))
+                    # print(self.replay_buffer.num_recent)
+                    self.agent.update(self.replay_buffer,self.logger, self.step)
+                # print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
 
-                self.logger.log('train/episode_reward',
-                                episode_reward, self.step)
-                self.logger.log('train/episode', episode, self.step)
-                self.logger.dump(self.step, save=(self.step > num_seed_steps))
+            self.logger.log('train/episode_reward',episode_reward, self.step)
+            self.logger.log('train/episode', episode, self.step)
+            self.logger.dump(self.step, save=(self.step > num_seed_steps))
+            
+            # save replay buffer periodically
+            if self.step>replay_buffer_save_step:
+                replay_buffer_save_step+=replay_buffer_save_interval
+                self.replay_buffer.save(f"{self.work_dir}//replay_buffer")
+            
+            # evaluate agent periodically
+            if self.step > eval_step:
+                eval_step += eval_frequency
+                self.logger.log('eval/episode', episode, self.step)
+                avg_episode_reward = self.evaluate() # average episode reward
                 
-                
-                # save replay buffer periodically
-                if self.step>replay_buffer_save_step:
-                    replay_buffer_save_step+=replay_buffer_save_interval
-                    self.replay_buffer.save(f"{self.work_dir}//replay_buffer")
-                
-                # evaluate agent periodically
-                if self.step > eval_step:
-                    eval_step += eval_frequency
-                    self.logger.log('eval/episode', episode, self.step)
-                    avg_episode_reward = self.evaluate() # average episode reward
-                    
-                    # save the <num_saved_model> top model
-                    save_path = f"{self.model_dir}//{self.step}_{avg_episode_reward:.0f}.chpt"
-                    if len(h_saved_model)<num_saved_model:
-                        # print(f"model_save:{save_path}")
-                        heapq.heappush(h_saved_model,(avg_episode_reward,save_path))
-                        self.agent.save(save_path) # saving new
-                    elif h_saved_model[0][0]<avg_episode_reward: # old reward < current reward
-                        # print(f"model_save:{save_path}")
-                        avg_episode_reward_pop,save_path_pop = heapq.heapreplace(h_saved_model, (avg_episode_reward,save_path))
-                        self.agent.save(save_path) # saving new
-                        os.remove(save_path_pop)   # removing old
-                
-                # reset agent and env
-                episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
-                # self.agent.reset()
-                # obs = env.reset()
-                start_time = time.time()
-                
+                # save the <num_saved_model> top model
+                save_path = f"{self.model_dir}//{self.step}_{avg_episode_reward:.0f}.chpt"
+                if len(h_saved_model)<num_saved_model:
+                    heapq.heappush(h_saved_model,(avg_episode_reward,save_path))
+                    self.agent.save(save_path) # saving new
+                elif h_saved_model[0][0]<avg_episode_reward: # old reward < current reward
+                    avg_episode_reward_pop,save_path_pop = heapq.heapreplace(h_saved_model, (avg_episode_reward,save_path))
+                    self.agent.save(save_path) # saving new
+                    os.remove(save_path_pop)   # removing old         
+
+
 @hydra.main(config_path=".", config_name='train')
 def main(cfg):
-    # device = 1
-    # torch.cuda.set_device(device)
     
     print(f"torch.cuda.device_count()={torch.cuda.device_count()}")
     print(f"torch.cuda.current_device()={torch.cuda.current_device()}")

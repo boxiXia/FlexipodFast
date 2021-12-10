@@ -29,7 +29,12 @@ def linearMapFcn(a,b,c,d):
     m = c - a*k
     return lambda x:k*x +m
 
-
+def translation(p):
+    """return homogeneous translation matrix"""
+    h = np.eye(4)
+    h[:3,3] = p
+    return h
+        
 class BulletCollisionDetect:
     """
     Helper class for collision detection using pybullet
@@ -79,21 +84,7 @@ class FlexipodEnv(gym.Env):
     openai gym compatible environment for the simulated 12DOF flexipod
     ref: https://github.com/openai/gym/blob/master/gym/core.py
     """
-    # name of command message
-    CMD_NAME = ("header", "t", "cmd")
-    CMD_ID = defaultdict(None,{name: k  for k,name in enumerate(CMD_NAME)})
-    
-    UDP_TERMINATE = int(-1)
-    UDP_PAUSE = int(17)
-    UDP_RESUME = int(16)
-    UDP_RESET = int(15)
-    UDP_ROBOT_STATE_REPORT = int(14)
-    UDP_MOTOR_VEL_COMMEND = int(13)
-    UDP_STEP_MOTOR_VEL_COMMEND = int(12)
-    UDP_MOTOR_POS_COMMEND = int(11)
-    UDP_STEP_MOTOR_POS_COMMEND = int(10)
-    
-    
+
     def __init__(
         s, # self
         dof:int = 12, # degress of freedom of the robot
@@ -115,6 +106,20 @@ class FlexipodEnv(gym.Env):
         # collision detection with pybullet
         s.cd = BulletCollisionDetect(urdf_path=robot_folder+"/urdf/robot.urdf") 
         
+        # general variables
+        s.dof = dof #    num joints
+        s.num_observation = num_observation
+        s.normalize = normalize
+        s.flatten_obs = flatten_obs # True
+        s.info = info # bool flag to send info
+        s.max_episode_steps = max_episode_steps # maximum episode steps
+        # general variables (mutable)
+        s.joint_pos = np.empty(dof,dtype=np.float32) # joint position [rad]
+        s.episode_step = 0 # curret step in an episode
+        
+        s.local_address = local_address
+        s.remote_address = remote_address
+        
         # name of the returned message from simulation
         s.REC = np.array([
             # name,         size,         min,          max
@@ -122,7 +127,7 @@ class FlexipodEnv(gym.Env):
             ("t",            1,         0,              np.inf       ), # simulation time [s]
             ("joint_pos",    dof*2,     -1.,            1.           ), # joint cos(angle) sin(angle) [rad]
             ("joint_vel",    dof,       -max_joint_vel, max_joint_vel), # joint velocity [rad/s]
-            ("actuation",    dof,       -1.,            1.           ), # joint actuation [-1,1]
+            ("joint_torque", dof,       -1.,            1.           ), # joint torque [-1,1]
             ("orientation",  6,         -1.,            1.           ), # base link (body) orientation
             ("ang_vel",      3,         -30.,           30.          ), # base link (body) angular velocity [rad/s]
             ("com_acc",      3,         -30.,           30.          ), # base link (body) acceleration
@@ -132,30 +137,52 @@ class FlexipodEnv(gym.Env):
             ("spring_strain",num_sensors,-0.005,       0.005         ), # selected spring strain
         ],dtype=[('name', 'U20'), ('size', 'i4'), ('min', 'f4'),('max', 'f4')])
         
-        s.sensor_id = (9,12) # left_foot, right_foot, index of the mass part id
-        s.sensor_distance = 100  # distance to joint TODO need to change here..
+        s.ID =defaultdict(None,{name: k  for k,name in enumerate(s.REC["name"])})
+        s.ID_t = s.ID['t']
+        s.ID_joint_pos = s.ID['joint_pos']
+        s.ID_joint_vel = s.ID['joint_vel']
+        s.ID_joint_torque = s.ID['joint_torque']
+        s.ID_orientation = s.ID['orientation']
+        s.ID_com_vel = s.ID['com_vel']
+        s.ID_com_acc = s.ID['com_acc']
+        s.ID_com_pos = s.ID['com_pos']
+        s.ID_ang_vel = s.ID['ang_vel']
+        s.ID_constraint = s.ID['constraint']
+        
+        s.SENSOR_DICT = {
+        # part_id: pos_offset (sensered position offset measured from the sensor coordinate)
+            9: (0,0,-100),  # left_foot
+            12: (0,0,-100)  # right_foot
+        }
+        for key in s.SENSOR_DICT: # convert to numpy array
+            s.SENSOR_DICT[key] = np.array(s.SENSOR_DICT[key],dtype=np.float32)
+        s.sensor_id = tuple(s.SENSOR_DICT.keys())# left_foot, right_foot, index of the mass part id
+        s.sensor_pos = tuple(s.SENSOR_DICT.values()) # sensered position offset measured from the sensor coordinate
+        s.sensor_distance = tuple(np.linalg.norm(pos) for pos in s.sensor_pos)  # distance to joint
+        s.t_sensor = tuple(translation(p) for p in s.sensor_pos) # sensor transform
         
         # selected observation
         OBS_DICT = { # dictionary is ordered since python 3.6
             "joint_pos":None,                    #0
             "joint_vel":None,                    #1
-            "actuation":None,                    #2
+            "joint_torque":None,                 #2
             "orientation":None,                  #3
             "ang_vel":None,                      #4
             "com_acc":None,                      #5
-            # "com_vel":None,                      #6
-            # "com_pos":(2,), # com-z              #7
+            # "com_vel":None,                    #6
+            # "com_pos":(2,), # com-z            #7
             "constraint":s.sensor_id,            #8
             "spring_strain":None,                #9
         }
         
         s.humanoid_task = humanoid_task
-        
+
+        #------------task vector setup ---------------------------#
         # vel reward params
         # s.desired_vel = 0.2 # desired com vel [m/s]
         s.min_desired_vel = -0.25 # desired com vel [m/s] lower bound
         s.max_desired_vel = 0.25 # desired com vel [m/s] upper bound
-        # s.nor_desired_vel
+        # conversion raw<->normalized desired_vel
         s.toRawDesiredVel = linearMapFcn(0,1,s.min_desired_vel,s.max_desired_vel) # to raw
         s.toNorDesiredVel =  linearMapFcn(s.min_desired_vel,s.max_desired_vel,0,1) # to normalized
         
@@ -163,50 +190,49 @@ class FlexipodEnv(gym.Env):
         # s.gait_frequency = 1.5
         s.min_gait_frequency = 1.25 # Hz
         s.max_gait_frequency = 1.75 # Hz
-        # s.nor_gait_frequency
+        # conversion raw<->normalized gait_frequency
         s.toRawGaitFrequency = linearMapFcn(0,1,s.min_gait_frequency,s.max_gait_frequency) # to raw
         s.toNorGaitFrequency = linearMapFcn(s.min_gait_frequency,s.max_gait_frequency,0,1) # to normalized
         
-        s.dof = dof #    num joints
-        s.num_observation = num_observation
-        s.normalize = normalize
-        s.flatten_obs = flatten_obs # True
-        s.info = info # bool flag to send info
-        s.max_episode_steps = max_episode_steps # maximum episode steps
-        
-        s.joint_pos = np.empty(dof,dtype=np.float32) # joint position [rad]
-        s.episode_steps = 0 # curret step in an episode
-
-        s.ID =defaultdict(None,{name: k  for k,name in enumerate(s.REC["name"])})
-        s.ID_t = s.ID['t']
-        s.ID_joint_pos = s.ID['joint_pos']
-        s.ID_joint_vel = s.ID['joint_vel']
-        s.ID_actuation = s.ID['actuation']
-        s.ID_orientation = s.ID['orientation']
-        s.ID_com_vel = s.ID['com_vel']
-        s.ID_com_acc = s.ID['com_acc']
-        s.ID_com_pos = s.ID['com_pos']
-        s.ID_constraint = s.ID['constraint']
-        
+        # normalized phase
+        s.min_phase = 0
+        s.max_phase = 1
+        #----------------------------------------------------------#
         # TODO-> position control
         max_action = 0.2*max_action
         
         s._initObsACt(max_action,s.REC,OBS_DICT) # initialize the observation and action space
         
+        s._implInitServer()
+
+        s._initRobotGraph(robot_folder)
+        # start the simulation
+        s.start()
+        
+    def _implInitServer(s):
+        """implementation specific initiailzation of the server"""
         # defualt packer # https://msgpack-python.readthedocs.io/en/latest/api.html#msgpack.Packer
         s.packer = msgpack.Packer(use_single_float=True, use_bin_type=True)
-        
+        # name of command message
+        s.CMD_NAME = ("header", "t", "cmd")
+        s.CMD_ID = defaultdict(None,{name: k  for k,name in enumerate(s.CMD_NAME)})
+        # UDP header
+        s.UDP_TERMINATE = int(-1)
+        s.UDP_PAUSE = int(17)
+        s.UDP_RESUME = int(16)
+        s.UDP_RESET = int(15)
+        s.UDP_ROBOT_STATE_REPORT = int(14)
+        s.UDP_MOTOR_VEL_COMMEND = int(13)
+        s.UDP_STEP_MOTOR_VEL_COMMEND = int(12)
+        s.UDP_MOTOR_POS_COMMEND = int(11)
+        s.UDP_STEP_MOTOR_POS_COMMEND = int(10)
         # simulation specific commend
         s.reset_cmd_b =  s.packer.pack([s.UDP_RESET])
         s.pause_cmd_b =  s.packer.pack([s.UDP_PAUSE])
         s.resume_cmd_b = s.packer.pack([s.UDP_RESUME])
         s.close_cmd_b =  s.packer.pack([s.UDP_TERMINATE])
-        
-        s.server = UDPServer(local_address,remote_address)
-
-        s._initRobotGraph(robot_folder)
-        # start the simulation
-        s.start()
+        # udp server
+        s.server = UDPServer(s.local_address,s.remote_address)
         
         
     def _initRobotGraph(s,robot_folder):
@@ -220,8 +246,6 @@ class FlexipodEnv(gym.Env):
         with open(f"{robot_folder}//robot.pickle","rb") as f:
             s.graph = pickle.load(f)
         print(f"Loading robot graph takes {time.time()-_t:.1f} s.")
-        s.t_sensor = np.eye(4)
-        s.t_sensor[:3,3] = [0,0,-s.sensor_distance] # TODO
         
         s.node_sensor = itemgetter(*s.sensor_id)(s.graph.nodes)#node_left_foot,node_right_foot
         
@@ -229,26 +253,25 @@ class FlexipodEnv(gym.Env):
         s.joint_pos = s.graph.getJointPosArrFast()
         s.graph.setJointPosArrFast(s.joint_pos) # set initial joint pos to graph.joint_pos
         s.graph.updateWorldTransformFast(np.eye(4))
-        # sensor x position in the robot root space
         
-        s.t_world_left_foot_sensor_x0 = (s.node_sensor[0]["world_transform"]@s.t_sensor)[0,3] # x
-        s.t_world_right_foot_sensor_x0 = (s.node_sensor[1]["world_transform"]@s.t_sensor)[0,3]
+        # foot sensor position in the robot root space
+        lf_sensor_pos = (s.node_sensor[0]["world_transform"]@s.t_sensor[0])[0:3,3] # left foot
+        rf_sensor_pos = (s.node_sensor[1]["world_transform"]@s.t_sensor[1])[0:3,3] # right foot
         with np.printoptions(precision=2, suppress=True, threshold=5):
-            print(s.t_world_left_foot_sensor_x0)
-            print(s.t_world_right_foot_sensor_x0)
+            print(f"robot feet sensor pos: left:{lf_sensor_pos} right:{rf_sensor_pos}")
         
         from phase_indication import phaseIndicatorPair
-        s.phase_indicator_pair_0 = phaseIndicatorPair(a=0.3, b=0.7, s=0.05, t0=0.25, t1=0.75, ys = -1., y0=0.)
-        s.phase_indicator_pair_1 = phaseIndicatorPair(a=0.25, b=0.75, s=0.05, t0=0.25, t1=0.75, ys = 2., y0=-1.)
+        s.phase_indicator_p0 = phaseIndicatorPair(a=0.3, b=0.7, s=0.05, t0=0.25, t1=0.75, ys = -1., y0=0.)
+        s.phase_indicator_p1 = phaseIndicatorPair(a=0.25, b=0.75, s=0.05, t0=0.25, t1=0.75, ys = 2., y0=-1.)
     
     def cyclicReward(s,t_normalized):
         s.graph.setJointPosArrFast(s.joint_pos)
         s.graph.updateWorldTransformFast(np.eye(4))
 
         # indicator for foot force
-        i0_0,i0_1= s.phase_indicator_pair_0.get(t_normalized)
+        i0_0,i0_1= s.phase_indicator_p0.get(t_normalized)
         # indicator for foot forward displacemnt relative to body, input to the example gait generator
-        i1_0,i1_1= s.phase_indicator_pair_1.get(t_normalized) 
+        i1_0,i1_1= s.phase_indicator_p1.get(t_normalized) 
 
         # s.sensor_force
         # when left foot is raised, left foot sensor force should be 0, 
@@ -256,25 +279,17 @@ class FlexipodEnv(gym.Env):
         c0_0 = min(1,s.sensor_force[0]) # left foot, keep max at 1
         c0_1 = min(1,s.sensor_force[1]) # right foot
         r0 = i0_0*c0_0+i0_1*c0_1
-        # r0_0 = c0_0*i0_0
-        # r0_1 = c0_1*i0_1
-
-        # body_space_left_foot_sensor_pos = (s.node_sensor[0]["world_transform"]@s.t_sensor)[:3,3]
-        # body_space_right_foot_sensor_pos = (s.node_sensor[1]["world_transform"]@s.t_sensor)[:3,3]
-        # with np.printoptions(precision=3, suppress=True):
-        #     print(body_space_left_foot_sensor_pos)
-        #     print(body_space_right_foot_sensor_pos)
+        # r0_0,r_01 = c0_0*i0_0,c0_1*i0_1
             
         # body space left  foot sensor forward displacement / normalizaton_coefficient
-        c1_0 = -(s.node_sensor[0]["world_transform"]@s.t_sensor)[2,3]/100.
+        c1_0 = -(s.node_sensor[0]["world_transform"]@s.t_sensor[0])[2,3]/s.sensor_distance[0]
         # body space right foot sensor forward displacement / normalizaton_coefficient
-        c1_1 = -(s.node_sensor[1]["world_transform"]@s.t_sensor)[2,3]/100.
+        c1_1 = -(s.node_sensor[1]["world_transform"]@s.t_sensor[1])[2,3]/s.sensor_distance[1]
         # print(f"c1_0, c1_1={c1_0:.3f},{c1_1:.3f}")
         c1_0 = max(-1,min(1,c1_0)) # clamp to [-1,1]
         c1_1 = max(-1,min(1,c1_1)) # clamp to [-1,1]
         r1 = i1_0*c1_0+i1_1*c1_1
-        # r1_0 = i1_0*c1_0
-        # r1_1 = i1_1*c1_1
+        # r1_0,r1_1 = i1_0*c1_0,i1_1*c1_1
         
         # # indicator 0
         # print(f"i0_0, i0_1={i0_0:.3f}, {i0_1:.3f}")
@@ -361,54 +376,6 @@ class FlexipodEnv(gym.Env):
         
     def __del__(s): # Deleting (Calling destructor) 
         print(f'Destructor called, {s.__class__} deleted.')
-#         s.close()
-    
-    
-    # def exampleAction(s):
-    #     """walking example"""
-    #     pi = np.pi
-    #     p_f_b0 = -pi/6 # font arm body-0
-    #     p_f_01 = pi/3 # front arm 01
-    #     p_f_12 = -pi/4 # front arm 12
-    #     n0 = pi/90 # body incline
-    #     # n0 = 0 # body incline
-        
-    #     n1 = pi/9.5
-    #     n2 = pi/12
-    #     while True:
-    #         for p_bl_b0,p_br_b0 in zip([n2,n1,n2],[n1,n2,n1]):
-
-    #             p_bl_01 = -p_bl_b0*2
-    #             p_br_01 = -p_br_b0*2
-
-    #             p_bl_12 = p_bl_b0
-    #             p_br_12 = p_br_b0
-
-    #             joint_pos = np.array([
-    #                 # front left
-    #                     -p_f_b0,
-    #                     -p_f_01,
-    #                     -p_f_12,
-    #                 # front right
-    #                     p_f_b0,
-    #                     p_f_01,
-    #                     p_f_12,
-    #                 # back left
-    #                     -p_bl_b0-n0,
-    #                     -p_bl_01,
-    #                     -p_bl_12,
-    #                 #back right
-    #                     p_br_b0+n0,
-    #                     p_br_01,
-    #                     p_br_12,
-    #             ])
-
-    #             while True:
-    #                 delta_p = 1.5*(joint_pos-s.joint_pos)
-    #                 if np.linalg.norm(delta_p)>4e-2:
-    #                     yield delta_p
-    #                 else:
-    #                     break
 
     def exampleAction(s):
         pi = np.pi
@@ -416,45 +383,45 @@ class FlexipodEnv(gym.Env):
         p_f_01 = pi/3 # front arm 01
         p_f_12 = -pi/12 # front arm 12
         p_b0_base = pi/8 # back leg body-0
-        while True:
-            # indicator for foot force
-            i0_0,i0_1= s.phase_indicator_pair_0.get(s.t_normalized)
-            # indicator for foot forward displacemnt relative to body, input to the example gait generator
-            i1_0,i1_1= s.phase_indicator_pair_1.get(s.t_normalized)
-            
-            i0 = i1_0 # use phase_indicator_pair_1
-            i1 = i1_1
-            
-            p_bl_b0 =p_b0_base+i0*0.08
-            p_br_b0 =p_b0_base+i1*0.08
+        
+        # indicator for foot force
+        i0_0,i0_1= s.phase_indicator_p0.get(s.t_normalized)
+        # indicator for foot forward displacemnt relative to body, input to the example gait generator
+        i1_0,i1_1= s.phase_indicator_p1.get(s.t_normalized)
+        
+        i0 = i1_0 # use phase_indicator_pair_1
+        i1 = i1_1
+        
+        p_bl_b0 =p_b0_base+i0*0.08
+        p_br_b0 =p_b0_base+i1*0.08
 
-            p_bl_01 = -p_bl_b0*2
-            p_br_01 = -p_br_b0*2
+        p_bl_01 = -p_bl_b0*2
+        p_br_01 = -p_br_b0*2
 
-            p_bl_12 = p_bl_b0
-            p_br_12 = p_br_b0
+        p_bl_12 = p_bl_b0
+        p_br_12 = p_br_b0
 
-            joint_pos = np.array([
-                # front left
-                    -p_f_b0,
-                    -p_f_01,
-                    -p_f_12,
-                # front right
-                    p_f_b0,
-                    p_f_01,
-                    p_f_12,
-                # back left
-                    -p_bl_b0 - i0*0.08 ,
-                    -p_bl_01,
-                    -p_bl_12,
-                #back right
-                    p_br_b0 + i1*0.08,
-                    p_br_01,
-                    p_br_12,
-            ])
-            
-            delta_p = 1*(joint_pos-s.joint_pos)
-            yield delta_p
+        joint_pos = np.array([
+            # front left
+                -p_f_b0,
+                -p_f_01,
+                -p_f_12,
+            # front right
+                p_f_b0,
+                p_f_01,
+                p_f_12,
+            # back left
+                -p_bl_b0 - i0*0.08 ,
+                -p_bl_01,
+                -p_bl_12,
+            #back right
+                p_br_b0 + i1*0.08,
+                p_br_01,
+                p_br_12,
+        ])
+        
+        delta_p = 1*(joint_pos-s.joint_pos)
+        return delta_p
 
     @property
     def humanoid_task(s):
@@ -487,7 +454,6 @@ class FlexipodEnv(gym.Env):
             # s.com_z_min = 0.34
             # s.com_z_offset = 0.62
             # s.orientation_z_min = 0.56
-            
             s.joint_pos_limit = np.array([ # v11
                 # front left
                 [-pi/1.25,pi/1.25], # 0
@@ -507,7 +473,7 @@ class FlexipodEnv(gym.Env):
                 [-pi/3,pi/3], # 11
             ], dtype=np.float32)
             s.com_z_min = 0.34
-            s.com_z_offset = 0.56
+            s.com_z_offset = 0.57
             s.orientation_z_min = 0.56
             
         else: # quadruped task
@@ -533,6 +499,11 @@ class FlexipodEnv(gym.Env):
             s.com_z_offset = 0.8
             s.orientation_z_min = 0.56
     
+    def step(s,action = None):
+        """ act and recive observation from the env"""
+        s.act(action) # act
+        return s.observe()  # observe
+    
     def act(s,action=None):
         """do action"""
         if action is not None:
@@ -542,128 +513,164 @@ class FlexipodEnv(gym.Env):
                 cmd_action = s.toRawAction(cmd_action)
             # # position difference control
             cmd_action += s.joint_pos # the actual position
-            
             # if len(s.cd.getContactPoints(cmd_action))>0:
-            step_cmd_b = s.packer.pack([s.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action.tolist()])
-            # step_cmd_b = s.packer.pack([s.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action.tolist()])
-            num_bytes_send = s.server.send(step_cmd_b)
+            s._impl_SendAction(cmd_action.tolist())
             
     def observe(s):
-        """observe outcome"""
-        msg_rec = s.receive()
-        s.episode_steps+=1 # update episodic step counter
-        return s._processRecMsg(msg_rec)
+        """
+        observe outcome from the env,
+        return observation,reward,done,info
+        """
+        msg_rec = s._impl_Receive()
+        s.episode_step+=1 # update episodic step counter
+        observation = s._impl_ProcessObservation(msg_rec)
+        reward,done,info = s.getReward()
+        return observation,reward,done,info
     
-    def step(s,action = None):
-        # act
-        s.act(action)
-        # observe
-        return s.observe()
+    def _impl_SendAction(s,cmd_action:list):
+        """
+        implementation specific function to serialize and send the action 
+        processed by act() to the env.
+        """
+        step_cmd_b = s.packer.pack([s.UDP_MOTOR_POS_COMMEND,time.time(),cmd_action])
+        # step_cmd_b = s.packer.pack([s.UDP_MOTOR_VEL_COMMEND,time.time(),cmd_action])
+        num_bytes_send = s.server.send(step_cmd_b)
     
-    def _processRecMsg(s,msg_rec,reset=False):
-        """processed received message to state action pair"""
-        # joint_pos,joint_vel,actuation,orientation,ang_vel,com_acc,com_vel,com_pos.z
-        # observation = np.hstack(msg_i[2:-1]+[msg_i[-1][-1]]).astype(np.float32)
-        msg_rec_i = msg_rec[0]
-        t = msg_rec_i[s.ID_t] # time
-        if reset: # update episode_start_time
-            s.episode_start_time = t
+    def _impl_Receive(s,timeout:float = 4):
+        """Implementation specific receive messages from the env"""
+        data = s.server.receive(timeout=timeout)
+        data_unpacked = msgpack.unpackb(data,use_list=False)
+        return data_unpacked 
+    
+    def _impl_ProcessObservation(s,msg):
+        """
+        implemtation specific function to process the received messages
+        from the environment. variables updated and stored in s are:
+            s.t : time [s]
+            s.t_normalized: time normalized by gait frequency, [unitless]
+            s.episode_start_time: episode start time [s]
+            s.com_pos: 1x3 com position measured at world space [m]
+            s.com_vel: 1x3 com velocity measured at world space
+            s.com_acc: 1x3 com acceleration measured at world space [m/s^2]
+            s.joint_pos: 1xdof joint position [rad]
+            s.joint_torque: 1xdof joint torque [Nm]
+            s.ang_vel: angular velocity [rad/s] measured at body space
+            s.oreint: 6D orientation vector masured at world space 
+                      (first two columns of the rotation matrix)
+            s.sensor_force: measured normalized constraint force
+            s.desired_vel_now: current desired velocity [m/s]
+        returns: 
+            observation: observation plus the task vector
+        """
+        msg_i = msg[0]
         
-        com = msg_rec_i[s.ID_com_pos]
-        com_z = com[2]
+        # time
+        s.t = msg_i[s.ID_t]
+        # update episode_start_time
+        if s.episode_step ==0: 
+            s.episode_start_time = s.t
+        #  time normalized by gait frequency, [unitless]
+        s.t_normalized = ((s.t-s.episode_start_time)*s.gait_frequency)%1 
+        
+        # 1x3 com position measured at world space [m]
+        s.com_pos = msg_i[s.ID_com_pos]
+        # 1x3 com velocity measured at world space [m/s]
+        s.com_vel = np.mean([m[s.ID_com_vel] for m in msg],axis=0)
+        # 1x3 com acceleration measured at world space [m/s^2]
+        s.com_acc = np.mean([m[s.ID_com_acc] for m in msg],axis=0)
+        
         # joint position (sin,cos->rad)
-        joint_pos = msg_rec_i[s.ID_joint_pos]
+        joint_pos = msg_i[s.ID_joint_pos]
         _ = np.arctan2(joint_pos[1::2],joint_pos[::2],s.joint_pos,dtype=np.float32) # setting s.joint_pos
         # print(f"s.joint_pos ={s.joint_pos}")
+        # measured joint torque
+        s.joint_torque = msg_i[s.ID_joint_torque] # joint torque (size=dof) of the latest observation
+        
+        # angular velocity [rad/s] measured at body space
+        s.ang_vel = np.mean([m[s.ID_ang_vel] for m in msg],axis=0)
+        # 6D orientation vector masured at world space (first two columns of the rotation matrix)
+        s.orient = msg_i[s.ID_orientation]
 
-        com_acc = np.mean([m[s.ID_com_acc] for m in msg_rec],axis=0)
+        # measured normalized constraint force
+        s.sensor_force = itemgetter(*s.sensor_id)(msg_i[s.ID_constraint])
+        
+        observation = np.stack([s.conditional_flatten(msg_i) for msg_i in msg]).astype(np.float32)
+        
+        # ramping up desired speed
+        s.desired_vel_now = min(s.episode_step/160.,1)*s.desired_vel
+        
+        if s.flatten_obs:
+            observation = observation.ravel()
+            observation = np.append(observation,[s.t_normalized,s.desired_vel_now,s.gait_frequency]).astype(np.float32)
+            
+        if s.normalize: # normalize the observation
+            observation = s.toNormalizedObservation(observation)
+        
+        return observation  
+            
+    def getReward(s):
+        """compute the reward at current step, 
+        assuming _impl_ProcessObservation() is called beforehand"""
+        # acceleration cost
+        com_acc_norm = np.linalg.norm(s.com_acc)
+        r_acc = max(0,min(1.3-0.1*com_acc_norm,1)) 
 
-        com_acc_norm = np.linalg.norm(com_acc)
-        r_acc = np.clip(1.3-0.1*com_acc_norm,0,1) # acceleration reward
-
+        # angular velocity cost
+        ang_vel_norm =  np.linalg.norm(s.ang_vel)
+        r_ang_vel = max(0,min(1-0.1*ang_vel_norm,1))
+        
         # check if out of range
         joint_pos_limit_check = s.joint_pos - np.clip(s.joint_pos,s.joint_pos_limit[:,0],s.joint_pos_limit[:,1])
         joint_out_of_range_norm = np.linalg.norm(joint_pos_limit_check)
         r_joint_limit = max(0,1.0 - joint_out_of_range_norm*10)
         joint_out_of_range = joint_out_of_range_norm>0.1
 
-        observation = np.stack([s.conditional_flatten(msg_i) for msg_i in msg_rec]).astype(np.float32)
-#         observation = np.stack([np.hstack([v if item_slice is None else itemgetter(*item_slice)(v) 
-#                                            for v,item_slice in zip(itemgetter(*s.OBS_IDS)(msg_i),s.OBS_ITEM_SLICE)]) 
-#                                 for msg_i in msg]).astype(np.float32)
-        
-        
-        # ramping up desired speed
-        desired_vel = min(s.episode_steps/160.,1)*s.desired_vel
-        
-        if s.flatten_obs:
-            observation = observation.ravel()
-            # TODO make it cyclic
-            # s.t_normalized = ((t-s.episode_start_time)*1.5)%1
-            s.t_normalized = ((t-s.episode_start_time)*s.gait_frequency)%1
-            
-            observation = np.append(observation,[s.t_normalized,desired_vel,s.gait_frequency]).astype(np.float32)
-            
-        if s.normalize: # normalize the observation
-            observation = s.toNormalizedObservation(observation)            
-
-        # x velocity
-        com_vel_x = sum([msg_i[s.ID_com_vel][0] for msg_i in msg_rec])/len(msg_rec)
-        # r_vel = 0.3*np.clip(com_vel_xy,0,1)+0.7 # velocity reward
+        # velocity cost
+        com_vel_x = s.com_vel[0] # x velocity
         # r_vel = 5*np.clip(com_vel_x,-0.2,0.5)+1.0 # velocity reward worked
-        r_vel = 2.0-min(0.4,abs(desired_vel-com_vel_x))*5 # com velocity reward
-        
-    #         print(orientation_z,com_z)
-        # r_orientation = max(0,orientation_z)*min(com_z+0.56,1)
-        ori = msg_rec_i[s.ID_orientation]
-
+        r_vel = 2.0-min(0.4,abs(s.desired_vel_now-com_vel_x))*5 # com velocity reward
+    
         if s._humanoid_task:
-            orientation_z = ori[2] # z_z, local x vector projected to world z direction
+            orientation_z = s.orient[2] # z_z, local x vector projected to world z direction
         else: # quadruped task
-            orientation_z= ori[0]*ori[4] - ori[1]*ori[3] # z_z, local z vector projected to world z direction
+            orientation_z= s.orient[0]*s.orient[4] - s.orient[1]*s.orient[3] # z_z, local z vector projected to world z direction
 
-        r_orientation = (np.clip(orientation_z*1.02,0,1)**3)*min(com_z+s.com_z_offset,1)
-
-        # x = np.linspace(0,1,400)
-        # y = np.clip(np.cos(x*np.pi/2)/np.cos(np.pi/180*15),-1,1)**3
-        # plt.plot(x,y)
-        # print(com_z+0.56)
-        # print(msg_rec_i[s.ID_orientation])
+        com_z = s.com_pos[2] # com z pos
+        r_orientation = (max(0,min(orientation_z*1.02,1))**3)*min(com_z+s.com_z_offset,1)
+        # print(orientation_z,com_z)
         
-        actuation = msg_rec_i[s.ID_actuation] # actuation (size=dof) of the latest observation
-        # r_quad_ctrl = max(0,1-0.1 * sum(np.square(actuation))) # quad control cost
-        r_quad_ctrl = max(0,1-0.05 * sum(np.square(actuation))) # quad control cost
+        # quad control cost
+        r_quad_ctrl = max(0,1-0.05 * sum(np.square(s.joint_torque))) 
         
-        # measured normalized constraint force
-        s.sensor_force = itemgetter(*s.sensor_id)(msg_rec_i[s.ID_constraint])
+        #for computing cyclic reward
         r_cyclic =  s.cyclicReward(s.t_normalized)
         
-        reward =  r_orientation*r_quad_ctrl*r_vel*r_joint_limit*r_cyclic
+        reward =  r_orientation*r_quad_ctrl*r_vel*r_ang_vel*r_joint_limit*r_cyclic
         
         done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)) else False
         # done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)or(s.episode_steps>=s.max_episode_steps)) else False
         # done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)or(s.episode_steps>=s.max_episode_steps) or joint_out_of_range) else False
 
         if s.info:
-            info = {'t':t,
-                    'com':com,
+            info = {'t':s.t,
+                    'com':s.com_pos,
+                    'com_acc':s.com_acc,
                     'tn':s.t_normalized,
                     'r_cyclic':r_cyclic,
                     'r_vel':r_vel,
+                    'r_ang_vel':r_ang_vel,
                     'r_orientation':r_orientation,
                     'r_quad_ctrl':r_quad_ctrl,
                     'r_joint_limit':r_joint_limit,
                     'r_acc':r_acc,
                     }
         else:
-            info = {'t':t}
-        # if done:
-    #             print(orientation_z,com_z)
-        # _ = [m[s.ID['t']] for m in msg_rec]
-        # print(_[0]-_[-1])
-        return observation,reward,done,info # TODO, change shape
+            info = {'t':s.t}
+        return reward,done,info        
+        
     
     def reset(s, desired_vel=None,gait_frequency=None):
+        """reset the env"""
         # set desired_vel
         if desired_vel is None:
             desired_vel = np.random.random() # normalized
@@ -675,9 +682,9 @@ class FlexipodEnv(gym.Env):
         
         s.server.send(s.reset_cmd_b)
         time.sleep(1/20)
-        msg_rec = s.receive()
-        s.episode_steps = 0
-        observation,reward,done,info =  s._processRecMsg(msg_rec,reset=True)
+        msg_rec = s._impl_Receive()
+        s.episode_step = 0 # curret step in an episode
+        observation = s._impl_ProcessObservation(msg_rec)
         return observation
     
     def render(s,mode="human"):
@@ -685,8 +692,8 @@ class FlexipodEnv(gym.Env):
 
     def start(s):
         try: # check if the simulation is opened
-            msg_rec = s.receive(max_attempts=20000,verbose=False)
-        except TimeoutError: # program not opened
+            msg_rec = s._impl_Receive(timeout=0.5)
+        except Exception: # program not opened
             try: dir_path = os.path.dirname(os.path.abspath(__file__))
             except NameError: dir_path = os.getcwd()
             # path = os.path.join(dir_path,"./run_flexipod.bat")
@@ -694,20 +701,17 @@ class FlexipodEnv(gym.Env):
             # print(path)
             task = subprocess.Popen([path])
             
-    def receive(s,max_attempts:int = 500000,verbose=True):
-        data = s.server.receive(max_attempts=max_attempts)
-        data_unpacked = msgpack.unpackb(data,use_list=False)
-        return data_unpacked 
         
     def pause(s):
-        """pause the simulation"""
+        """pause the env"""
         s.server.send(s.pause_cmd_b)
         
     def resume(s):
-        """resume the simulation"""
+        """resume the env"""
         s.server.send(s.resume_cmd_b)
         
-    def endSimulation(s):
+    def terminate(s):
+        """terminate the env"""
         s.server.send(s.close_cmd_b)
 
 
@@ -761,7 +765,11 @@ def make(**kargs):
 if __name__ == '__main__':
     # env = FlexipodEnv(dof = 12)
     env = make()
+    env.info=True
     env.reset()
+    observation,reward,done,info = env.step()
+    print(info)
+    
 #     while True:
 #         action = env.action_space.sample()
 #         env.step(action)
