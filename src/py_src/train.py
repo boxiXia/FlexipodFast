@@ -50,15 +50,18 @@ class Workspace(object):
             float(self.env.action_space.low.min()),
             float(self.env.action_space.high.max())
         ]
+        cfg.agent.n_step = cfg.replay_buffer.n_step # n-step experience replay
         self.agent = hydra.utils.instantiate(cfg.agent, _recursive_=False)
 
         self.replay_buffer = ReplayBuffer(
-            int(cfg.replay_buffer_capacity),
-            self.env.observation_space.shape,
-            self.env.action_space.shape,
-            self.env.observation_space.dtype,
-            self.env.action_space.dtype,
-            self.device)
+            capacity=cfg.replay_buffer.capacity,
+            obs_shape = self.env.observation_space.shape,
+            action_shape = self.env.action_space.shape,
+            obs_dtype = self.env.observation_space.dtype,
+            action_dtype = self.env.action_space.dtype,
+            n_step = cfg.replay_buffer.n_step, # n-step experience replay
+            discount=cfg.agent.discount, # per step discount
+            device = self.device)
 
         self.video_recorder = VideoRecorder(
             self.work_dir if cfg.save_video else None)
@@ -82,7 +85,7 @@ class Workspace(object):
                     self.video_recorder.record(self.env)
                     episode_reward += reward
                     episode_step += 1
-                    if episode_step == self.env.max_episode_steps:
+                    if episode_step == self.env._max_episode_steps:
                         break # breaks reached max episode stesp
                 
             average_episode_reward += episode_reward
@@ -134,8 +137,7 @@ class Workspace(object):
                     action = env.exampleAction()
             return action
                     
-        episode = -1
-        
+        episode = -1        
         # training loop
         while self.step < num_train_steps:
             episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
@@ -143,31 +145,38 @@ class Workspace(object):
             # initialization: reset agent and env
             self.agent.reset()
             obs = env.reset()
+            self.replay_buffer.onEpisodeEnd()
             # a <- pi(s0)
             action = computeAction(self,obs)
             # take action
             env.act(action)
             
-            while (not done) and (episode_step<env.max_episode_steps):
+            while (not done) and (episode_step<env._max_episode_steps):
                 next_action = computeAction(self,obs)
                 next_obs, reward, done, _ = env.observe()
                 env.act(next_action)
                 
-                # allow infinite bootstrap
-                not_done = float(not done)
-                not_done_no_max = 1.0 if episode_step + 1 == env.max_episode_steps else not_done
-                episode_reward += reward
-
-                self.replay_buffer.add(obs, action, reward, next_obs, not_done, not_done_no_max)
+                # # allow infinite bootstrap
+                # not_done = float(not done)
+                # not_done_no_max = 1.0 if episode_step + 1 == env._max_episode_steps else not_done
+                # self.replay_buffer.add(obs, action, reward, next_obs, not_done, not_done_no_max)
                 
+                max_episode_step_reached = (episode_step + 1 == env._max_episode_steps)
+                not_done = True if max_episode_step_reached else (not done) # allow infinite bootstrap
+                done = done or max_episode_step_reached # signals episode ended
+                self.replay_buffer.add(obs, action, reward, next_obs, not_done)
+            
                 ### next->current
                 obs = next_obs
                 action = next_action
+                # increment steps and reward
                 episode_step += 1
                 self.step += 1
+                episode_reward += reward
                        
-            # if done or episode_step==env.max_episode_steps:
             self.logger.log('train/duration',time.time() - start_time, self.step)
+            self.logger.log('train/episode_reward',episode_reward, self.step)
+            self.logger.log('train/episode', episode, self.step)
             
             if self.step >= num_seed_steps and self.step >=batch_size and self.step > update_step: # agent update
                 num_updates = (self.step-update_step)//update_frequency
@@ -186,9 +195,7 @@ class Workspace(object):
                     self.agent.update(self.replay_buffer,self.logger, self.step)
                 # print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
 
-            self.logger.log('train/episode_reward',episode_reward, self.step)
-            self.logger.log('train/episode', episode, self.step)
-            self.logger.dump(self.step, save=(self.step > num_seed_steps))
+                self.logger.dump(self.step, save=(self.step > num_seed_steps))
             
             # save replay buffer periodically
             if self.step>replay_buffer_save_step:

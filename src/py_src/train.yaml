@@ -12,13 +12,12 @@ agent:
         hidden_channels: [512,256,256,256]
     actor_cfg:
         hidden_channels: [512,256,256,256]
-    # batch_size: 512
     batch_size: 1024
-    discount: 0.999
-    # batch_size: 256
+    discount: 0.999 # discount factor
     critic_target_update_frequency: 1
-    # critic_tau: 0.005
-    critic_tau: 0.008
+    critic_tau: 0.01
+    # critic_tau: 0.008
+
 
 update_frequency: 16 #num of update is devided by this number
 
@@ -26,9 +25,7 @@ update_frequency: 16 #num of update is devided by this number
 load_model: False
 load_replay_buffer: False
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\3814408_22475.chpt
-# load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\1576903_9999.chpt
 train: True
-# train: False
 
 num_saved_model: 800 # saving the top x models
 
@@ -55,10 +52,14 @@ env:
 experiment: test_exp
 
 num_train_steps: 2e7
-replay_buffer_capacity: 1e7
-replay_buffer_save_interval: ${eval_frequency} # save every this step
 
-# replay_buffer_capacity: ${num_train_steps}
+replay_buffer:
+    # capacity: 5e6
+    capacity: 1e7
+    n_step: 5 # nstep target
+
+
+replay_buffer_save_interval: ${eval_frequency} # save every this step
 
 
 device: "cuda"

@@ -112,7 +112,8 @@ class FlexipodEnv(gym.Env):
         s.normalize = normalize
         s.flatten_obs = flatten_obs # True
         s.info = info # bool flag to send info
-        s.max_episode_steps = max_episode_steps # maximum episode steps
+        # https://github.com/openai/gym/blob/master/gym/wrappers/time_limit.py
+        s._max_episode_steps = max_episode_steps # maximum episode steps
         # general variables (mutable)
         s.joint_pos = np.empty(dof,dtype=np.float32) # joint position [rad]
         s.episode_step = 0 # curret step in an episode
@@ -648,8 +649,8 @@ class FlexipodEnv(gym.Env):
         reward =  r_orientation*r_quad_ctrl*r_vel*r_ang_vel*r_joint_limit*r_cyclic
         
         done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)) else False
-        # done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)or(s.episode_steps>=s.max_episode_steps)) else False
-        # done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)or(s.episode_steps>=s.max_episode_steps) or joint_out_of_range) else False
+        # done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)or(s.episode_steps>=s._max_episode_steps)) else False
+        # done = True if ((orientation_z<s.orientation_z_min)or(com_z<s.com_z_min)or(s.episode_steps>=s._max_episode_steps) or joint_out_of_range) else False
 
         if s.info:
             info = {'t':s.t,
