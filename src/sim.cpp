@@ -196,7 +196,7 @@ void Simulation::runImgui() {
 
 				ImGui::TableHeadersRow();
 
-				char label[20];
+				
 
 				for (int i = 0; i < joint_control.size(); i++) {
 					if (i == 0) {
@@ -214,18 +214,14 @@ void Simulation::runImgui() {
 					ImGui::Text("%+6.3f", joint_control.pos[i]);
 
 					ImGui::TableSetColumnIndex(2);
-					sprintf(label, "joint_pos_des_%d##00349234", i);
-					ImGui::PushID(label);
-					//ImGui::Text("%+4.3f\t", joint_control.pos_desired[i]);
-					ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
-					ImGui::PopID();
+					char label_jpd[10];//joint_pos_des
+					sprintf(label_jpd, "#jpd_%d", i);
+					ImGui::DragScalar(label_jpd, ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
 
 					ImGui::TableSetColumnIndex(3);
-					sprintf(label, "joint_vel_des_%d##00349234", i);
-					ImGui::PushID(label);
-					//ImGui::Text("%+4.3f", joint_control.vel_desired[i]);
-					ImGui::DragScalar("", ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
-					ImGui::PopID();
+					char label_jvd[10];//joint_pos_des
+					sprintf(label_jvd, "#jvd_%d", i);//joint_vel_des
+					ImGui::DragScalar(label_jvd, ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
 
 					ImGui::TableSetColumnIndex(4);
 					ImGui::Text("%+6.3f", joint.torque[i]);
@@ -411,13 +407,24 @@ DataSend::DataSend(
 	const auto& body = s->body;
 	int num_joint = joint_control.size();
 	joint_pos = std::vector<float>(2 * num_joint, 0);
-	joint_vel = std::vector<float>(joint_control.vel, joint_control.vel + joint_control.size());
-	joint_act = std::vector<float>(num_joint, 0);
+	joint_vel = std::vector<float>(joint_control.vel, joint_control.vel + num_joint);
+	//joint_torque = std::vector<float>(num_joint, 0);
+	joint_torque = std::vector<float>(s->joint.torque, s->joint.torque+ num_joint);
+
+	//switch (s->joint_control.mode){
+	//case JointControlMode::vel:
+	//	joint_cmd = std::vector<float>(joint_control.vel_desired, joint_control.vel_desired + num_joint);
+	//	break;
+	//case JointControlMode::pos:
+	//	joint_cmd = std::vector<float>(joint_control.pos_desired, joint_control.pos_desired + num_joint);
+	//	break;
+	//}
+
 
 	for (auto i = 0; i < joint_control.size(); i++) {
 		joint_pos[i * 2] = cosf(joint_control.pos[i]);
 		joint_pos[i * 2 + 1] = sinf(joint_control.pos[i]);
-		joint_act[i] = s->joint.torque[i];
+		//joint_torque[i] = s->joint.torque[i];
 	}
 	body.acc.fillArray(com_acc);
 	body.vel.fillArray(com_vel);

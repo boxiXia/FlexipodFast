@@ -14,9 +14,10 @@ agent:
         hidden_channels: [512,256,256,256]
     batch_size: 1024
     discount: 0.999 # discount factor
-    critic_target_update_frequency: 1
-    critic_tau: 0.01
+    critic_target_update_frequency: 2
+    # critic_tau: 0.01
     # critic_tau: 0.008
+    critic_tau: 0.005
 
 
 update_frequency: 16 #num of update is devided by this number
@@ -27,7 +28,7 @@ load_replay_buffer: False
 # load_model: D:\\repo\\FlexipodFast\\src\\py_src\\exp\\model\\3814408_22475.chpt
 train: True
 
-num_saved_model: 800 # saving the top x models
+num_saved_model: 50 # saving the top x models
 
 num_seed_steps: 40000
 

@@ -129,6 +129,7 @@ class FlexipodEnv(gym.Env):
             ("joint_pos",    dof*2,     -1.,            1.           ), # joint cos(angle) sin(angle) [rad]
             ("joint_vel",    dof,       -max_joint_vel, max_joint_vel), # joint velocity [rad/s]
             ("joint_torque", dof,       -1.,            1.           ), # joint torque [-1,1]
+            # ("joint_cmd",    dof,       -np.pi,         np.pi        ), # joint command from policy
             ("orientation",  6,         -1.,            1.           ), # base link (body) orientation
             ("ang_vel",      3,         -30.,           30.          ), # base link (body) angular velocity [rad/s]
             ("com_acc",      3,         -30.,           30.          ), # base link (body) acceleration
@@ -167,6 +168,7 @@ class FlexipodEnv(gym.Env):
             "joint_pos":None,                    #0
             "joint_vel":None,                    #1
             "joint_torque":None,                 #2
+            # "joint_cmd":None,                    #
             "orientation":None,                  #3
             "ang_vel":None,                      #4
             "com_acc":None,                      #5
@@ -177,7 +179,7 @@ class FlexipodEnv(gym.Env):
         }
         
         s.humanoid_task = humanoid_task
-
+            
         #------------task vector setup ---------------------------#
         # vel reward params
         # s.desired_vel = 0.2 # desired com vel [m/s]
@@ -499,6 +501,9 @@ class FlexipodEnv(gym.Env):
             s.com_z_min = 0.1
             s.com_z_offset = 0.8
             s.orientation_z_min = 0.56
+            
+        s.joint_pos_min = s.joint_pos_limit[:,0]
+        s.joint_pos_max = s.joint_pos_limit[:,1]
     
     def step(s,action = None):
         """ act and recive observation from the env"""
@@ -514,6 +519,8 @@ class FlexipodEnv(gym.Env):
                 cmd_action = s.toRawAction(cmd_action)
             # # position difference control
             cmd_action += s.joint_pos # the actual position
+            # clamp to min and max joint position
+            cmd_action = np.clip(cmd_action,s.joint_pos_min,s.joint_pos_max)
             # if len(s.cd.getContactPoints(cmd_action))>0:
             s._impl_SendAction(cmd_action.tolist())
             
@@ -675,6 +682,7 @@ class FlexipodEnv(gym.Env):
         # set desired_vel
         if desired_vel is None:
             desired_vel = np.random.random() # normalized
+            # desired_vel = np.random.uniform(0.5,1.0)
         s.desired_vel = s.toRawDesiredVel(desired_vel)
 
         if gait_frequency is None:
@@ -751,6 +759,8 @@ class FlexipodHumanoidV10(FlexipodEnv):
             s.orientation_z_min = 0.6
         else:
             raise NotImplementedError
+        s.joint_pos_min = s.joint_pos_limit[:,0]
+        s.joint_pos_max = s.joint_pos_limit[:,1]
         print(f"init FlexipodHumanoid,com_z_min = {s.com_z_min}")
 
     # def __init__(s,**kwargs):

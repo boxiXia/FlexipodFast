@@ -40,13 +40,19 @@ __global__ void randomizeFriction(
 	}
 }
 
+#ifdef ROTATION
+
+#endif // ROTATION
+
 
 __global__ void pbdSolveDist(
 	const MASS mass,
 	const SPRING spring,
-	const JOINT joint,
-	const double dt,
+	const double dt
+#ifdef ROTATION
+	,const JOINT joint,
 	const bool compute_torque = false
+#endif // ROTATION
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < spring.num) {
@@ -73,7 +79,7 @@ __global__ void pbdSolveDist(
 		// velocity damping
 		p -= n.dot(mass.vel[e.y] - mass.vel[e.x]) * fmin(spring.damping[i] * dt2, 1.0) / w * n;
 
-
+#ifdef ROTATION
 		// joint spring rest lenght correction (delayed by 1 time step)
 		if (spring.resetable[i]) {
 			int edge_id = spring.joint_id[i]; // joint edge index of this spring
@@ -94,6 +100,7 @@ __global__ void pbdSolveDist(
 				atomicAdd(&(joint.torque[joint_id]), torque);
 			}
 		}
+#endif // ROTATION
 
 		Vec8b flag_x = mass.flag[e.x];
 		Vec8b flag_y = mass.flag[e.y];
@@ -107,14 +114,18 @@ __global__ void pbdSolveContact(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
 	const Vec3d global_acc,
-	const JOINT joint,
 	const double dt
+#ifdef ROTATION
+	,const JOINT joint
+#endif // ROTATION
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
+#ifdef ROTATION
 		if (i < joint.num) { // update joint pos
 			joint.pos[i] += joint.vel_desired[i] * dt;
 		}
+#endif // ROTATION
 		Vec8b flag = mass.flag[i];
 
 		Vec3d pos(mass.pos[i]);
@@ -186,9 +197,15 @@ __global__ void pbdSolveVel(
 
 
 
+
 __global__ void updateSpring(
 	const MASS mass,
-	const SPRING spring
+	const SPRING spring,
+	const double dt
+#ifdef ROTATION
+	,const JOINT joint,
+	const bool compute_torque = false
+#endif // ROTATION
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < spring.num) {
@@ -197,36 +214,37 @@ __global__ void updateSpring(
 		double length = s_vec.norm(); // current spring length
 		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
 
-		Vec3d force = 1.0 / spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
-		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
 
-		mass.force[e.y].atomicVecAdd(force); // need atomics here
-		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
-	}
-}
+		double f_norm = 1.0 / spring.compliance[i] * (spring.rest[i] - length); // normal spring force
+		f_norm += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i]; // damping
+		Vec3d force = f_norm * s_vec;
 
-
-__global__ void updateSpringAndReset(
-	const MASS mass,
-	const SPRING spring
-) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < spring.num) {
-		Vec2i e = spring.edge[i];
-		Vec3d s_vec = mass.pos[e.y] - mass.pos[e.x];// the vector from left to right
-		double length = s_vec.norm(); // current spring length
-		s_vec /= (length > 1e-13 ? length : 1e-13);// normalized to unit vector (direction), check instablility for small length
-
-		Vec3d force = 1.0 / spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
-		force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
+		//Vec3d force = 1.0 / spring.compliance[i] * (spring.rest[i] - length) * s_vec; // normal spring force
+		//force += s_vec.dot(mass.vel[e.x] - mass.vel[e.y]) * spring.damping[i] * s_vec;// damping
 
 		mass.force[e.y].atomicVecAdd(force); // need atomics here
 		mass.force[e.x].atomicVecAdd(-force); // removed condition on fixed
 
 #ifdef ROTATION
+		// joint spring rest lenght correction (delayed by 1 time step)
 		if (spring.resetable[i]) {
-			//spring.rest[i] = length;//reset the spring rest length if this spring is restable
-			spring.rest[i] = spring.rest[i] * 0.9 + 0.1 * length;//reset the spring rest length if this spring is restable
+			int edge_id = spring.joint_id[i]; // joint edge index of this spring
+			Vec3d c = joint.edge_c[edge_id]; // joint edge constant
+			double joint_pos = joint.pos[joint.edge_joint_id[edge_id]];
+			spring.rest[i] = sqrt(c.x + c.y * cos(joint_pos + c.z));
+			//spring.rest[i] = 0.99 * d + 0.01 * sqrt(c.x + c.y * cos(joint_pos + c.z));
+
+			if (compute_torque) {
+				int joint_id = joint.edge_joint_id[edge_id];
+				Vec2i anchor = joint.anchor[joint_id];// indices of the anchor mass
+				Vec3d a0 = mass.pos[anchor.x];// mass pos of anchor 0
+				Vec3d a1 = mass.pos[anchor.y];// mass pos of anchor 1
+				Vec3d vt = (a1 - a0).normalize(); // vector of normalized rotation axis
+
+				Vec3d v0 = mass.pos[e.x] - a0;
+				double torque = -cross(v0, force).dot(vt);
+				atomicAdd(&(joint.torque[joint_id]), torque);
+			}
 		}
 #endif // ROTATION
 	}
@@ -237,9 +255,18 @@ __global__ void updateMass(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
 	const Vec3d global_acc,
-	const double dt) {
+	const double dt
+#ifdef ROTATION
+	,const JOINT joint
+#endif // ROTATION
+) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
+#ifdef ROTATION
+		if (i < joint.num) { // update joint pos
+			joint.pos[i] += joint.vel_desired[i] * dt;
+		}
+#endif // ROTATION
 		if (mass.flag[i] & MASS_FLAG_DOF) {
 			Vec3d pos = mass.pos[i];
 			Vec3d vel = mass.vel[i];
@@ -272,64 +299,6 @@ __global__ void updateMass(
 		}
 	}
 }
-
-#ifdef ROTATION
-
-// roate the mass of the joint directly
-__global__ void updateJointMass(Vec3d* __restrict__ mass_pos, Vec8b* __restrict__ mass_flag, const JOINT joint) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < joint.vert_num) {
-		int vert_id = joint.vert_id[i];
-		if (mass_flag[i] & MASS_FLAG_DOF) {
-			int vert_joint_id = joint.vert_joint_id[i];
-			Vec2i anchor_edge = joint.anchor[vert_joint_id]; // mass id of the achor edge point
-			mass_pos[vert_id] = AxisAngleRotaion(
-				mass_pos[anchor_edge.x],
-				mass_pos[anchor_edge.y], mass_pos[vert_id],
-				joint.theta[vert_joint_id] * joint.vert_dir[i]);
-		}
-	}
-}
-
-
-__global__ void updateJointPos(Vec3d* __restrict__ mass_pos, double* __restrict__ spring_rest, const JOINT joint) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < joint.num) {
-		Vec2i anchor_edge = joint.anchor[i];
-		Vec3d rotation_axis = (mass_pos[anchor_edge.y] - mass_pos[anchor_edge.x]).normalize();
-		// 0  1  2  3  4  5
-		// x  y  z -x -y -z
-		Vec3d y_left = mass_pos[joint.left_coord[i] + 1] - mass_pos[joint.left_coord[i] + 4];//coordinate (x,y,z,-x,-y,-z)
-		Vec3d y_right = mass_pos[joint.right_coord[i] + 1] - mass_pos[joint.right_coord[i] + 4];//coordinate (x,y,z,-x,-y,-z)
-		joint.pos[i] = signedAngleBetween(y_left, y_right, rotation_axis); //joint angle in [-pi,pi]
-	}
-}
-
-
-__global__ void updateJointSpring(
-	Vec3d* __restrict__ mass_pos,
-	double* __restrict__ spring_rest,
-	const JOINT joint,
-	const double dt
-) {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < joint.num) {
-		//double delta = joint.pos_desired[i] - joint.pos[i];
-		//clampPeroidicInplace(delta, -M_PI, M_PI);
-		//joint.pos[i] += 0.01 * delta;
-		//joint.pos[i] += joint.theta[i];
-		joint.pos[i] += joint.vel_desired[i] * dt;
-	}
-	if (i < joint.edge_num) {
-		Vec3d c = joint.edge_c[i]; // joint edge constant
-		int edge_id = joint.edge_id[i];
-		double joint_pos = joint.pos[joint.edge_joint_id[i]];
-		spring_rest[edge_id] = sqrt(c.x + c.y * cos(joint_pos + c.z));
-		//spring_rest[edge_id] = 0.99*spring_rest[edge_id]+0.01*sqrt(c.x + c.y * cos(joint_pos + c.z));
-	}
-}
-
-#endif // ROTATION
 
 
 #ifdef GRAPHICS
@@ -622,27 +591,33 @@ void Simulation::updatePhysics() { // repeatedly start next
 #ifdef UDP
 		updateUdpReceive(); // receive udp message whenever there is new
 #endif // UDP
+#ifdef ROTATION
 		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
+#endif // ROTATION
+
 		// invoke cuda kernel for dynamics update
 		if (USE_PBD) {
-			cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
-
 			static bool graphCreated = false;
 			static cudaGraph_t graph;
 			static cudaGraphExec_t instance;
 			if (!graphCreated) {
 				// ref https://developer.nvidia.com/blog/cuda-graphs/
 				cudaStreamBeginCapture(stream[CUDA_DYNAMICS_STREAM], cudaStreamCaptureModeGlobal);
-				
+#ifdef ROTATION
+				cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 				cudaMemsetAsync(d_joint.torque, 0, d_joint.num * sizeof(double), stream[CUDA_DYNAMICS_STREAM]);
-				/*------------ pbd kernel start -----------*/
-				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
-					pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, d_joint, dt,i== NUM_QUEUED_KERNELS-1? true:false);
-					pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, d_joint, dt);
-				}
+				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // pbd kernel
+					pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt, d_joint, i== NUM_QUEUED_KERNELS-1? true:false);
+					pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt, d_joint);
+				} 
 				cudaMemcpyAsync(joint.torque, d_joint.torque, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+#else
+				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // pbd kernel
+					pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
+					pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
+			}
+#endif // ROTATION
 
-				/*------------ pbd kernel end -----------*/
 				cudaStreamEndCapture(stream[CUDA_DYNAMICS_STREAM], &graph);
 				cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
 				graphCreated = true;
@@ -650,32 +625,25 @@ void Simulation::updatePhysics() { // repeatedly start next
 			cudaGraphLaunch(instance, stream[CUDA_DYNAMICS_STREAM]);
 		}
 		else {
-			// update joint speed
-			for (int i = 0; i < joint.size(); i++) { // compute joint angles and angular velocity
-				joint.theta[i] = joint_control.cmd[i] * NUM_UPDATE_PER_ROTATION * dt;// update joint speed
-			}
-			cudaMemcpyAsync(d_joint.theta, joint.theta, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
-			//cudaMemcpyAsync(d_joint.pos_desired, joint.pos_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
-
 			static bool graphCreated = false;
 			static cudaGraph_t graph;
 			static cudaGraphExec_t instance;
 			if (!graphCreated) {
 				cudaStreamBeginCapture(stream[CUDA_DYNAMICS_STREAM], cudaStreamCaptureModeGlobal);
-				/*------------ spring-mass kernel start -----------*/
-				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) {
 #ifdef ROTATION
-					if (k_rot % NUM_UPDATE_PER_ROTATION == 0) {
-						updateJointMass << <joint_grid_size, joint_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass.pos, d_mass.flag, d_joint);
-						updateSpringAndReset << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-					}
-					else {updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);}
-					k_rot++;
+				cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+				cudaMemsetAsync(d_joint.torque, 0, d_joint.num * sizeof(double), stream[CUDA_DYNAMICS_STREAM]);
+				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // spring-mass kernel
+					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt, d_joint, i == NUM_QUEUED_KERNELS - 1 ? true : false);
+					updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc,  dt,d_joint);
+				}
+				cudaMemcpyAsync(joint.torque, d_joint.torque, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 #else
-					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring);
-#endif // ROTATION
+				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // spring-mass kernel
+					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt);
 					updateMass << <mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt);
-				}/*------------ spring-mass kernel end -----------*/
+			}
+#endif // ROTATION
 				cudaStreamEndCapture(stream[CUDA_DYNAMICS_STREAM], &graph);
 				cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
 				graphCreated = true;
@@ -708,7 +676,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 
 #endif // DEBUG_ENERGY
 #ifdef UDP
-		SHOULD_SEND_UDP = true;
+		SHOULD_SEND_UDP = true;//updateUdpSend()
 #endif // UDP
 
 		// restore the robot mass/spring/joint state to the backedup state

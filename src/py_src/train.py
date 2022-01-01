@@ -91,12 +91,17 @@ class Workspace(object):
             average_episode_reward += episode_reward
             self.video_recorder.save(f'{self.step}.mp4')
         average_episode_reward /= self.cfg.num_eval_episodes
+        self.logger.log('eval/episode', episode, self.step)
         self.logger.log('eval/episode_reward', average_episode_reward,
                         self.step)
-        self.logger.dump(self.step)
+        self.logger.dump(self.step,ty = 'eval')
         return average_episode_reward
 
     def run(self):
+        
+        # optimization tricks 
+        # https://pytorch.org/docs/stable/backends.html#torch-backends-cudnn
+        torch.backends.cudnn.benchmark = True
         
         if self.cfg.load_replay_buffer: # load replay buffer folder path
             self.replay_buffer.load(self.cfg.load_replay_buffer)
@@ -178,7 +183,7 @@ class Workspace(object):
             self.logger.log('train/episode_reward',episode_reward, self.step)
             self.logger.log('train/episode', episode, self.step)
             
-            if self.step >= num_seed_steps and self.step >=batch_size and self.step > update_step: # agent update
+            if (self.step >= num_seed_steps) and (self.step >=batch_size) and (self.step > update_step): # agent update
                 num_updates = (self.step-update_step)//update_frequency
                 update_step = self.step
                 try:env.pause()
@@ -191,9 +196,8 @@ class Workspace(object):
                 for k in range(num_updates): # update several rounds
                     # update using the most recent num_recent samples
                     self.replay_buffer.num_recent = int(max(self.step*eta**(k*1000.0/num_updates),min_sample_size))
-                    # print(self.replay_buffer.num_recent)
                     self.agent.update(self.replay_buffer,self.logger, self.step)
-                # print(f"#update:{num_updates} dt={time.time()-t1:.3f}")
+                # print(f"#update:{num_updates},num_recent={self.replay_buffer.num_recent} dt={time.time()-t1:.3f}")
 
                 self.logger.dump(self.step, save=(self.step > num_seed_steps))
             
@@ -205,7 +209,7 @@ class Workspace(object):
             # evaluate agent periodically
             if self.step > eval_step:
                 eval_step += eval_frequency
-                self.logger.log('eval/episode', episode, self.step)
+                
                 avg_episode_reward = self.evaluate() # average episode reward
                 
                 # save the <num_saved_model> top model

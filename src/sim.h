@@ -874,7 +874,8 @@ public:
 	// using float to make data smaller
 	std::vector<float> joint_pos; // joint position cos(angle),sin(angle) {-1,1}
 	std::vector<float> joint_vel; // joint angular velocity [rad/s],{-1,1}
-	std::vector<float> joint_act; // acutation of the joint,{-1,1}
+	std::vector<float> joint_torque; // acutation of the joint,{-1,1}
+	//std::vector<float> joint_cmd; // action commanded by the remote controller
 	float orientation[6] = { 0 }; // orientation of the body,{-1,1}
 	float ang_vel[3];
 	float com_acc[3];
@@ -886,11 +887,21 @@ public:
 #ifdef STRESS_TEST
 	std::vector<float> spring_strain;
 #endif //STRESS_TEST
-	//MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel, com_pos, constraint_force, spring_strain);
+	//MSGPACK_DEFINE_ARRAY(header, T, joint_pos, joint_vel, joint_torque, orientation, ang_vel, com_acc, com_vel, com_pos, constraint_force, spring_strain);
 	template <typename Packer>
 	void msgpack_pack(Packer& msgpack_pk) const {
 		msgpack::type::make_define_array(
-			header, T, joint_pos, joint_vel, joint_act, orientation, ang_vel, com_acc, com_vel, com_pos
+			header, 
+			T, 
+			joint_pos, 
+			joint_vel, 
+			joint_torque, 
+			//joint_cmd, 
+			orientation, 
+			ang_vel, 
+			com_acc, 
+			com_vel, 
+			com_pos
 #ifdef MEASURE_CONSTRAINT
 			, constraint_force
 #endif

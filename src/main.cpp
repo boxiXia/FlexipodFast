@@ -75,10 +75,9 @@ int main(int argc, char* argv[])
 
 
 
-	sim.dt = 6e-5; // timestep
-	//sim.dt = 5e-5; // timestep
+	
 
-	//sim.dt = 1e-5; // timestep
+	
 	//sim.pause();
 
 	//constexpr double radius_poisson = 12.5 * 1e-3;
@@ -89,8 +88,15 @@ int main(int argc, char* argv[])
 	const double m = 0.09* radius_poisson;// mass per vertex
 	const double inv_m = 1. / m;
 
+	sim.dt = 6e-5; // timestep
 	const double spring_compliance = 1 / (m * 6e6); //spring constant for silicone leg [m/N]
 	const double spring_damping = m * 6e4; // damping for spring [N*s/m]
+	sim.USE_PBD = true;
+
+	//sim.dt = 3e-5; // timestep
+	//const double spring_compliance = 1 / (m * 6e6); //spring constant for silicone leg [m/N]
+	//const double spring_damping = m * 1e3; // damping for spring [N*s/m]
+	//sim.USE_PBD = false;
 
 	constexpr double scale_rigid = 3.0;// scaling factor rigid
 	constexpr double scale_soft = 2.0; // scaling factor soft
