@@ -438,8 +438,9 @@ DataSend::DataSend(
 	orientation[4] = body.rot.m11;
 	orientation[5] = body.rot.m21;
 
+
 #ifdef STRESS_TEST
-	constexpr int NUM_SPRING_STRAIN = 0;
+#define NUM_SPRING_STRAIN 0
 #if NUM_SPRING_STRAIN>0:
 	if (s->id_selected_edges.size() > 0 && (NUM_SPRING_STRAIN > 0)) { // only update if there selected edges exists
 		int step_spring_strain = s->id_selected_edges.size() / NUM_SPRING_STRAIN;

@@ -130,16 +130,18 @@ class Workspace(object):
         h_saved_model = [] # container for heapq (priority queue): 
         
         #################################################
-        num_example_steps = num_seed_steps*2        
+        # num_example_steps = num_seed_steps*2        
         
         def computeAction(self,obs):
             with evalMode(self.agent):
                 action = self.agent.act(obs, sample=True)
-            if self.step< num_example_steps:  # sample action for data collection
-                if self.step < num_seed_steps:
-                    action = env.action_space.sample()
-                else: # example step 
-                    action = env.exampleAction()
+            if self.step<num_seed_steps:
+                action = env.action_space.sample()
+            # if self.step< num_example_steps:  # sample action for data collection
+            #     if self.step < num_seed_steps:
+            #         action = env.action_space.sample()
+            #     else: # example step 
+            #         action = env.exampleAction()
             return action
                     
         episode = -1        
