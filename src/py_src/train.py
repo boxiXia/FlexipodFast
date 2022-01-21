@@ -133,10 +133,11 @@ class Workspace(object):
         # num_example_steps = num_seed_steps*2        
         
         def computeAction(self,obs):
-            with evalMode(self.agent):
-                action = self.agent.act(obs, sample=True)
+            action = self.agent.act(obs, sample=True)
             if self.step<num_seed_steps:
                 action = env.action_space.sample()
+            # with evalMode(self.agent):
+            #     action = self.agent.act(obs, sample=True)
             # if self.step< num_example_steps:  # sample action for data collection
             #     if self.step < num_seed_steps:
             #         action = env.action_space.sample()
@@ -147,39 +148,37 @@ class Workspace(object):
         episode = -1        
         # training loop
         while self.step < num_train_steps:
-            episode, episode_step, episode_reward, done = episode+1, 0, 0.0, False
+            episode, episode_step, episode_reward, not_done = episode+1, 0, 0.0, True
             start_time = time.time() # for logging episode training duration
             # initialization: reset agent and env
             self.agent.reset()
             obs = env.reset()
-            self.replay_buffer.onEpisodeEnd()
-            # a <- pi(s0)
-            action = computeAction(self,obs)
-            # take action
-            env.act(action)
             
-            while (not done) and (episode_step<env._max_episode_steps):
-                next_action = computeAction(self,obs)
-                next_obs, reward, done, _ = env.observe()
-                env.act(next_action)
-                
-                # # allow infinite bootstrap
-                # not_done = float(not done)
-                # not_done_no_max = 1.0 if episode_step + 1 == env._max_episode_steps else not_done
-                # self.replay_buffer.add(obs, action, reward, next_obs, not_done, not_done_no_max)
-                
-                max_episode_step_reached = (episode_step + 1 == env._max_episode_steps)
-                not_done = True if max_episode_step_reached else (not done) # allow infinite bootstrap
-                done = done or max_episode_step_reached # signals episode ended
-                self.replay_buffer.add(obs, action, reward, next_obs, not_done)
+            # collect episode samples
+            with torch.no_grad():
+                with evalMode(self.agent):
+                    action = computeAction(self,obs)  # a <- pi(s0)
+                    env.act(action) # take action
+                    
+                    while not_done:
+                        next_action = computeAction(self,obs)
+                        next_obs, reward, done, _ = env.observe()
+                        env.act(next_action)
+                        
+                        max_episode_step_reached = (episode_step + 1 == env._max_episode_steps)
+                        not_done_bootstrap = True if max_episode_step_reached else (not done) # allow infinite bootstrap
+                        self.replay_buffer.add(obs, action, reward, next_obs, not_done_bootstrap)
+                        not_done = not (done or max_episode_step_reached) # signals episode ended
+                        
+                        ### next->current
+                        obs = next_obs
+                        action = next_action
+                        # increment steps and reward
+                        episode_step += 1
+                        self.step += 1
+                        episode_reward += reward
             
-                ### next->current
-                obs = next_obs
-                action = next_action
-                # increment steps and reward
-                episode_step += 1
-                self.step += 1
-                episode_reward += reward
+            self.replay_buffer.onEpisodeEnd() # clear n-step buffer on episode end
                        
             self.logger.log('train/duration',time.time() - start_time, self.step)
             self.logger.log('train/episode_reward',episode_reward, self.step)
@@ -201,7 +200,7 @@ class Workspace(object):
                     self.agent.update(self.replay_buffer,self.logger, self.step)
                 # print(f"#update:{num_updates},num_recent={self.replay_buffer.num_recent} dt={time.time()-t1:.3f}")
 
-                self.logger.dump(self.step, save=(self.step > num_seed_steps))
+                self.logger.dump(self.step, save=(self.step > num_seed_steps),ty = 'train')
             
             # save replay buffer periodically
             if self.step>replay_buffer_save_step:
@@ -211,7 +210,6 @@ class Workspace(object):
             # evaluate agent periodically
             if self.step > eval_step:
                 eval_step += eval_frequency
-                
                 avg_episode_reward = self.evaluate() # average episode reward
                 
                 # save the <num_saved_model> top model
