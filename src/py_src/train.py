@@ -200,7 +200,7 @@ class Workspace(object):
                     self.agent.update(self.replay_buffer,self.logger, self.step)
                 # print(f"#update:{num_updates},num_recent={self.replay_buffer.num_recent} dt={time.time()-t1:.3f}")
 
-                self.logger.dump(self.step, save=(self.step > num_seed_steps),ty = 'train')
+                self.logger.dump(self.step, save=(self.step > num_seed_steps))
             
             # save replay buffer periodically
             if self.step>replay_buffer_save_step:
