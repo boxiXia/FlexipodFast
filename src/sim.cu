@@ -754,6 +754,10 @@ bool Simulation::updateUdpReceive() {
 			printf("Error converting %s,line %d: %s \n", __FILE__, __LINE__, e.what());
 			return false;
 		}
+		catch (msgpack::unpack_error e) {
+			printf("Error converting %s,line %d: %s \n", __FILE__, __LINE__, e.what());
+			return false;
+		}
 
 	}
 	return false;
