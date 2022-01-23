@@ -440,21 +440,21 @@ DataSend::DataSend(
 
 
 #ifdef STRESS_TEST
-#define NUM_SPRING_STRAIN 0
-#if NUM_SPRING_STRAIN>0:
-	if (s->id_selected_edges.size() > 0 && (NUM_SPRING_STRAIN > 0)) { // only update if there selected edges exists
-		int step_spring_strain = s->id_selected_edges.size() / NUM_SPRING_STRAIN;
-		spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
-		for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
-		{
-			int i = s->id_selected_edges[k * step_spring_strain];
-			Vec2i e = s->spring.edge[i];
-			Vec3d s_vec = s->mass.pos[e.y] - s->mass.pos[e.x];// the vector from left to right
-			double length = s_vec.norm(); // current spring length
-			spring_strain[k] = (length - s->spring.rest[i]) / s->spring.rest[i];
+	int NUM_SPRING_STRAIN = 0;
+	if (NUM_SPRING_STRAIN > 0) {
+		if (s->id_selected_edges.size() > 0 && (NUM_SPRING_STRAIN > 0)) { // only update if there selected edges exists
+			int step_spring_strain = s->id_selected_edges.size() / NUM_SPRING_STRAIN;
+			spring_strain = std::vector<float>(NUM_SPRING_STRAIN, 0);// initialize vector
+			for (int k = 0; k < NUM_SPRING_STRAIN; k++)// set values
+			{
+				int i = s->id_selected_edges[k * step_spring_strain];
+				Vec2i e = s->spring.edge[i];
+				Vec3d s_vec = s->mass.pos[e.y] - s->mass.pos[e.x];// the vector from left to right
+				double length = s_vec.norm(); // current spring length
+				spring_strain[k] = (length - s->spring.rest[i]) / s->spring.rest[i];
+			}
 		}
 	}
-#endif
 #endif // STRESS_TEST
 	
 #ifdef MEASURE_CONSTRAINT

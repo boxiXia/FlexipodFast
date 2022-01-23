@@ -730,6 +730,7 @@ bool Simulation::updateUdpReceive() {
 				setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
 				break;
 			case UDP_HEADER::TERMINATE://close the program
+				printf("Simulation::updateUdpReceive(): remote called terminate (%s, line %d)\n", __FILE__,__LINE__);
 				bpts.insert(BreakPoint(0, true));//SHOULD_END = true;
 				break;
 			case UDP_HEADER::RESET: // reset
