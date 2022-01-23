@@ -817,8 +817,7 @@ void Simulation::updateUdpSend() {
 			// pack and add to msg_send_queue
 			std::stringstream send_stream;
 			msgpack::pack(send_stream, msg_send);
-			udp_server.msg_send_queue.emplace_back(send_stream.str());
-			std::string const& data = send_stream.str();
+			udp_server.send(send_stream.str());
 		}
 	}
 }

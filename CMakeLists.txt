@@ -99,7 +99,7 @@ add_executable(flexipod
     src/shader.h src/shader.cpp 
     src/object.h src/object.cu
     src/sim.h src/sim.cu src/sim.cpp
-    src/comonUtils.h src/comonUtils.cpp) 
+    src/comonUtils.h src/comonUtils.cpp "src/network.h" "src/network.cpp") 
 
 option(USE_UDP "Enter UDP mode" ON)
 if(USE_UDP)

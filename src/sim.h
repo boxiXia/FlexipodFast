@@ -23,7 +23,10 @@ For external library that works with cpp but not with .cu, wrap host code with
 #include "vec.h"
 #include "comonUtils.h"
 
+#ifdef UDP
+#include "network.h"
 #include <msgpack.hpp>
+#endif //DUP
 
 #ifdef GRAPHICS
 #include "shader.h"
@@ -938,54 +941,7 @@ public:
 //typedef WsaUdpServer< DataReceive, std::deque<DataSend>> UdpServer;
 
 
-/// <summary>
-/// 
-/// </summary>
-class asioUdpServer
-{
-public:
 
-	std::string ip_local; uint16_t port_local;
-	std::string ip_remote; uint16_t port_remote;
-
-	bool UDP_SHOULD_RUN = true;// flag indicating whether to stop sending/receiving
-	bool flag_new_received = false; // flag indicating a new message has received
-	int counter_rec = 0; //  a counter for counting received message
-
-	std::thread thread_send; // thread for sending udp
-	std::thread thread_recv; // thread for receiving udp
-
-	std::deque<std::string> msg_send_queue; // queue of data to be sent, new messages added to the back
-	std::deque<std::string> msg_recv_queue; // queue of data received, new messages added to the back
-
-	asioUdpServer() {};
-
-	asioUdpServer(std::string ip_local, uint16_t port_local,
-		std::string ip_remote, uint16_t port_remote) :
-		ip_local(ip_local), port_local(port_local), ip_remote(ip_remote), port_remote(port_remote) {}
-
-	/*run this to start receiving and sending udp*/
-	void run() {
-		UDP_SHOULD_RUN = true;
-		thread_recv = std::thread([=]() { this->_doReceive(); });
-		thread_send = std::thread([=]() { this->_doSend(); });
-	}
-	void close() {
-		UDP_SHOULD_RUN = false;
-		_joinThread();
-	}
-
-	~asioUdpServer() { _joinThread(); }
-
-private:
-	void _doReceive();
-	void _doSend();
-
-	inline void _joinThread() {
-		if (thread_send.joinable()) { thread_send.join(); }
-		if (thread_recv.joinable()) { thread_recv.join(); }
-	}
-};
 #endif // UDP
 
 
