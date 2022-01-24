@@ -688,7 +688,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 #ifdef UDP
 bool Simulation::updateUdpReceive() {
 	// receiving message
-	if (udp_server.msg_recv_queue.empty()) {
+	if (!udp_server.msg_recv_queue.empty()) {
 		try {
 			while (udp_server.msg_recv_queue.size() > 1) {
 				udp_server.msg_recv_queue.pop_front(); // remove all oldest but 1
