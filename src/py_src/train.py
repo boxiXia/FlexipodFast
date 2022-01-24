@@ -155,28 +155,28 @@ class Workspace(object):
             obs = env.reset()
             
             # collect episode samples
-            with torch.no_grad():
-                with evalMode(self.agent):
-                    action = computeAction(self,obs)  # a <- pi(s0)
-                    env.act(action) # take action
+            # with torch.no_grad():
+            with evalMode(self.agent):
+                action = computeAction(self,obs)  # a <- pi(s0)
+                env.act(action) # take action
+                
+                while not_done:
+                    next_action = computeAction(self,obs)
+                    next_obs, reward, done, _ = env.observe()
+                    env.act(next_action)
                     
-                    while not_done:
-                        next_action = computeAction(self,obs)
-                        next_obs, reward, done, _ = env.observe()
-                        env.act(next_action)
-                        
-                        max_episode_step_reached = (episode_step + 1 == env._max_episode_steps)
-                        not_done_bootstrap = True if max_episode_step_reached else (not done) # allow infinite bootstrap
-                        self.replay_buffer.add(obs, action, reward, next_obs, not_done_bootstrap)
-                        not_done = not (done or max_episode_step_reached) # signals episode ended
-                        
-                        ### next->current
-                        obs = next_obs
-                        action = next_action
-                        # increment steps and reward
-                        episode_step += 1
-                        self.step += 1
-                        episode_reward += reward
+                    max_episode_step_reached = (episode_step + 1 == env._max_episode_steps)
+                    not_done_bootstrap = True if max_episode_step_reached else (not done) # allow infinite bootstrap
+                    self.replay_buffer.add(obs, action, reward, next_obs, not_done_bootstrap)
+                    not_done = not (done or max_episode_step_reached) # signals episode ended
+                    
+                    ### next->current
+                    obs = next_obs
+                    action = next_action
+                    # increment steps and reward
+                    episode_step += 1
+                    self.step += 1
+                    episode_reward += reward
             
             self.replay_buffer.onEpisodeEnd() # clear n-step buffer on episode end
                        

@@ -688,18 +688,15 @@ void Simulation::updatePhysics() { // repeatedly start next
 #ifdef UDP
 bool Simulation::updateUdpReceive() {
 	// receiving message
-	if (udp_server.flag_new_received) {
-		udp_server.flag_new_received = false;
-
-		while (udp_server.msg_recv_queue.size() > 1) {
-			udp_server.msg_recv_queue.pop_front(); // remove all oldest but 1
-		}
-		std::string data_recv = std::move(udp_server.msg_recv_queue.front()); // oldest message
-		// cleanup
-		udp_server.msg_recv_queue.pop_front();
-		udp_server.flag_new_received = false;
-
+	if (udp_server.msg_recv_queue.empty()) {
 		try {
+			while (udp_server.msg_recv_queue.size() > 1) {
+				udp_server.msg_recv_queue.pop_front(); // remove all oldest but 1
+			}
+			std::string data_recv = std::move(udp_server.msg_recv_queue.front()); // oldest message
+			// cleanup
+			udp_server.msg_recv_queue.pop_front();
+
 			// Unpack data
 			msgpack::object_handle oh = msgpack::unpack(data_recv.data(), data_recv.size());
 			msgpack::object obj = oh.get();
@@ -752,13 +749,13 @@ bool Simulation::updateUdpReceive() {
 		}
 		catch (const std::bad_cast& e) { // msgpack obj.as<T> error
 			printf("Error converting %s,line %d: %s \n", __FILE__, __LINE__, e.what());
-			return false;
 		}
-		catch (msgpack::unpack_error e) {
+		catch (const msgpack::unpack_error e) {
 			printf("Error converting %s,line %d: %s \n", __FILE__, __LINE__, e.what());
-			return false;
 		}
-
+		catch (const std::exception& e){ // standard exceptions
+			printf("Error converting %s,line %d: %s \n", __FILE__, __LINE__, e.what());
+		}
 	}
 	return false;
 }
