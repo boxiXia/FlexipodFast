@@ -84,8 +84,10 @@ class PulleyControl:
     def reset(self):
         """pull the robot to the reset position"""
         self._resetLoop(k=10,dx=60,thresh=0.1) # loop#1
+        time.sleep(1)
         self._resetLoop(k=10,dx=60,thresh=0.1) # loop#2
-        self._resetLoop(k=10,dx=40,thresh=0.1) # loop#2
+        time.sleep(1)
+        self._resetLoop(k=10,dx=60,thresh=0.1) # loop#2
         self.send(self.reset_pos, 0.1) # set to reset position
         
     def receive(self,verbose=False):
