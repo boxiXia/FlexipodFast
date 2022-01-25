@@ -50,7 +50,6 @@ void asioUdpServer::_doReceive()
 	auto buffer_recv = asio::mutable_buffer(data_recv.data(), data_recv.size());
 
 	// reset counter and flags
-	flag_new_received = false;
 	counter_rec = 0;
 
 	// loop
@@ -58,8 +57,8 @@ void asioUdpServer::_doReceive()
 		try {
 			size_t nbytes = socket_recv.receive(buffer_recv);
 			if (nbytes > 0) {
-				msg_recv_queue.emplace_back(std::string(data_recv.data(), nbytes)); // push to msg queue
-				flag_new_received = true;
+				std::string data_recv_str(data_recv.data(), nbytes);
+				msg_recv_queue.push_back(data_recv_str); // push to msg queue
 				counter_rec++;
 				//std::cout.write(data_recv.data(), nbytes);
 				//std::cout << std::endl;
