@@ -1048,8 +1048,8 @@ public:
 
 #ifdef UDP
 public:
-	//                                       ip_local,port_local,ip_remote,port_remote
-	asioUdpServer udp_server = asioUdpServer("127.0.0.1", 33301, "127.0.0.1", 33300);
+	// use this->udp_server.setaddress to set ip_local,port_local,ip_remote,port_remote
+	asioUdpServer udp_server = asioUdpServer("127.0.0.1", 33301, "127.0.0.1", 33300);//defualt
 
 	bool updateUdpReceive();
 	void updateUdpSend();

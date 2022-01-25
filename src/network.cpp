@@ -2,6 +2,25 @@
 #include "network.h"
 
 
+
+void asioUdpServer::setLocalAddress(std::string ip_local, uint16_t port_local) {
+	this->ip_local = ip_local;
+	this->port_local = port_local;
+}
+
+void asioUdpServer::setRemoteAddress(std::string ip_remote, uint16_t port_remote) {
+	this->ip_remote = ip_remote;
+	this->port_remote = port_remote;
+}
+
+void asioUdpServer::setAddress(std::string ip_local, uint16_t port_local,
+	std::string ip_remote, uint16_t port_remote) {
+	this->ip_local = ip_local;
+	this->port_local = port_local;
+	this->ip_remote = ip_remote;
+	this->port_remote = port_remote;
+}
+
 void asioUdpServer::run() {
 	UDP_SHOULD_RUN = true;
 	thread_recv = std::thread([=]() { this->_doReceive(); });

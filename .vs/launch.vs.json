@@ -9,7 +9,8 @@
       "name": "flexipod.exe",
       "env": {
         "CUDA_VISIBLE_DEVICES": 0
-      }
+      },
+      "args": ["-h"]
     }
   ]
 }

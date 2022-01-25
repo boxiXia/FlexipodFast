@@ -22,14 +22,24 @@ int main(int argc, char* argv[])
 	auto start = std::chrono::steady_clock::now();
 
 	int device = 0;// cuda device
-	bool help = 1;
+	bool help = 0;
+
+	std::string ip_local="127.0.0.1";
+	uint16_t port_local = 33301;
+	std::string ip_remote = "127.0.0.1"; 
+	uint16_t port_remote = 33300;
+
 	std::string model_path_str = getProgramDir() + "//flexipod_12dof.msgpack";
 	{	//https://github.com/muellan/clipp
 		using namespace clipp;
 		auto cli = (
 			(
 				option("-d", "--device").doc("set cuda device") & value("cuda device#", device),
-				option("-m", "--model").doc("set model path") & value("model path", model_path_str)
+				option("-m", "--model").doc("set model path") & value("model path", model_path_str),
+				option("-ipl", "--ip_local").doc("set local ip") & value("local ip", ip_local),
+				option("-ipr", "--ip_remote").doc("set remote ip") & value("remote ip", ip_remote),
+				option("-pl","--port_local").doc("set local port number") & value("local port#",port_local),
+				option("-pr", "--port_remote").doc("set remote port number") & value("remote port#", port_remote)
 				)
 			| option("-h", "--help").doc("show help").set(help, true)
 			);
@@ -37,6 +47,7 @@ int main(int argc, char* argv[])
 			std::cout << make_man_page(cli, argv[0]);
 			//return 0;
 		}
+		else { std::cout << "To show help use: -h, --help\n"; }
 	}
 	fs::path model_path(model_path_str);
 	if (!fs::exists(model_path)) {// make sure the file exists
@@ -70,22 +81,17 @@ int main(int argc, char* argv[])
 	SPRING& spring = sim.spring; // reference variable for sim.spring
 	TRIANGLE triangle = sim.triangle;// reference variable for sim.triangle
 
-
-
-
-
-
-	
-
-	
-	//sim.pause();
+	// set udp server address
+	sim.udp_server.setAddress(ip_local, port_local, ip_remote, port_remote);
+	std::cout << "UDP local address:(" << ip_local << "," << port_local <<
+		") | remote address:("<< ip_remote << "," << port_remote << ")\n";
 
 	//constexpr double radius_poisson = 12.5 * 1e-3;
 	const double  radius_poisson = bot.radius_poisson;
 	const double radius_knn = radius_poisson * sqrt(3.0);
 	const double min_radius = radius_poisson * 0.5;
 
-	const double m = 0.09* radius_poisson;// mass per vertex
+	const double m = 0.1* radius_poisson;// mass per vertex
 	const double inv_m = 1. / m;
 
 	sim.dt = 6e-5; // timestep

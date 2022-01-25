@@ -22,6 +22,8 @@ public:
 	std::deque<std::string> msg_send_queue; // queue of data to be sent, new messages added to the back
 	std::deque<std::string> msg_recv_queue; // queue of data received, new messages added to the back
 
+	asioUdpServer() { }
+
 	asioUdpServer(std::string ip_local, uint16_t port_local,
 		std::string ip_remote, uint16_t port_remote) :
 		ip_local(ip_local), port_local(port_local), ip_remote(ip_remote), port_remote(port_remote) {}
@@ -35,6 +37,13 @@ public:
 	void close();
 
 	void send(std::string message);
+
+	/*set local address*/
+	void asioUdpServer::setLocalAddress(std::string ip_local, uint16_t port_local);
+	/*set remote address*/
+	void asioUdpServer::setRemoteAddress(std::string ip_remote, uint16_t port_remote);
+	/*set local and remote address*/
+	void setAddress(std::string ip_local, uint16_t port_local, std::string ip_remote, uint16_t port_remote);
 
 private:
 	bool UDP_SHOULD_RUN = true;// flag indicating whether to stop sending/receiving
