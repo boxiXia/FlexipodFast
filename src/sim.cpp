@@ -234,7 +234,8 @@ void Simulation::runImgui() {
 		}
 
 		if (ImGui::CollapsingHeader("Info")) {
-			auto info = body.print();
+			char info[250];
+			int n = body.print(info,250);
 			ImGui::Text(info);
 		}
 #ifdef MEASURE_CONSTRAINT

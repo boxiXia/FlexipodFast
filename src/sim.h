@@ -815,10 +815,10 @@ struct RigidBody {
 
 		rot = rot_new;
 	}
-
-	char* print() {
-		char out[300];
-		int n = snprintf(out, 300,
+	/*store text info to out array with known size. 
+	  return The number of characters that would have been written*/
+	int print(char out[],int size) {
+		int n = snprintf(out, size,
 			"com pos %+6.2f %+6.2f %+6.2f |%6.2f|\n"
 			"com vel %+6.2f %+6.2f %+6.2f |%6.2f|\n"
 			"com acc %+6.2f %+6.2f %+6.2f |%6.2f|\n"
@@ -835,9 +835,7 @@ struct RigidBody {
 			rot.m10, rot.m11, rot.m12,
 			rot.m20, rot.m21, rot.m22
 		);
-		//assert(n < 250);
-		//printf("%d\n",n);
-		return out;
+		return n;
 	}
 
 };

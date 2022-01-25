@@ -781,9 +781,9 @@ if __name__ == '__main__':
     observation,reward,done,info = env.step()
     print(info)
     
-#     while True:
-#         action = env.action_space.sample()
-#         env.step(action)
+    while True:
+        action = env.action_space.sample()
+        env.step(action)
 
         # time.sleep(0.0001)
     # print(subprocess.Popen(["cmd"], shell=True))

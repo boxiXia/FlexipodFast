@@ -16,7 +16,7 @@ void asioUdpServer::close() {
 void asioUdpServer::send(std::string message) {
 	//std::lock_guard<std::mutex> lck{ mutex_send };
 	try {
-		msg_send_queue.push_back(message);
+		msg_send_queue.push_back(std::move(message));
 	}
 	catch (const std::exception& e) {
 		printf("Caught exception %s,line %d: %s \n", __FILE__, __LINE__, e.what());
@@ -58,7 +58,7 @@ void asioUdpServer::_doReceive()
 			size_t nbytes = socket_recv.receive(buffer_recv);
 			if (nbytes > 0) {
 				std::string data_recv_str(data_recv.data(), nbytes);
-				msg_recv_queue.push_back(data_recv_str); // push to msg queue
+				msg_recv_queue.push_back(std::move(data_recv_str)); // push to msg queue
 				counter_rec++;
 				//std::cout.write(data_recv.data(), nbytes);
 				//std::cout << std::endl;
