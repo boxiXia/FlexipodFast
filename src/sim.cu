@@ -88,7 +88,7 @@ __global__ void pbdSolveDist(
 			spring.rest[i] = sqrt(c.x + c.y * cos(joint_pos + c.z));
 			//spring.rest[i] = 0.99 * d + 0.01 * sqrt(c.x + c.y * cos(joint_pos + c.z));
 			
-			if (compute_torque) {
+			if (compute_torque) { // approximatly compute torque
 				int joint_id = joint.edge_joint_id[edge_id];
 				Vec2i anchor = joint.anchor[joint_id];// indices of the anchor mass
 				Vec3d a0 = mass.pos[anchor.x];// mass pos of anchor 0

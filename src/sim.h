@@ -577,8 +577,6 @@ struct JointControl {
 	double* vel_error; // difference between cmd and vel
 	double* pos_error; // integral of the error between joint_vel_cm and vel
 
-	double* cmd; // (commended) joint speed array in rad/s
-
 	double max_vel; // [rad/s] maximum joint speed
 	double max_acc; // [rad/s^2] maximum joint acceleration
 	double k_vel = 1.0; // coefficient for speed control
@@ -603,7 +601,6 @@ struct JointControl {
 		allocateMemory(on_host, num, vel_desired);
 		allocateMemory(on_host, num, vel_error);
 		allocateMemory(on_host, num, pos_error);
-		allocateMemory(on_host, num, cmd);
 		gpuErrchk(cudaPeekAtLastError());
 		this->num = num;
 	}
@@ -615,7 +612,6 @@ struct JointControl {
 		cudaMemcpyAsync(vel_desired, other.vel_desired, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(vel_error, other.vel_error, num * sizeof(double), cudaMemcpyDefault, stream);
 		cudaMemcpyAsync(pos_error, other.pos_error, num * sizeof(double), cudaMemcpyDefault, stream);
-		cudaMemcpyAsync(cmd, other.cmd, num * sizeof(double), cudaMemcpyDefault, stream);
 		gpuErrchk(cudaPeekAtLastError());
 		// todo make max_vel etc a vector
 	}
@@ -625,7 +621,6 @@ struct JointControl {
 	}
 	void reset(const MASS& mass, const JOINT& joint) {
 		size_t nbytes = joint.size() * sizeof(double);
-		memset(cmd, 0, nbytes);//cmd[i] = 0.;
 		memset(vel, 0, nbytes);//vel[i] = 0.;
 		memset(vel_desired, 0, nbytes);//vel_desired[i] = 0.;
 		memset(vel_error, 0, nbytes);//vel_error[i] = 0.;
@@ -672,20 +667,12 @@ struct JointControl {
 			case JointControlMode::vel:
 				clampInplace(vel_desired[i], -max_vel, max_vel);
 
-				//vel_error[i] = vel_desired[i] - vel[i];
-				//pos_desired[i] += vel_desired[i] * ndt;
-				//pos_error[i] = pos_desired[i] - pos[i];
-				//clampPeroidicInplace(pos_desired[i], -M_PI, M_PI);
-				//clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
-				//cmd[i] = k_vel * vel_error[i] + k_pos/ndt * pos_error[i];
-
 				//TODO FIX THIS
 				vel_desired_proxy = vel_desired[i];
 				dv = max_acc * ndt;
 				clampInplace(vel_desired_proxy, joint.vel_desired[i] - dv, joint.vel_desired[i] + dv);
 				// set joint velocity
 				joint.vel_desired[i] = vel_desired_proxy;
-				cmd[i] = vel_desired_proxy;
 
 				vel_desired[i] = 0.99 * vel_desired[i];
 				break;
@@ -694,7 +681,6 @@ struct JointControl {
 				pos_error[i] = pos_desired[i] - pos[i];
 				clampPeroidicInplace(pos_error[i], -M_PI, M_PI);
 
-
 				vel_desired_proxy = 10 * pos_error[i] - 0.1 * vel[i];
 
 				dv = max_acc * ndt;
@@ -702,34 +688,8 @@ struct JointControl {
 				clampInplace(vel_desired_proxy, vel[i] - dv, vel[i] + dv);
 				clampInplace(vel_desired_proxy, -max_vel, max_vel);
 				joint.vel_desired[i] = vel_desired_proxy;
-				cmd[i] = joint.vel_desired[i];
-
-				//vel_desired_proxy = pos_error[i] / ndt/20; // reach the destination at 50 control step
-				//dv = max_acc * ndt;
-
-				//clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
-				//clampInplace(vel_desired_proxy, -max_vel, max_vel);
-
-				//vel_desired[i] = vel_desired_proxy;
-				//joint.vel_desired[i] = vel_desired[i];
-				//cmd[i] = vel_desired[i];
-
-				//vel_desired_proxy = pos_error[i] / ndt; // reach the destination at 1 control step
-				//dv = max_acc * ndt;
-				//clampInplace(vel_desired_proxy, vel_desired[i] - dv, vel_desired[i] + dv);
-				//clampInplace(vel_desired_proxy, -max_vel, max_vel);
-				//// calcuate settling time based ob velocity change
-				//double ndt_proxy = (vel_desired_proxy - vel_desired[i]) / max_acc;
-				//vel_desired[i] = vel_desired_proxy;
-				//ndt_proxy = abs(pos_error[i] / max_vel)*2.0;
-				//if (ndt_proxy < ndt) { ndt_proxy = ndt; }
-				//vel_error[i] = vel_desired[i] - vel[i];
-				////cmd[i] = k_vel * vel_error[i] +k_pos / ndt * pos_error[i];
-				//cmd[i] = k_pos / ndt_proxy * pos_error[i];
-
 				break;
 			}
-			clampInplace(cmd[i], -max_vel, max_vel);
 		}
 	}
 
@@ -876,7 +836,6 @@ public:
 	std::vector<float> joint_pos; // joint position cos(angle),sin(angle) {-1,1}
 	std::vector<float> joint_vel; // joint angular velocity [rad/s],{-1,1}
 	std::vector<float> joint_torque; // acutation of the joint,{-1,1}
-	//std::vector<float> joint_cmd; // action commanded by the remote controller
 	float orientation[6] = { 0 }; // orientation of the body,{-1,1}
 	float ang_vel[3];
 	float com_acc[3];
@@ -897,7 +856,6 @@ public:
 			joint_pos, 
 			joint_vel, 
 			joint_torque, 
-			//joint_cmd, 
 			orientation, 
 			ang_vel, 
 			com_acc, 

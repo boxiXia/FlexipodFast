@@ -315,23 +315,11 @@ DataSend::DataSend(
 	int num_joint = joint_control.size();
 	joint_pos = std::vector<float>(2 * num_joint, 0);
 	joint_vel = std::vector<float>(joint_control.vel, joint_control.vel + num_joint);
-	//joint_torque = std::vector<float>(num_joint, 0);
 	joint_torque = std::vector<float>(s->joint.torque, s->joint.torque+ num_joint);
-
-	//switch (s->joint_control.mode){
-	//case JointControlMode::vel:
-	//	joint_cmd = std::vector<float>(joint_control.vel_desired, joint_control.vel_desired + num_joint);
-	//	break;
-	//case JointControlMode::pos:
-	//	joint_cmd = std::vector<float>(joint_control.pos_desired, joint_control.pos_desired + num_joint);
-	//	break;
-	//}
-
 
 	for (auto i = 0; i < joint_control.size(); i++) {
 		joint_pos[i * 2] = cosf(joint_control.pos[i]);
 		joint_pos[i * 2 + 1] = sinf(joint_control.pos[i]);
-		//joint_torque[i] = s->joint.torque[i];
 	}
 	body.acc.fillArray(com_acc);
 	body.vel.fillArray(com_vel);
