@@ -304,8 +304,9 @@ int main(int argc, char* argv[])
 
 	sim.global_acc = Vec3d(0, 0, -9.8); // global acceleration
 
-	sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7,0.5,20);
+	//sim.createPlane(Vec3d(0, 0, 1), 0, 0.8, 0.7,0.5,20);
 	//sim.createPlane(Vec3d(0, 0, 1), -1, 0.8, 0.7);
+	sim.createTerrain(0.5, 0.7, 0.25f, 5.0f, 0.1);
 
 	//// fix the main body
 	//for (int i = bot.id_vertices.at("part").at(0); i < bot.id_vertices.at("part").at(1); i++) {

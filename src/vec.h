@@ -352,7 +352,9 @@ struct MY_ALIGN(8) Vec3d {
 		return *this - this->dot(d) * d;
 	}
 
-
+	inline CUDA_CALLABLE_MEMBER Vec3d cross(const Vec3d& v2) {
+		return Vec3d(y * v2.z - z * v2.y, v2.x * z - x * v2.z, x * v2.y - y * v2.x);
+	}
 
 	inline friend CUDA_CALLABLE_MEMBER Vec3d cross(const Vec3d & v1, const Vec3d & v2) {
 		return Vec3d(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);

@@ -134,6 +134,113 @@ __device__  void CudaContactPlane::solveDist(
 	}
 }
 
+
+__device__ void CudaContactTerrain::applyForce(
+    Vec3d& force,
+    const Vec3d& pos,
+    const Vec3d& vel
+) {
+
+}
+
+__device__ void CudaContactTerrain::solveDist(
+    Vec3d& pos,
+    Vec3d& pos_prev,
+    Vec3d& vel,
+    const Vec3d& global_acc,
+    const double dt,
+    // Mingxuan Li
+    const Vec3d* vertices,
+    const Vec3d* normals
+    // const TERRAININFO& vertex
+) {
+    // only need to go through the meshes that rests in the same area
+    int x = (pos.x + _nr * _unit) / _unit;
+    int y = (pos.y + _nr * _unit) / _unit;
+
+    // case when x or y is out of boundary, there must be no collisions
+    if (x < 0 || x > 2 * _nr || y < 0 || y > 2 * _nr)
+    {
+        return;
+    }
+
+    int nd = 2 * _nr;
+    int normalIndex = x * nd + y;
+    int vertexIndex = x * (nd + 1) + y;
+
+    double min_disp = 10;
+    Vec3d min_normal = Vec3d(0, 0, 1);
+
+    // check two triangles in a squad
+    Vec3d pos1, pos2, pos3, normal;
+
+    for (int i = 0; i < 2; ++i)
+    {
+        if (i == 0)
+        {
+            pos1 = vertices[vertexIndex];
+            pos2 = vertices[vertexIndex + nd + 1];
+            pos3 = vertices[vertexIndex + nd + 2];
+            normal = normals[normalIndex * 2];
+        }
+        else
+        {
+            pos1 = vertices[vertexIndex];
+            pos2 = vertices[vertexIndex + nd + 2];
+            pos3 = vertices[vertexIndex + 1];
+            normal = normals[normalIndex * 2 + 1];
+        }
+
+        Vec3d _normal = normal / normal.norm();
+        double disp = (pos - pos1).dot(_normal); // displacement into the plane
+#ifdef __CUDA_ARCH__
+        if (signbit(disp) && disp < min_disp) { // Determine whether the floating-point value a is negative:https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE_1g2bd7d6942a8b25ae518636dab9ad78a7
+#else
+        if (disp < 0 && disp < min_disp) {// if inside the plane
+#endif
+            Vec3d posc = pos - disp * _normal; // point on the triangle-plane
+            Vec3d inedge1 = posc - pos1, inedge2 = posc - pos2, inedge3 = posc - pos3;
+            double totalArea = normal.norm();
+            double alpha = (inedge2.cross(inedge3)).norm(), beta = (inedge3.cross(inedge1)).norm(), gamma = (inedge1.cross(inedge2)).norm();
+            double errorRatio = 0.0005;
+
+            if (abs(totalArea - alpha - beta - gamma) < totalArea * errorRatio) // check the area sum to verify whether point in the triangle mesh
+            {
+                min_disp = disp;
+                min_normal = _normal;
+            }
+        }
+    }
+
+    if (min_disp < 0)
+    {
+        Vec3d dp = pos - pos_prev; // delta pos
+        double dp_n_norm = dp.dot(min_normal);
+        Vec3d dp_t = dp - dp_n_norm * min_normal; // delta pos tangential to plane
+        double dp_t_norm = dp_t.norm();
+        double  dp_t_fs = -min_disp * _FRICTION_S; // maximun friction correction
+
+        //  move out of the ground         static friction <-> dynamic friction
+        Vec3d offset = min_disp * min_normal + dp_t * (dp_t_fs > dp_t_norm ?
+            1 : fmin(1.0, -min_disp * _FRICTION_K / dp_t_norm));
+        if (offset.norm() > 0.05)
+        {
+            offset = offset / offset.norm() * 0.05;
+        }
+        pos -= offset;
+
+        dp_n_norm = (pos - pos_prev).dot(min_normal);
+        double vn = dp_n_norm / dt;
+        if (vn < 0) {
+            double vn_old = vel.dot(min_normal);
+            // grivity at negative plane direction
+            double e = fabs(vn) < 2 * (-global_acc.dot(min_normal)) * dt ? 0 : 1; // TODO gravity as variable
+            pos_prev -= (-vn - e * fmin(vn_old * 0.1, 0.0)) * dt * min_normal;
+        }
+    }
+}
+
+
 #ifdef GRAPHICS
 
 using TriangleList = std::vector<glm::uvec3>; // triangle indices
@@ -465,4 +572,132 @@ void ContactPlane::draw() {
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
 }
+#endif
+
+
+#ifdef GRAPHICS
+
+void ContactTerrain::generateBuffers() {
+
+    int nd = 2 * nr; // normalized plane diameter
+    int num_square = nd * nd;
+    int num_vertex = num_square * 6;
+    gl_draw_size = num_square * 6 * (draw_back_face ? 2 : 1);
+
+    std::vector<VERTEX_DATA> vertex_data(num_vertex);
+    std::vector<GLuint> triangle(gl_draw_size); //triangle indices
+    GLuint triangle_order[6] = { 0,1,2,3,4,5 };
+
+    // copy from vertices to positions (type conversion)
+    std::vector<glm::vec3> positions;
+    positions.resize(vertices.size());
+    for (int i = 0; i < vertices.size(); ++i)
+        positions[i] = glm::vec3((GLfloat)vertices[i].x, (GLfloat)vertices[i].y, (GLfloat)vertices[i].z);
+
+#pragma omp parallel for
+    for (int i = 0; i < nd; ++i)
+    {
+        for (int j = 0; j < nd; ++j)
+        {
+            int vert_start = 6 * (i * nd + j);
+            int position_start = i * (nd + 1) + j;
+            glm::vec3 square[6] = { positions[position_start], positions[position_start + nd + 1], positions[position_start + nd + 2], positions[position_start], positions[position_start + nd + 2], positions[position_start + 1] };
+            glm::vec3 c = (i + j) % 2 == 0 ? glm::vec3(0.729f, 0.78f, 0.655f) : glm::vec3(0.533f, 0.62f, 0.506f);
+
+            // Calcluate the normals of two triangles
+            glm::vec3 n1 = glm::normalize(glm::cross(square[1] - square[0], square[2] - square[0]));
+            glm::vec3 n2 = glm::normalize(glm::cross(square[4] - square[3], square[5] - square[3]));
+
+            for (int k = 0; k < 6; ++k)
+            {
+                int vid = vert_start + k; //vertex index
+                vertex_data[vid].pos = square[k];
+                vertex_data[vid].normal = k < 3 ? n1 : n2;
+                vertex_data[vid].color = c;
+            }
+
+            // triangles
+            int index_start = 6 * (i * nd + j);
+
+            for (int k = 0; k < 6; ++k) //2 triangles of a quad
+            {
+                triangle[index_start + k] = vert_start + triangle_order[k];
+            }
+        }
+    }
+    if (draw_back_face) {//draw front and back
+        int offset = gl_draw_size / 2;
+        for (int i = 0; i < offset; i++)
+        {
+            triangle[offset + i] = triangle[offset - i - 1];
+        }
+    }
+
+    glGenBuffers(1, &vertex_buffer); // create buffer for these vertices
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTEX_DATA) * vertex_data.size(), vertex_data.data(), GL_DYNAMIC_DRAW);
+
+    glGenBuffers(1, &triangle_buffer); // buffer for the triangle
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint) * triangle.size(), triangle.data(), GL_DYNAMIC_DRAW);
+
+    // (optional) unbind to avoid accidental modification of the buffers
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    _initialized = true;
+
+}
+
+void ContactTerrain::draw() {
+
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    // 1st attribute buffer : vertices
+    glVertexAttribPointer(
+        0,                  // attribute. No particular reason for 0, but must match the layout in the shader.
+        3,                  // size
+        GL_FLOAT,           // type
+        GL_FALSE,           // normalized?
+        sizeof(VERTEX_DATA),// stride
+        (void*)0            // array buffer offset
+    );
+    glEnableVertexAttribArray(0);
+
+    //color;
+    glVertexAttribPointer(
+        1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
+        3,                                // size
+        GL_FLOAT,                         // type
+        GL_FALSE,                         // normalized?
+        sizeof(VERTEX_DATA),              // stride
+        (void*)(sizeof(VERTEX_DATA::pos)) // array buffer offset
+    );
+    glEnableVertexAttribArray(1);
+
+    // normal;
+    glVertexAttribPointer(
+        2,                                // attribute. No particular reason for 1, but must match the layout in the shader.
+        3,                                // size
+        GL_FLOAT,                         // type
+        GL_FALSE,                         // normalized?
+        sizeof(VERTEX_DATA),              // stride
+        (void*)(sizeof(VERTEX_DATA::pos) + (sizeof(VERTEX_DATA::color)))// array buffer offset
+    );
+    glEnableVertexAttribArray(2);
+
+    // Draw the triangle !
+    //glDrawArrays(GL_TRIANGLES, 0, gl_draw_size); // number of vertices
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer);
+    glDrawElements(GL_TRIANGLES, gl_draw_size, GL_UNSIGNED_INT, (void*)0);
+
+    // (optional) unbind to avoid accidental modification of the buffers
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+
+}
+
 #endif

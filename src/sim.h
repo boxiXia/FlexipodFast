@@ -45,6 +45,7 @@ For external library that works with cpp but not with .cu, wrap host code with
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+#include <thrust/copy.h>
 
 #include <exception>
 #include <algorithm>
@@ -285,6 +286,49 @@ struct MASS {
 	}
 };
 
+struct TERRAININFO {
+	Vec3d* pos;
+	Vec3d* normal;
+
+	// here num represents the normalized diameter of the plane
+	int num = 0;
+	inline int size() const { return num; }
+	int posnum = 0;
+	int normalnum = 0;
+
+	TERRAININFO() {}
+	TERRAININFO(int num, bool on_host) {
+		init(num, on_host);
+	}
+	// initialize and copy the state from other SPRING object. must keep the second argument//
+	TERRAININFO(TERRAININFO other, bool on_host, cudaStream_t stream = (cudaStream_t)0) {
+		init(other.num, on_host);
+		copyFrom(other, stream);
+	}
+
+	void init(int num, bool on_host = true) {
+		this->num = num;
+		this->posnum = (num + 1) * (num + 1);
+		this->normalnum = num * num * 2;
+
+		allocateMemory(on_host, this->posnum, pos);
+		allocateMemory(on_host, this->normalnum, normal);
+		gpuErrchk(cudaPeekAtLastError());
+	}
+
+	void copyFrom(const TERRAININFO& other, cudaStream_t stream = (cudaStream_t)0) {
+		cudaMemcpyAsync(pos, other.pos, posnum * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(normal, other.normal, normalnum * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		gpuErrchk(cudaPeekAtLastError());
+	}
+
+	void copyFrom(const std::vector<Vec3d> posdata, const std::vector<Vec3d> normaldata, cudaStream_t stream = (cudaStream_t)0) {
+		cudaMemcpyAsync(pos, &posdata[0], posnum * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		cudaMemcpyAsync(normal, &normaldata[0], normalnum * sizeof(Vec3d), cudaMemcpyDefault, stream);
+		gpuErrchk(cudaPeekAtLastError());
+	}
+};
+
 struct SPRING {
 	double* compliance = nullptr; // spring constant (N/m)
 	double* rest = nullptr; // spring rest length (meters)
@@ -370,6 +414,30 @@ struct RollingBuffer {
 };
 /**********************************/
 
+// for storing grid info
+struct GridInfo {
+	// store two arrays
+	std::vector<std::vector<int>> triangle_vector;
+	int* triangle_grid;
+	Vec3d min_constraints;
+	Vec3d cell_dimension;
+	int grid_radius;
+	int grid_size;
+	int triangle_per_cell;
+	bool grid_init = false;
+
+	void init(int triangle_num)
+	{
+		allocateMemory(false, triangle_num, triangle_grid);
+		gpuErrchk(cudaPeekAtLastError());
+		setMemory(triangle_grid, -1, triangle_num, false);
+	}
+
+	void resetMemory()
+	{
+		setMemory(triangle_grid, -1, grid_size * triangle_per_cell, false);
+	}
+};
 
 struct JOINT {
 	/*--------------- joint-----------------------*/
@@ -1021,6 +1089,17 @@ public:
 	TRIANGLE d_triangle; // a flat view of all triangles
 	JOINT d_joint;
 
+	// 3d grid to store the grids containing which triangle
+	GridInfo gridInfo;
+	void updateGridInfo();
+	void computeHash(double& min, double& min_coord, double& max_coord, double& radius, const int grid_radius, std::pair<int, int>& ret);
+
+	// test for support terrains Mingxuan
+	// Vec3d* d_vertices;
+	// Vec3d* d_normals;
+	TERRAININFO vertex;
+	TERRAININFO d_vertex;
+
 	// host (backup);
 	MASS backup_mass;
 	SPRING backup_spring;
@@ -1075,6 +1154,9 @@ public:
 	void createPlane(const Vec3d& abc, const double d, const double FRICTION_K = 0, const double FRICTION_S = 0,
 		/*rendering:*/float square_size = 0.5f, float plane_radius = 5);
 	void createBall(const Vec3d& center, const double r); // creates ball with radius r at position center
+	// creates terrain that has randomized normals over the surface
+	void createTerrain(const double FRICTION_K = 0, const double FRICTION_S = 0, float unit_size = 0.5f,
+		float terrain_radius = 5, double terrain_waviness = 0.3);
 	void clearConstraints(); // clears global constraints only
 
 	void setBreakpoint(const double time, const bool should_end = false); // tell the program to stop at the set time (doesn't hang).
@@ -1142,6 +1224,7 @@ private:
 	std::vector<Constraint*> constraints;
 	thrust::device_vector<CudaContactPlane> d_planes; // used for constraints
 	thrust::device_vector<CudaBall> d_balls; // used for constraints
+	thrust::device_vector<CudaContactTerrain> d_terrains;
 
 	CUDA_GLOBAL_CONSTRAINTS d_constraints;
 	bool SHOULD_UPDATE_CONSTRAINT = true; // a flag indicating whether constraint should be updated

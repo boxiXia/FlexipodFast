@@ -110,14 +110,126 @@ __global__ void pbdSolveDist(
 }
 
 
+#define EPSILON 0.000001f
+__device__ bool lineSegIntersectTri(
+	Vec3d& pos,
+	Vec3d& pos_prev,
+	Vec3d& pos1,
+	Vec3d& pos2,
+	Vec3d& pos3,
+	Vec3d& point
+) {
+	Vec3d e0 = pos2 - pos1;
+	Vec3d e1 = pos3 - pos1;
+
+	Vec3d dir = pos - pos_prev;
+	Vec3d dir_norm = dir.normalize();
+
+	Vec3d h = dir_norm.cross(e1);
+	const double a = e0.dot(h);
+
+	if (a > -EPSILON && a < EPSILON) {
+		return false;
+	}
+
+	Vec3d s = pos_prev - pos1;
+	const double f = 1.0 / a;
+	const double u = f * s.dot(h);
+
+	if (u < 0.0 || u > 1.0) {
+		return false;
+	}
+
+	Vec3d q = s.cross(e0);
+	const double v = f * dir_norm.dot(q);
+
+	if (v < 0.0 || u + v > 1.0) {
+		return false;
+	}
+
+	const double t = f * e1.dot(q);
+
+	if (t > EPSILON && t < sqrt(dir.dot(dir))) { // segment intersection
+		point = pos_prev + dir_norm * t;
+		return true;
+	}
+
+	return false;
+}
+
+
+__device__ void pbdSolveSelfCollision(
+	int& index,
+	Vec3d& pos,
+	Vec3d& pos_prev,
+	Vec3d& vel,
+	Vec3d* masspos,
+	Vec3i* triangles,
+	Vec3d& min_constraints,
+	Vec3d& cell_dimension,
+	int* grids,
+	int& grid_radius,
+	int& triangle_per_cell,
+	const int& numtriangles,
+	const Vec3d global_acc,
+	const double dt
+) {
+	int x = (int)floor((pos.x - min_constraints.x) / cell_dimension.x);
+	int y = (int)floor((pos.y - min_constraints.y) / cell_dimension.y);
+	int z = (int)floor((pos.z - min_constraints.z) / cell_dimension.z);
+	int grid_index = (x + y * grid_radius + z * triangle_per_cell) * triangle_per_cell;
+
+	if (grid_radius > 0)
+	{
+		for (int i = 0; i < triangle_per_cell; ++i)
+		{
+			Vec3i& triangle = triangles[grids[grid_index + i]];
+
+			if (triangle.x == index || triangle.y == index || triangle.z == index)
+			{
+				continue;
+			}
+
+			Vec3d point;
+			if (lineSegIntersectTri(pos, pos_prev, masspos[triangle.x], masspos[triangle.y], masspos[triangle.z], point))
+			{
+				pos = point;
+				return;
+			}
+		}
+	}
+	/*
+	for (int i = 0; i < numtriangles; i++)
+	{
+		Vec3i& triangle = triangles[i];
+
+		if (triangle.x == index || triangle.y == index || triangle.z == index)
+		{
+			continue;
+		}
+
+		Vec3d point;
+		if (lineSegIntersectTri(pos, pos_prev, masspos[triangle.x], masspos[triangle.y], masspos[triangle.z], point))
+		{
+			pos = point;
+			return;
+		}
+	}
+	*/
+}
+
+
 __global__ void pbdSolveContact(
 	const MASS mass,
 	const CUDA_GLOBAL_CONSTRAINTS c,
 	const Vec3d global_acc,
-	const double dt
+	const double dt,
+	const TERRAININFO vertex,
+	const TRIANGLE triangle,
+	GridInfo gridInfo,
 #ifdef ROTATION
-	,const JOINT joint
-#endif // ROTATION
+	const JOINT joint
+#endif
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
@@ -138,16 +250,26 @@ __global__ void pbdSolveContact(
 		Vec3d _vel_(vel);// for computing acceleration
 
 		if (mass.flag[i] & MASS_FLAG_CONSTRAIN) { //only apply to constrain set of masses
-			for (int j = 0; j < c.num_planes; j++) { // global constraints
+			/*for (int j = 0; j < c.num_planes; j++) { // global constraints
 				c.d_planes[j].solveDist(
 					 pos, pos_prev, vel, global_acc, dt); // todo fix this 
+			}*/
+			for (int j = 0; j < c.num_terrains; ++j) {
+				c.d_terrains[j].solveDist(
+					pos, pos_prev, vel, global_acc, dt, vertex.pos, vertex.normal);
 			}
 			//for (int j = 0; j < c.num_balls; j++) {
 			//	c.d_balls[j].applyForce(force, pos, vel);
 			//}
 			//mass.force_constraint[i] = force - _force;
 		}
-	
+
+		if (mass.flag[i] & (true << MASS_FLAG_CONSTRAIN_ID)) // call the function only if the point on the surface
+		{
+			// printf("the point is on the surface");
+			pbdSolveSelfCollision(i, pos, pos_prev, vel, mass.pos, triangle.triangle, gridInfo.min_constraints, gridInfo.cell_dimension, gridInfo.triangle_grid, gridInfo.grid_radius, gridInfo.triangle_per_cell, triangle.num, global_acc, dt);
+		}
+
 		mass.force_constraint[i] = (pos - _pos_) / (mass.inv_m[i] * dt * dt);
 		// TODO, update force (not needed yet)
 
@@ -171,7 +293,6 @@ __global__ void pbdSolveContact(
 		mass.acc[i] = (vel - _vel_) / dt; // for computing acceleration
 	}
 }
-
 
 
 __global__ void pbdSolveVel(
@@ -463,8 +584,10 @@ __host__ void Simulation::start() {
 
 	d_constraints.d_balls = thrust::raw_pointer_cast(&d_balls[0]);
 	d_constraints.d_planes = thrust::raw_pointer_cast(&d_planes[0]);
+	d_constraints.d_terrains = thrust::raw_pointer_cast(&d_terrains[0]);
 	d_constraints.num_balls = d_balls.size();
 	d_constraints.num_planes = d_planes.size();
+	d_constraints.num_terrains = d_terrains.size();
 
 	SHOULD_UPDATE_CONSTRAINT = false;
 
@@ -600,16 +723,18 @@ void Simulation::updatePhysics() { // repeatedly start next
 			static bool graphCreated = false;
 			static cudaGraph_t graph;
 			static cudaGraphExec_t instance;
+			// updateGridInfo();
 			if (!graphCreated) {
 				// ref https://developer.nvidia.com/blog/cuda-graphs/
 				cudaStreamBeginCapture(stream[CUDA_DYNAMICS_STREAM], cudaStreamCaptureModeGlobal);
 #ifdef ROTATION
 				cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 				cudaMemsetAsync(d_joint.torque, 0, d_joint.num * sizeof(double), stream[CUDA_DYNAMICS_STREAM]);
+
 				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // pbd kernel
 					pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt, d_joint, i== NUM_QUEUED_KERNELS-1? true:false);
-					pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt, d_joint);
-				} 
+					pbdSolveContact << < mass_grid_size, mass_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_constraints, global_acc, dt, d_vertex, d_triangle, gridInfo, d_joint);
+				}
 				cudaMemcpyAsync(joint.torque, d_joint.torque, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 #else
 				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // pbd kernel
@@ -684,6 +809,105 @@ void Simulation::updatePhysics() { // repeatedly start next
 	}
 }
 
+
+void Simulation::updateGridInfo()
+{
+	static const int grid_radius = ceil(pow(d_triangle.num, 1.0/3.0));
+	static const int grid_size = pow(grid_radius, 3);
+	static const int grid_radius_sq = pow(grid_radius, 2);
+
+	if (!gridInfo.grid_init)
+	{
+		// according to the size, make an assumption
+		gridInfo.grid_radius = grid_radius;
+		gridInfo.grid_size = grid_size;
+		gridInfo.triangle_per_cell = d_triangle.num / grid_radius / 3;
+		gridInfo.init(grid_size * gridInfo.triangle_per_cell);
+		gridInfo.grid_init = true;
+
+		gridInfo.triangle_vector.resize(grid_size);
+	}
+
+	for (int i = 0; i < grid_size; ++i)
+	{
+		gridInfo.triangle_vector[i].clear();
+	}
+	gridInfo.resetMemory();
+
+	gridInfo.min_constraints = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
+	Vec3d max_constraints = Vec3d(-DBL_MAX, -DBL_MAX, -DBL_MAX);
+
+	// go through all particles to find min and max values in x,y,z dimensions
+	for (int i = 0; i < mass.num; ++i)
+	{
+		Vec3d p = mass.pos[i];
+		gridInfo.min_constraints.x = std::min(gridInfo.min_constraints.x, p.x);
+		gridInfo.min_constraints.y = std::min(gridInfo.min_constraints.y, p.y);
+		gridInfo.min_constraints.z = std::min(gridInfo.min_constraints.z, p.z);
+
+		max_constraints.x = std::max(max_constraints.x, p.x);
+		max_constraints.y = std::max(max_constraints.y, p.y);
+		max_constraints.z = std::max(max_constraints.z, p.z);
+	}
+
+	gridInfo.cell_dimension = (max_constraints - gridInfo.min_constraints) / (double)grid_radius;
+
+	for (int i = 0; i < triangle.num; ++i)
+	{
+		Vec3i indices = triangle.triangle[i];
+		if (!(mass.flag[indices.x] & mass.flag[indices.y] & mass.flag[indices.z] & (true << MASS_FLAG_CONSTRAIN_ID)))
+		{
+			// check whether all three vertices of the triangle is outside
+			continue;
+		}
+		Vec3d p1 = mass.pos[indices.x], p2 = mass.pos[indices.y], p3 = mass.pos[indices.z];
+
+		Vec3d min_dimensions, max_dimensions;
+		min_dimensions.x = std::min(p1.x, p2.x);
+		min_dimensions.x = std::min(min_dimensions.x, p3.x);
+		min_dimensions.y = std::min(p1.y, p2.y);
+		min_dimensions.y = std::min(min_dimensions.y, p3.y);
+		min_dimensions.z = std::min(p1.z, p2.z);
+		min_dimensions.z = std::min(min_dimensions.z, p3.z);
+
+		max_dimensions.x = std::max(p1.x, p2.x);
+		max_dimensions.x = std::max(max_dimensions.x, p3.x);
+		max_dimensions.y = std::max(p1.y, p2.y);
+		max_dimensions.y = std::max(max_dimensions.y, p3.y);
+		max_dimensions.z = std::max(p1.z, p2.z);
+		max_dimensions.z = std::max(max_dimensions.z, p3.z);
+
+		std::pair<int, int> x_indices, y_indices, z_indices;
+		computeHash(gridInfo.min_constraints.x, min_dimensions.x, max_dimensions.x, gridInfo.cell_dimension.x, grid_radius, x_indices);
+		computeHash(gridInfo.min_constraints.y, min_dimensions.y, max_dimensions.y, gridInfo.cell_dimension.y, grid_radius, y_indices);
+		computeHash(gridInfo.min_constraints.z, min_dimensions.z, max_dimensions.z, gridInfo.cell_dimension.z, grid_radius, z_indices);
+
+		for (int x = x_indices.first; x <= x_indices.second; ++x)
+			for (int y = y_indices.first; y <= y_indices.second; ++y)
+				for (int z = z_indices.first; z <= z_indices.second; ++z)
+					gridInfo.triangle_vector[x + y * grid_radius + z * grid_radius_sq].push_back(i);
+	}
+
+	// update the value to triangle_grid
+	for (int i = 0; i < grid_size; ++i)
+	{
+		for (int j = 0; j < gridInfo.triangle_vector[i].size(); ++j)
+		{
+			gridInfo.triangle_grid[i * gridInfo.triangle_per_cell + j] = gridInfo.triangle_vector[i][j];
+		}
+	}
+}
+
+void Simulation::computeHash(double& min, double& min_coord, double& max_coord, double& radius, const int grid_radius, std::pair<int, int>& ret)
+{
+	int min_index = (int)floor((min_coord - min) / radius);
+	int max_index = (int)floor((max_coord - min) / radius);
+
+	ret.first = min_index < 0 ? 0 : min_index;
+	ret.first = ret.first >= grid_radius ? grid_radius - 1 : ret.first;
+	ret.second = min_index < 0 ? 0 : min_index;
+	ret.second = ret.second >= grid_radius ? grid_radius - 1 : ret.second;
+}
 
 #ifdef UDP
 bool Simulation::updateUdpReceive() {
@@ -833,6 +1057,10 @@ void Simulation::freeGPU() {
 
 	d_planes.clear();
 	d_planes.shrink_to_fit();
+
+	d_terrains.clear();
+	d_terrains.shrink_to_fit();
+
 	printf("GPU freed\n");
 }
 
@@ -858,6 +1086,47 @@ void Simulation::createPlane(const Vec3d& abc, const double d, const double FRIC
 
 	//d_planes.push_back(CudaContactPlane(*new_plane));
 	SHOULD_UPDATE_CONSTRAINT = true;
+}
+
+// creates a terrain
+void Simulation::createTerrain(const double FRICTION_K, const double FRICTION_S,
+	float unit_size, float terrain_radius, double terrain_waviness) {
+	if (ENDED) { throw std::runtime_error("The simulation has ended. New objects cannot be created."); }
+	ContactTerrain* new_terrain = new ContactTerrain(unit_size, terrain_radius, terrain_waviness);
+	assert(FRICTION_K >= 0);// make sure the friction coefficient are meaningful values
+	assert(FRICTION_S >= 0);
+	new_terrain->_FRICTION_K = FRICTION_K;
+	new_terrain->_FRICTION_S = FRICTION_S;
+	constraints.push_back(new_terrain);
+
+	CudaContactTerrain cuda_contact_terrain;
+	cuda_contact_terrain._FRICTION_K = FRICTION_K;
+	cuda_contact_terrain._FRICTION_S = FRICTION_S;
+	cuda_contact_terrain._nr = new_terrain->nr;
+	cuda_contact_terrain._unit = (double)new_terrain->unit;
+	cuda_contact_terrain._waviness = new_terrain->waviness;
+	cuda_contact_terrain._vertices = &new_terrain->vertices[0];
+	cuda_contact_terrain._normals = &new_terrain->normals[0];
+
+	d_terrains.push_back(cuda_contact_terrain);
+
+	// Mingxuan
+	// upload terrain data to cuda
+	// cudaMemcpyAsync(d_vertices, &new_terrain->vertices[0], new_terrain->vertices.size()*sizeof(Vec3d), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+	// cudaMemcpyAsync(d_normals, &new_terrain->normals[0], new_terrain->normals.size()*sizeof(Vec3d), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+	vertex = TERRAININFO(2 * new_terrain->nr, true);
+	for (int i = 0; i < new_terrain->vertices.size(); ++i)
+	{
+		vertex.pos[i] = new_terrain->vertices[i];
+	}
+	for (int i = 0; i < new_terrain->normals.size(); ++i)
+	{
+		vertex.normal[i] = new_terrain->normals[i];
+	}
+
+	d_vertex = TERRAININFO(vertex, false, stream[CUDA_MEMORY_STREAM]);
+	// d_planes.push_back(CudaContactPlane(*new_plane));
+	// SHOULD_UPDATE_CONSTRAINT = true;
 }
 
 void Simulation::createBall(const Vec3d& center, const double r) { // creates ball with radius r at position center

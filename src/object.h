@@ -167,17 +167,127 @@ struct CudaContactPlane {
 
 
 
+// creates terrain with randomized normals over the surface
+struct ContactTerrain : public Constraint {
+
+    double _FRICTION_K; // kinectic friction coefficient
+    double _FRICTION_S; // static friction coefficient
+
+    ContactTerrain(float unit_size, float terrain_radius, double terrain_waviness) {
+
+        _FRICTION_K = 0.0;
+        _FRICTION_S = 0.0;
+
+#ifdef GRAPHICS
+
+        _initialized = false;
+        unit = unit_size; // per square scale (square size [m])
+        r = terrain_radius; //radius the contact terrain 
+        nr = int(r / unit); // normalized radius of the terrain
+        waviness = terrain_waviness;
+
+        srand(time(NULL));
+        double range = waviness * 2;
+        int nd = 2 * nr;
+
+        vertices.resize((nd + 1) * (nd + 1));
+        // generate the positions
+        for (int i = 0; i <= nd; ++i)
+        {
+            double x = (i - nr) * unit;
+            for (int j = 0; j <= nd; ++j)
+            {
+                double y = (j - nr) * unit;
+                double z = -1.0 + (double)rand() / (double)RAND_MAX * range - waviness;
+
+                vertices[i * (nd + 1) + j] = Vec3d(x, y, z);
+            }
+        }
+
+        normals.resize(nd * nd * 2);
+        // generate the normals
+        for (int i = 0; i < nd; ++i)
+        {
+            for (int j = 0; j < nd; ++j)
+            {
+                int index = i * (nd + 1) + j;
+                Vec3d corners_pos[4] = { vertices[index], vertices[index + nd + 1], vertices[index + nd + 2], vertices[index + 1] };
+
+                Vec3d normal1 = (corners_pos[1] - corners_pos[0]).cross(corners_pos[2] - corners_pos[0]);
+                Vec3d normal2 = (corners_pos[2] - corners_pos[0]).cross(corners_pos[3] - corners_pos[0]);
+
+                normals[2 * (i * nd + j)] = normal1;
+                normals[2 * (i * nd + j) + 1] = normal2;
+            }
+        }
+#endif
+    }
+
+#ifdef GRAPHICS
+
+    ~ContactTerrain() {
+        glDeleteBuffers(1, &vertex_buffer);
+        glDeleteBuffers(1, &triangle_buffer);
+    }
+
+    void generateBuffers();
+    void draw();
+
+    GLuint vertex_buffer;
+    GLuint triangle_buffer; //index buffer
+
+    float waviness; // the waviness that the terrain may differ from last point
+    float unit; // per square scale (square size [m])
+    float r; //radius the contact terrain
+    bool draw_back_face = false; //wether to draw the back face
+    int nr; // normalized radius of the terrain
+    int gl_draw_size; // total number of points
+
+    std::vector<Vec3d> vertices; // vertices positions
+    std::vector<Vec3d> normals; // normal of each triangle
+
+#endif
+
+};
+
+struct CudaContactTerrain {
+
+    __device__  void applyForce(Vec3d& force, const Vec3d& pos, const Vec3d& vel);
+
+    __device__  void solveDist(
+        Vec3d& pos,
+        Vec3d& pos_prev,
+        Vec3d& vel,
+        const Vec3d& global_acc,
+        const double dt,
+        // Mingxuan Li
+        const Vec3d* vertices,
+        const Vec3d* normals
+    );
+
+    double _FRICTION_K = 0.0;
+    double _FRICTION_S = 0.0;
+
+    int _nr;
+    double _unit;
+    double _waviness;
+    Vec3d* _vertices;
+    Vec3d* _normals;
+};
+
 struct CUDA_GLOBAL_CONSTRAINTS {
-    CudaContactPlane * d_planes;
-    CudaBall * d_balls;
+    CudaContactPlane* d_planes;
+    CudaBall* d_balls;
+    CudaContactTerrain* d_terrains;
 
     size_t num_planes;
     size_t num_balls;
+    size_t num_terrains;
 };
 
 
 enum CONSTRAINT_TYPE {
-    CONTACT_PLANE, BALL
+    CONTACT_PLANE, BALL, CONTACT_TERRAIN
 };
 
 
