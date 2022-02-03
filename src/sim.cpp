@@ -174,7 +174,7 @@ void Simulation::runImgui() {
 #endif // UDP
 
 		// physics
-		if (joint_control.size() > 0 && ImGui::CollapsingHeader("physics")) {
+		if (joint.size() > 0 && ImGui::CollapsingHeader("physics")) {
 
 			static double dt_min = 1e-7;
 			static double dt_max = 1e-3;
@@ -183,7 +183,7 @@ void Simulation::runImgui() {
 		}
 
 		// joint control
-		if (joint_control.size() > 0 && ImGui::CollapsingHeader("Joint control")) {
+		if (joint.size() > 0 && ImGui::CollapsingHeader("Joint control")) {
 			if (ImGui::BeginTable("split", 5, ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBodyUntilResize)){
 				// We could also set ImGuiTableFlags_SizingFixedFit on the table and all columns will default to ImGuiTableColumnFlags_WidthFixed.
 				ImGui::TableSetupColumn("id", ImGuiTableColumnFlags_WidthFixed); // Default to 100.0f
@@ -196,7 +196,7 @@ void Simulation::runImgui() {
 
 				
 
-				for (int i = 0; i < joint_control.size(); i++) {
+				for (int i = 0; i < joint.size(); i++) {
 					if (i == 0) {
 						for (int col = 0; col < 5; col++) {
 							ImGui::TableSetColumnIndex(col);
@@ -209,17 +209,17 @@ void Simulation::runImgui() {
 					ImGui::Text("%2d", i);
 
 					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%+6.3f", joint_control.pos[i]);
+					ImGui::Text("%+6.3f", joint.pos[i]);
 
 					ImGui::TableSetColumnIndex(2);
 					char label_jpd[10];//joint_pos_des
 					sprintf(label_jpd, "#jpd_%d", i);
-					ImGui::DragScalar(label_jpd, ImGuiDataType_Double, &(joint_control.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
+					ImGui::DragScalar(label_jpd, ImGuiDataType_Double, &(joint.pos_desired[i]), 0.001f, NULL, NULL, "%6.3f");
 
 					ImGui::TableSetColumnIndex(3);
 					char label_jvd[10];//joint_pos_des
 					sprintf(label_jvd, "#jvd_%d", i);//joint_vel_des
-					ImGui::DragScalar(label_jvd, ImGuiDataType_Double, &(joint_control.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
+					ImGui::DragScalar(label_jvd, ImGuiDataType_Double, &(joint.vel_desired[i]), 0.005f, NULL, NULL, "%6.3f");
 
 					ImGui::TableSetColumnIndex(4);
 					ImGui::Text("%+6.3f", joint.torque[i]);
@@ -228,8 +228,8 @@ void Simulation::runImgui() {
 			}
 			
 			// ref: https://github.com/ocornut/imgui/blob/838c16533d3a76b83f0ca73045010d463b73addf/imgui_demo.cpp#L687
-			const char* elem_name = (joint_control.mode == JointControlMode::vel) ? "vel" : "pos";
-			ImGui::SliderInt("control mode", &((int&)joint_control.mode), 0, 1, elem_name);
+			const char* elem_name = (joint.mode == JointControlMode::vel) ? "vel" : "pos";
+			ImGui::SliderInt("control mode", &((int&)joint.mode), 0, 1, elem_name);
 		
 		}
 
@@ -310,16 +310,16 @@ DataSend::DataSend(
 	const UDP_HEADER& header,
 	const Simulation* s) : header(header), T(s->T)
 {
-	const auto& joint_control = s->joint_control;
+	const auto& joint = s->joint;
 	const auto& body = s->body;
-	int num_joint = joint_control.size();
+	int num_joint = joint.size();
 	joint_pos = std::vector<float>(2 * num_joint, 0);
-	joint_vel = std::vector<float>(joint_control.vel, joint_control.vel + num_joint);
+	joint_vel = std::vector<float>(joint.vel, joint.vel + num_joint);
 	joint_torque = std::vector<float>(s->joint.torque, s->joint.torque+ num_joint);
 
-	for (auto i = 0; i < joint_control.size(); i++) {
-		joint_pos[i * 2] = cosf(joint_control.pos[i]);
-		joint_pos[i * 2 + 1] = sinf(joint_control.pos[i]);
+	for (auto i = 0; i < joint.size(); i++) {
+		joint_pos[i * 2] = cosf(joint.pos[i]);
+		joint_pos[i * 2 + 1] = sinf(joint.pos[i]);
 	}
 	body.acc.fillArray(com_acc);
 	body.vel.fillArray(com_vel);

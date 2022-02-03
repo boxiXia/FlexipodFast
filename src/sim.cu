@@ -50,7 +50,7 @@ __global__ void pbdSolveDist(
 	const SPRING spring,
 	const double dt
 #ifdef ROTATION
-	,const JOINT joint,
+	,const CUDA_JOINT joint,
 	const bool compute_torque = false
 #endif // ROTATION
 ) {
@@ -116,14 +116,15 @@ __global__ void pbdSolveContact(
 	const Vec3d global_acc,
 	const double dt
 #ifdef ROTATION
-	,const JOINT joint
+	,const CUDA_JOINT joint
 #endif // ROTATION
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
 #ifdef ROTATION
 		if (i < joint.num) { // update joint pos
-			joint.pos[i] += joint.vel_desired[i] * dt;
+			//joint.pos[i] += joint.vel_desired[i] * dt;
+			joint.pos[i] += joint.delta_pos[i];
 		}
 #endif // ROTATION
 		Vec8b flag = mass.flag[i];
@@ -203,7 +204,7 @@ __global__ void updateSpring(
 	const SPRING spring,
 	const double dt
 #ifdef ROTATION
-	,const JOINT joint,
+	,const CUDA_JOINT joint,
 	const bool compute_torque = false
 #endif // ROTATION
 ) {
@@ -257,14 +258,15 @@ __global__ void updateMass(
 	const Vec3d global_acc,
 	const double dt
 #ifdef ROTATION
-	,const JOINT joint
+	,const CUDA_JOINT joint
 #endif // ROTATION
 ) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < mass.num) {
 #ifdef ROTATION
 		if (i < joint.num) { // update joint pos
-			joint.pos[i] += joint.vel_desired[i] * dt;
+			//joint.pos[i] += joint.vel_desired[i] * dt;
+			joint.pos[i] += joint.delta_pos[i];
 		}
 #endif // ROTATION
 		if (mass.flag[i] & MASS_FLAG_DOF) {
@@ -391,6 +393,289 @@ __global__ void updateTriangles(uint3* __restrict__ gl_ptr, const Vec3i* __restr
 #endif
 
 
+/*-------------------------- MASS ---------------------------------*/
+
+/*allocate memory and set initial values*/
+void MASS::init(int num, bool on_host) {
+	//allocateMemory(on_host, num, m);
+	allocateMemory(on_host, num, inv_m);
+	allocateMemory(on_host, num, pos);
+	allocateMemory(on_host, num, pos_prev);
+	allocateMemory(on_host, num, vel);
+	allocateMemory(on_host, num, acc);
+	allocateMemory(on_host, num, force);
+	allocateMemory(on_host, num, force_extern);
+	allocateMemory(on_host, num, force_constraint);
+	allocateMemory(on_host, num, color);
+	allocateMemory(on_host, num, flag);
+	gpuErrchk(cudaPeekAtLastError());
+	this->num = num;
+	// set inital values
+	setMemory(vel, 0, num, on_host);
+	setMemory(acc, 0, num, on_host);
+	setMemory(flag, MASS_FLAG_DOF, num, on_host);// set dof flag
+}
+
+/*copy data asynchronously from other MASS on specified cuda stream*/
+void MASS::copyFrom(const MASS& other, cudaStream_t stream) {
+	//cudaMemcpyAsync(m, other.m, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(inv_m, other.inv_m, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(pos_prev, other.pos_prev, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(force, other.force, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(force_extern, other.force_extern, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(force_constraint, other.force_constraint, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(color, other.color, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(flag, other.flag, num * sizeof(Vec8b), cudaMemcpyDefault, stream);
+	//this->num = other.num;
+	gpuErrchk(cudaPeekAtLastError());
+}
+
+/* copy construct from other MASS object on specified cuda stream*/
+MASS::MASS(MASS other, bool on_host, cudaStream_t stream) {
+	init(other.num, on_host);
+	copyFrom(other, stream);
+}
+
+/* copy pos, vel, acc from other MASS on specified cuda stream*/
+void MASS::CopyPosVelAccFrom(MASS& other, cudaStream_t stream) {
+	cudaMemcpyAsync(pos, other.pos, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(vel, other.vel, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(acc, other.acc, num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+}
+/*-----------------------------------------------------------------*/
+/*-------------------------- MASS ---------------------------------*/
+/* initialilze and allocate data*/
+void SPRING::init(int num, bool on_host) { // initialize
+	allocateMemory(on_host, num, compliance);
+	allocateMemory(on_host, num, rest);
+	allocateMemory(on_host, num, damping);
+	allocateMemory(on_host, num, edge);
+	allocateMemory(on_host, num, resetable);
+	allocateMemory(on_host, num, joint_id);
+	gpuErrchk(cudaPeekAtLastError());
+	this->num = num;
+}
+/*copy data asynchronously from other SPRING on specified cuda stream*/
+void SPRING::copyFrom(const SPRING& other, cudaStream_t stream) { // assuming we have enough streams
+	cudaMemcpyAsync(compliance, other.compliance, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(rest, other.rest, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(damping, other.damping, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(edge, other.edge, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(resetable, other.resetable, num * sizeof(bool), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(joint_id, other.joint_id, num * sizeof(int), cudaMemcpyDefault, stream);
+	gpuErrchk(cudaPeekAtLastError());
+	this->num = other.num;
+}
+
+/* copy construct from other SPRING object on specified cuda stream*/
+SPRING::SPRING(SPRING other, bool on_host, cudaStream_t stream) {
+	init(other.num, on_host);
+	copyFrom(other, stream);
+}
+/*-----------------------------------------------------------------*/
+/*-------------------------- JOINT ---------------------------------*/
+/* copy construct from other JOINT object on specified cuda stream*/
+JOINT::JOINT(JOINT other, bool on_host, cudaStream_t stream) {
+	init(other.num, other.vert_num, other.edge_num, on_host);
+	copyFrom(other, stream);
+}
+
+/*initialize & allocate memory. num:#of joint, vert_num:#of joint vertecies, edge_num:#of joint edges*/
+void JOINT::init(int num, int vert_num, int edge_num, bool on_host) {
+	// joint
+	this->num = num;
+	allocateMemory(on_host, num, anchor);
+	allocateMemory(on_host, num, delta_pos);
+	allocateMemory(on_host, num, pos);
+	allocateMemory(on_host, num, vel);
+	allocateMemory(on_host, num, pos_desired);
+	allocateMemory(on_host, num, vel_desired);
+	allocateMemory(on_host, num, left_coord);
+	allocateMemory(on_host, num, right_coord);
+	allocateMemory(on_host, num, torque);
+	// joint vertices
+	this->vert_num = vert_num;
+	allocateMemory(on_host, vert_num, vert_id);
+	allocateMemory(on_host, vert_num, vert_joint_id);
+	allocateMemory(on_host, vert_num, vert_dir);
+	// joint edges (friction spring)
+	this->edge_num = edge_num;
+	allocateMemory(on_host, edge_num, edge_id);
+	allocateMemory(on_host, edge_num, edge_joint_id);
+	allocateMemory(on_host, edge_num, edge_c);
+	gpuErrchk(cudaPeekAtLastError());
+}
+
+
+/*copy data asynchronously from other JOINT on specified cuda stream*/
+void JOINT::copyFrom(const JOINT& other, cudaStream_t stream) {
+	// joint
+	cudaMemcpyAsync(anchor, other.anchor, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(delta_pos, other.delta_pos, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(pos, other.pos, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(vel, other.vel, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(pos_desired, other.pos_desired, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(vel_desired, other.vel_desired, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(left_coord, other.left_coord, num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(right_coord, other.right_coord, num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(torque, other.torque, num * sizeof(double), cudaMemcpyDefault, stream);
+	// joint vertices
+	cudaMemcpyAsync(vert_id, other.vert_id, vert_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(vert_joint_id, other.vert_joint_id, vert_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(vert_dir, other.vert_dir, vert_num * sizeof(int), cudaMemcpyDefault, stream);
+	// joint edges
+	cudaMemcpyAsync(edge_id, other.edge_id, edge_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(edge_joint_id, other.edge_joint_id, edge_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(edge_c, other.edge_c, edge_num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	gpuErrchk(cudaPeekAtLastError()); // cuda ERROR CHECK
+}
+
+/*initialze from given model*/
+void JOINT::init(const Model& robot, bool on_host) {
+
+	const auto& fri_spring = robot.id_edges.at("fri_spring");//edges ids
+	const auto& mass_pos = robot.vertices;
+	const auto& std_joints = robot.joints;
+	const auto& edges = robot.edges;
+	num = std_joints.size();
+	vert_num = 0;
+	for each (const auto & std_joint in std_joints)// get the total number of the points in all joints
+		vert_num += std_joint.left.size() + std_joint.right.size();
+	edge_num = fri_spring.back() - fri_spring.front();
+
+	init(num, vert_num, edge_num, on_host);
+	if (on_host) { // copy the std_joints to this
+		int vert_offset = 0;//offset the vert index by vert_offset
+		int edge_offset = 0;//offset the edge index by edge_offset
+
+		for (int jid = 0; jid < num; jid++)// jid:joint_index
+		{
+			const StdJoint& std_joint = std_joints[jid];
+			anchor[jid] = std_joint.anchor;
+			left_coord[jid] = std_joint.left_coord;
+			right_coord[jid] = std_joint.right_coord;
+
+			Vec3d rotation_axis = computeRotationAxis(mass_pos.data(), jid);
+			pos[jid] = computeJointPos(mass_pos.data(), jid, rotation_axis);
+			pos_desired[jid] = pos[jid];
+			vel[jid] = 0;
+			vel_desired[jid] = 0;
+
+			/*----------- joint vertices ------------------*/
+			auto flattenVert = [&](auto& vert, int dir) {
+				// ref: https://docs.microsoft.com/en-us/cpp/cpp/lambda-expressions-in-cpp
+				for (auto i = 0; i < vert.size(); i++)
+				{
+					vert_id[vert_offset + i] = vert[i];
+					vert_joint_id[vert_offset + i] = jid;
+					vert_dir[vert_offset + i] = dir;
+				}
+				vert_offset += vert.size();//increment offset by num of left/right
+			};
+			flattenVert(std_joint.left, -1);
+			flattenVert(std_joint.right, 1);
+
+			/*----------- joint fri_spring ----------------*/
+			Vec3d p_anchor_0 = mass_pos[anchor[jid].x]; // anchor_0 vertex pos
+			double joint_pos = pos[jid]; // joint position [rad]
+
+			int fri_spring_start = fri_spring[jid]; // fri_spring index start (inclusive)
+			int fri_spring_end = fri_spring[jid + 1]; // fri_spring index end (exclusive)
+			int fri_len = fri_spring_end - fri_spring_start;
+			for (auto i = 0; i < fri_len; i++)
+			{
+				Vec2i ve = edges[i + fri_spring_start]; //left,right id of this fri_spring
+				// vector of v0 and v1
+				Vec3d v0 = mass_pos[ve.x] - p_anchor_0;
+				Vec3d v1 = mass_pos[ve.y] - p_anchor_0;
+
+				// distance tangential to rotation_axis 
+				double d0_t = v0.dot(rotation_axis);
+				double d1_t = v1.dot(rotation_axis);
+				double d01_t = d1_t - d0_t;
+
+				// vector normal to rotation_axis
+				Vec3d v0_n = v0 - d0_t * rotation_axis;
+				Vec3d v1_n = v1 - d1_t * rotation_axis;
+
+				// distance normal to rotation_axis
+				double d0_n = v0_n.norm();
+				double d1_n = v1_n.norm();
+
+				// signed angle between v0_n and v1_n about rotation_axis
+				double t01 = signedAngleBetween(v0_n, v1_n, rotation_axis);
+				// phase offset
+				double edge_phase = t01 - joint_pos; // joint_pos + edge_phase = t01
+
+
+				edge_c[edge_offset + i] = Vec3d(
+					d0_n * d0_n + d1_n * d1_n + d01_t * d01_t,
+					-2 * d0_n * d1_n,
+					edge_phase);
+
+				edge_id[edge_offset + i] = i + fri_spring_start;
+				edge_joint_id[edge_offset + i] = jid;
+			}
+			edge_offset += fri_len;
+		}
+	}
+}
+
+
+
+
+
+/*initialize & allocate memory. num:#of joint, edge_num:#of joint edges*/
+void CUDA_JOINT::init(int num, int edge_num) {
+	bool on_host = false;
+	// joint
+	this->num = num;
+	allocateMemory(on_host, num, anchor);
+	allocateMemory(on_host, num, delta_pos);
+	allocateMemory(on_host, num, pos);
+	allocateMemory(on_host, num, torque);
+	// joint edges (friction spring)
+	this->edge_num = edge_num;
+	allocateMemory(on_host, edge_num, edge_id);
+	allocateMemory(on_host, edge_num, edge_joint_id);
+	allocateMemory(on_host, edge_num, edge_c);
+	//gpuErrchk(cudaPeekAtLastError());
+}
+
+/*copy data asynchronously from other JOINT on specified cuda stream*/
+void CUDA_JOINT::copyFrom(const JOINT& other, cudaStream_t stream) {
+	// joint
+	cudaMemcpyAsync(anchor, other.anchor, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(delta_pos, other.delta_pos, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(pos, other.pos, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(torque, other.torque, num * sizeof(double), cudaMemcpyDefault, stream);
+	// joint edges
+	cudaMemcpyAsync(edge_id, other.edge_id, edge_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(edge_joint_id, other.edge_joint_id, edge_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(edge_c, other.edge_c, edge_num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	//gpuErrchk(cudaPeekAtLastError()); // cuda ERROR CHECK
+}
+
+/*copy data asynchronously from other JOINT on specified cuda stream*/
+void JOINT::copyFrom(const CUDA_JOINT& other, cudaStream_t stream) {
+	// joint
+	cudaMemcpyAsync(anchor, other.anchor, num * sizeof(Vec2i), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(delta_pos, other.delta_pos, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(pos, other.pos, num * sizeof(double), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(torque, other.torque, num * sizeof(double), cudaMemcpyDefault, stream);
+	// joint edges
+	cudaMemcpyAsync(edge_id, other.edge_id, edge_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(edge_joint_id, other.edge_joint_id, edge_num * sizeof(int), cudaMemcpyDefault, stream);
+	cudaMemcpyAsync(edge_c, other.edge_c, edge_num * sizeof(Vec3d), cudaMemcpyDefault, stream);
+	//gpuErrchk(cudaPeekAtLastError()); // cuda ERROR CHECK
+}
+
+/*-----------------------------------------------------------------*/
+
+
 //Simulation::Simulation() {
 //	//cudaSetDevice(1);
 //	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
@@ -408,7 +693,6 @@ __host__ Simulation::Simulation(size_t num_mass, size_t num_spring, size_t num_j
 	d_spring = SPRING(num_spring, false);// / allocate device
 	triangle = TRIANGLE(num_triangle, true);//allocate host
 	d_triangle = TRIANGLE(num_triangle, false);//allocate device
-	joint_control = JointControl(num_joint, true); // joint controller, must also call reset, see updatePhysics()
 
 	for (int i = 0; i < NUM_CUDA_STREAM; ++i) { // lower i = higher priority
 		cudaStreamCreateWithPriority(&stream[i], cudaStreamDefault, i);// create extra cuda stream: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution
@@ -508,7 +792,6 @@ void Simulation::updatePhysics() { // repeatedly start next
 	energy_start = energy(); // compute the total energy of the system at T=0
 #endif // DEBUG_ENERGY
 
-	joint_control.reset(mass, joint);// reset joint controller, must do
 	body.init(mass, id_oxyz_start); // init body frame
 
 	while (true) {
@@ -592,7 +875,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 		updateUdpReceive(); // receive udp message whenever there is new
 #endif // UDP
 #ifdef ROTATION
-		joint_control.update(mass, joint, NUM_QUEUED_KERNELS * dt);
+		joint.update(mass, NUM_QUEUED_KERNELS, dt);
 #endif // ROTATION
 
 		// invoke cuda kernel for dynamics update
@@ -604,7 +887,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 				// ref https://developer.nvidia.com/blog/cuda-graphs/
 				cudaStreamBeginCapture(stream[CUDA_DYNAMICS_STREAM], cudaStreamCaptureModeGlobal);
 #ifdef ROTATION
-				cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+				cudaMemcpyAsync(d_joint.delta_pos, joint.delta_pos, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 				cudaMemsetAsync(d_joint.torque, 0, d_joint.num * sizeof(double), stream[CUDA_DYNAMICS_STREAM]);
 				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // pbd kernel
 					pbdSolveDist << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt, d_joint, i== NUM_QUEUED_KERNELS-1? true:false);
@@ -631,7 +914,7 @@ void Simulation::updatePhysics() { // repeatedly start next
 			if (!graphCreated) {
 				cudaStreamBeginCapture(stream[CUDA_DYNAMICS_STREAM], cudaStreamCaptureModeGlobal);
 #ifdef ROTATION
-				cudaMemcpyAsync(d_joint.vel_desired, joint.vel_desired, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
+				cudaMemcpyAsync(d_joint.delta_pos, joint.delta_pos, joint.num * sizeof(double), cudaMemcpyDefault, stream[CUDA_DYNAMICS_STREAM]);
 				cudaMemsetAsync(d_joint.torque, 0, d_joint.num * sizeof(double), stream[CUDA_DYNAMICS_STREAM]);
 				for (int i = 0; i < NUM_QUEUED_KERNELS; i++) { // spring-mass kernel
 					updateSpring << <spring_grid_size, spring_block_size, 0, stream[CUDA_DYNAMICS_STREAM] >> > (d_mass, d_spring, dt, d_joint, i == NUM_QUEUED_KERNELS - 1 ? true : false);
@@ -702,30 +985,46 @@ bool Simulation::updateUdpReceive() {
 			msgpack::object obj = oh.get();
 			DataReceive msg_rec = obj.as<DataReceive>();
 
+			bool speed_command = (msg_rec.header == UDP_HEADER::MOTOR_SPEED_COMMEND || 
+				msg_rec.header == UDP_HEADER::MOTOR_SPEED_COMMEND);
+			bool step_command = (msg_rec.header == UDP_HEADER::STEP_MOTOR_POS_COMMEND ||
+				msg_rec.header == UDP_HEADER::STEP_MOTOR_SPEED_COMMEND);
+
 			// command
 			switch (msg_rec.header) {
-			case UDP_HEADER::MOTOR_POS_COMMEND: // assert(msg_rec.joint_value_desired.size() == joint_control.num)
-				joint_control.updateControlMode(JointControlMode::pos); //update desired joint pos from received udp packet
-				std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint_control.pos_desired);
-				if (!RUNNING) { SHOULD_RUN = true; }
-				break;
+			case UDP_HEADER::MOTOR_POS_COMMEND:
 			case UDP_HEADER::STEP_MOTOR_POS_COMMEND:
-				joint_control.updateControlMode(JointControlMode::pos); //update desired joint pos from received udp packet
-				std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint_control.pos_desired);
-				if (!RUNNING) { SHOULD_RUN = true; }
-				setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
-				break;
 			case UDP_HEADER::MOTOR_SPEED_COMMEND:
-				joint_control.updateControlMode(JointControlMode::vel); //update desired joint speed from received udp packet
-				std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint_control.vel_desired);
-				if (!RUNNING) { SHOULD_RUN = true; }
-				break;
 			case UDP_HEADER::STEP_MOTOR_SPEED_COMMEND:
-				joint_control.updateControlMode(JointControlMode::vel); //update desired joint speed from received udp packet
-				std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint_control.vel_desired);
+				joint.updateControlMode(JointControlMode::pos); //update desired joint pos from received udp packet
+				std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), speed_command? joint.vel_desired:joint.pos_desired);
 				if (!RUNNING) { SHOULD_RUN = true; }
-				setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
+				if (step_command) {
+					setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
+				}
 				break;
+			//case UDP_HEADER::MOTOR_POS_COMMEND: // assert(msg_rec.joint_value_desired.size() == joint.num)
+			//	joint.updateControlMode(JointControlMode::pos); //update desired joint pos from received udp packet
+			//	std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint.pos_desired);
+			//	if (!RUNNING) { SHOULD_RUN = true; }
+			//	break;
+			//case UDP_HEADER::STEP_MOTOR_POS_COMMEND:
+			//	joint.updateControlMode(JointControlMode::pos); //update desired joint pos from received udp packet
+			//	std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint.pos_desired);
+			//	if (!RUNNING) { SHOULD_RUN = true; }
+			//	setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
+			//	break;
+			//case UDP_HEADER::MOTOR_SPEED_COMMEND:
+			//	joint.updateControlMode(JointControlMode::vel); //update desired joint speed from received udp packet
+			//	std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint.vel_desired);
+			//	if (!RUNNING) { SHOULD_RUN = true; }
+			//	break;
+			//case UDP_HEADER::STEP_MOTOR_SPEED_COMMEND:
+			//	joint.updateControlMode(JointControlMode::vel); //update desired joint speed from received udp packet
+			//	std::copy(msg_rec.joint_value_desired.begin(), msg_rec.joint_value_desired.end(), joint.vel_desired);
+			//	if (!RUNNING) { SHOULD_RUN = true; }
+			//	setBreakpoint(T + NUM_QUEUED_KERNELS * dt);
+			//	break;
 			case UDP_HEADER::TERMINATE://close the program
 				printf("Simulation::updateUdpReceive(): remote called terminate (%s, line %d)\n", __FILE__,__LINE__);
 				bpts.insert(BreakPoint(0, true));//SHOULD_END = true;
@@ -976,8 +1275,6 @@ void Simulation::resetState() {//TODO...fix bug
 	d_joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM]);
 	joint.copyFrom(backup_joint, stream[CUDA_MEMORY_STREAM_ALT]);
 
-	joint_control.reset(backup_mass, backup_joint);
-	//joint_control.update(backup_mass, backup_joint, dt);
 	body.init(backup_mass, id_oxyz_start); // init body frame
 	cudaStreamSynchronize(stream[CUDA_MEMORY_STREAM]);
 

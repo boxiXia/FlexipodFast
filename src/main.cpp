@@ -246,7 +246,7 @@ int main(int argc, char* argv[])
 	}
 
 	sim.joint.init(bot, true);
-	sim.d_joint.init(bot, false);
+	sim.d_joint.init(sim.joint.num, sim.joint.edge_num);
 
 	//
 	//for (int i = 0; i < length; i++)
@@ -295,9 +295,9 @@ int main(int argc, char* argv[])
 
 	// set max speed for each joint
 	double max_rpm = 300;//maximun revolution per minute
-	sim.joint_control.max_vel = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
+	sim.joint.max_vel = max_rpm / 60. * 2 * M_PI;//max joint speed in rad/s
 	double settling_time = 1.0;// reaches max_rpm within this time
-	sim.joint_control.max_acc = sim.joint_control.max_vel / settling_time;
+	sim.joint.max_acc = sim.joint.max_vel / settling_time;
 
 #ifdef GRAPHICS
 	//sim.setViewport(Vec3d(-0.3, 0, 0.3), Vec3d(0, 0, 0), Vec3d(0, 0, 1));
@@ -376,45 +376,45 @@ void keyboardCallback(Simulation* sim) {
 
 	if (sim->getKey(GLFW_KEY_UP)) {
 		for (int i = 0; i < sim->joint.size(); i++) {
-			if (sim->joint_control.mode == JointControlMode::vel) {
-				sim->joint_control.vel_desired[i] += i < 2 ? speed_multiplier : -speed_multiplier;
+			if (sim->joint.mode == JointControlMode::vel) {
+				sim->joint.vel_desired[i] += i < 2 ? speed_multiplier : -speed_multiplier;
 			}
-			else if (sim->joint_control.mode == JointControlMode::pos) {
-				sim->joint_control.pos_desired[i] += i < 2 ? pos_multiplier : -pos_multiplier;
+			else if (sim->joint.mode == JointControlMode::pos) {
+				sim->joint.pos_desired[i] += i < 2 ? pos_multiplier : -pos_multiplier;
 			}
 		}
 	}
 	else if (sim->getKey(GLFW_KEY_DOWN)) {
 		for (int i = 0; i < sim->joint.size(); i++) {
-			if (sim->joint_control.mode == JointControlMode::vel) {
-				sim->joint_control.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
+			if (sim->joint.mode == JointControlMode::vel) {
+				sim->joint.vel_desired[i] -= i < 2 ? speed_multiplier : -speed_multiplier;
 			}
-			else if (sim->joint_control.mode == JointControlMode::pos) {
-				sim->joint_control.pos_desired[i] -= i < 2 ? pos_multiplier : -pos_multiplier;
+			else if (sim->joint.mode == JointControlMode::pos) {
+				sim->joint.pos_desired[i] -= i < 2 ? pos_multiplier : -pos_multiplier;
 			}
 		}
 	}
 	if (sim->getKey(GLFW_KEY_LEFT)) {
 		for (int i = 0; i < sim->joint.size(); i++) {
-			if (sim->joint_control.mode == JointControlMode::vel) {
-				sim->joint_control.vel_desired[i] -= speed_multiplier;
+			if (sim->joint.mode == JointControlMode::vel) {
+				sim->joint.vel_desired[i] -= speed_multiplier;
 			}
-			else if (sim->joint_control.mode == JointControlMode::pos) {
-				sim->joint_control.pos_desired[i] -= pos_multiplier;
+			else if (sim->joint.mode == JointControlMode::pos) {
+				sim->joint.pos_desired[i] -= pos_multiplier;
 			}
 		}
 	}
 	else if (sim->getKey(GLFW_KEY_RIGHT)) {
 		for (int i = 0; i < sim->joint.size(); i++) {
-			if (sim->joint_control.mode == JointControlMode::vel) {
-				sim->joint_control.vel_desired[i] += speed_multiplier;
+			if (sim->joint.mode == JointControlMode::vel) {
+				sim->joint.vel_desired[i] += speed_multiplier;
 			}
-			else if (sim->joint_control.mode == JointControlMode::pos) {
-				sim->joint_control.pos_desired[i] += pos_multiplier;
+			else if (sim->joint.mode == JointControlMode::pos) {
+				sim->joint.pos_desired[i] += pos_multiplier;
 			}
 		}
 	}
 	else if (sim->getKey(GLFW_KEY_0)) { // zero speed
-		sim->joint_control.reset(sim->mass, sim->joint);
+		sim->joint.resetControl(sim->mass);
 	}
 }
