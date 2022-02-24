@@ -23,6 +23,19 @@ class SoftHumanoidServer:
         # reset data packed # https://msgpack-python.readthedocs.io/en/latest/api.html#msgpack.Packer
         s.packer = msgpack.Packer(use_single_float=True, use_bin_type=True)
         
+        s.HEADER_POS_CONTROL = 10001
+
+        s.ID_t = 0
+        s.ID_joint_pos = 1
+        s.ID_joint_vel = 2
+        s.ID_joint_torque = 3
+        s.ID_orientation = 4
+        # s.ID_com_vel
+        s.ID_com_acc =  6
+        # s.ID_com_pos
+        s.ID_ang_vel = 5 # TODO: check its oreientation
+        s.ID_constraint = 8
+
         s._set_reset_pos() # set the joint reset position
 
     def _set_reset_pos(s):
@@ -45,7 +58,7 @@ class SoftHumanoidServer:
         # n0 = pi/20 # body incline
         n0 = 0 # body incline
 
-        s.joint_pos_reset = np.array([ # reset joint position
+        s.joint_pos_reset = np.array([
             # front left
             -p_f_b0,      # 0
             -p_f_01,      # 1
@@ -59,39 +72,30 @@ class SoftHumanoidServer:
             -p_bl_01,      # 7
             -p_bl_12,      # 8
             #back right
-             p_br_b0+n0,   # 9
-             p_br_01,      # 10
-             p_br_12,      # 11
+            p_br_b0+n0,   # 9
+            p_br_01,      # 10
+            p_br_12,      # 11
         ])
 
-    def reset(s):
-        s.send(s.joint_pos_reset,vel_control=0)
-        s.receive()
-        while(np.linalg.norm(s.joint_pos-s.joint_pos_reset,ord=1)>0.2):
-            s.send(s.joint_pos_reset,vel_control=0)
-            s.receive()
+        s.joint_pos_reset = np.zeros(12)
             
     def receive(s,verbose=False):
-        try:
-            data = s.server.receive(timeout=s.timeout,clear_buf=True,newest=False) # max of timeout second
-            # print(len(data))
-            data_unpacked = msgpack.unpackb(data,use_list=False)
-            joint_pos = data_unpacked[1][0][1]
-            s.joint_pos = np.arctan2(joint_pos[1::2],joint_pos[::2],dtype=np.float32)
-        except TimeoutError:
-            pass
+        data = s.server.receive(timeout=s.timeout,clear_buf=True,newest=False) # max of timeout second
+        # print(len(data))
+        data_unpacked = msgpack.unpackb(data,use_list=False)
+        joint_pos = data_unpacked[1][0][s.ID_joint_pos]
+        s.joint_pos = np.arctan2(joint_pos[1::2],joint_pos[::2],dtype=np.float32)
         return data_unpacked
     
-    def send(s,action, vel_control = 0):
-        packed = s.packer.pack([action.tolist() if type(action) is np.ndarray else action,vel_control])
-        #packed = msgpack.packb([action,[vel_control]])
-        s.server.send(packed)
+    def send(s,action):
+        packed = s.packer.pack([s.HEADER_POS_CONTROL, action.tolist() if type(action) is np.ndarray else action])
+        return s.server.send(packed)
 
     def reset(s):
-        s.send(s.joint_pos_reset,vel_control=0)
+        s.send(s.joint_pos_reset)
         s.receive()
         while(np.linalg.norm(s.joint_pos-s.joint_pos_reset,ord=1)>0.2):
-            s.send(s.joint_pos_reset,vel_control=0)
+            s.send(s.joint_pos_reset)
             s.receive()
 
 class PhysicalHumanoid(FlexipodEnv):
@@ -107,29 +111,34 @@ class PhysicalHumanoid(FlexipodEnv):
         """implementation specific initiailzation of the server"""
         # defualt packer # https://msgpack-python.readthedocs.io/en/latest/api.html#msgpack.Packer
         s.packer = msgpack.Packer(use_single_float=True, use_bin_type=True)
-        s.pulley = PulleyControl()
+        # s.pulley = PulleyControl()
         s.robot = SoftHumanoidServer()
+
+    def _impl_SendAction(s,cmd_action:list):
+        """
+        implementation specific function to serialize and send the action 
+        processed by act() to the env.
+        """
+        # send to robot
+        num_bytes_send = s.robot.send(cmd_action)
+        # send to other peripherials
+        # TODO
+
+    def _impl_Receive(s,timeout:float = 4):
+        """Implementation specific receive messages from the env"""
+        data_unpacked = s.robot.receive()
+        return data_unpacked 
+
 
         
     def start(s):
         """start the environment"""
-        s.pulley.reset()
+        # s.pulley.reset() 
         s.robot.reset()
+        print(s.robot.joint_pos)
 
 
-PhysicalHumanoid()
-
-# class A:
-#     def __init__(s):
-#         s.a()
-#     def a(s):
-#         print("A")
-
-
-# class B(A):
-#     def __init__(s):
-#         super().__init__()
-#     def a(s):
-#         print("B")
-# A()
-# B()
+if __name__ == '__main__':
+    bot = PhysicalHumanoid()
+    bot.start()
+    bot._impl_Receive()

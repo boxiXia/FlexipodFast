@@ -109,4 +109,7 @@ class PulleyControl:
 if __name__ == '__main__':
     pulley = PulleyControl()
     # pulley.move(-600,10)
-    pulley.reset()
+    # pulley.reset()
+    while(1):
+        pulley.server.send(pulley.packer.pack([[0],[10],[10]]))
+        time.sleep(0.1)
