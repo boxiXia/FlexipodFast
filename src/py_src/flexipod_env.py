@@ -583,7 +583,8 @@ class FlexipodEnv(gym.Env):
         # 1x3 com position measured at world space [m]
         s.com_pos = msg_i[s.ID_com_pos]
         # 1x3 com velocity measured at world space [m/s]
-        s.com_vel = np.mean([m[s.ID_com_vel] for m in msg],axis=0)
+        # s.com_vel = np.mean([m[s.ID_com_vel] for m in msg],axis=0)
+        s.com_vel = msg_i[s.ID_com_vel]
         # 1x3 com acceleration measured at world space [m/s^2]
         s.com_acc = np.mean([m[s.ID_com_acc] for m in msg],axis=0)
         
@@ -636,7 +637,7 @@ class FlexipodEnv(gym.Env):
         # velocity cost
         com_vel_x = s.com_vel[0] # x velocity
         # r_vel = 5*np.clip(com_vel_x,-0.2,0.5)+1.0 # velocity reward worked
-        r_vel = 2.0-min(0.4,abs(s.desired_vel_now-com_vel_x))*5 # com velocity reward
+        r_vel = 2.0-min(0.4,abs(s.desired_vel_now-com_vel_x[0]))*5 # com velocity reward
     
         if s._humanoid_task:
             orientation_z = s.orient[2] # z_z, local x vector projected to world z direction
@@ -681,21 +682,30 @@ class FlexipodEnv(gym.Env):
         """reset the env"""
         # set desired_vel
         if desired_vel is None:
-            desired_vel = np.random.random() # normalized
+            # desired_vel = np.random.random() # normalized
+            # desired_vel = 0
             # desired_vel = np.random.uniform(0.5,1.0)
-        s.desired_vel = s.toRawDesiredVel(desired_vel)
+            desired_vel = np.random.uniform(0.5,0.1)
+            s.desired_vel = s.toRawDesiredVel(desired_vel)
+        else:
+            s.desired_vel = desired_vel
 
         if gait_frequency is None:
             gait_frequency = np.random.random()
         s.gait_frequency = s.toRawGaitFrequency(gait_frequency)
         
-        s.server.send(s.reset_cmd_b)
-        time.sleep(1/20)
+        s._impl_reset()
         msg_rec = s._impl_Receive()
         s.episode_step = 0 # curret step in an episode
         observation = s._impl_ProcessObservation(msg_rec)
         return observation
     
+    def _impl_reset(s):
+        """implementation specific reset command"""
+        s.server.send(s.reset_cmd_b)
+        time.sleep(1/20)
+
+
     def render(s,mode="human"):
         pass
 
@@ -783,7 +793,7 @@ if __name__ == '__main__':
     
     while True:
         action = env.action_space.sample()
-        env.step(action)
+        observation,reward,done,info = env.step(action)
 
         # time.sleep(0.0001)
     # print(subprocess.Popen(["cmd"], shell=True))

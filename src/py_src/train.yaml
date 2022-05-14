@@ -43,6 +43,7 @@ num_eval_episodes: 1
 #     visualize_reward: True
 env:
     _target_: flexipod_env.make
+    # _target_: .real_env.physical_env.PhysicalHumanoid
     humanoid_task: True
     max_episode_steps: 2000
     # humanoid_task: False

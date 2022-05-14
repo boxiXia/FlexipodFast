@@ -11,6 +11,7 @@ import torch
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import heapq
+import multiprocessing as mp
 
 
 # from pytorch_sac.train import Workspace
@@ -240,4 +241,5 @@ def main(cfg):
 
 
 if __name__ == '__main__':
+    mp.freeze_support()
     main()

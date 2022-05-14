@@ -37,7 +37,7 @@ class PulleyControl:
             # place the robot centered and upright
             # release the pully until force is below some threashold
             dx = 0
-            k = 1
+            k = 30
             thresh = 0.1
             while self.cur>thresh: 
                 self.receive()
@@ -46,7 +46,7 @@ class PulleyControl:
                 
             # pull the pully until force is above some threashold
             dx = 0
-            k = 10
+            k = 30
             thresh = 0.1
             while self.cur<thresh:
                 self.receive()
@@ -108,8 +108,8 @@ class PulleyControl:
 
 if __name__ == '__main__':
     pulley = PulleyControl()
-    # pulley.move(-600,10)
+    pulley.move(-100,10)
     # pulley.reset()
-    while(1):
-        pulley.server.send(pulley.packer.pack([[0],[10],[10]]))
-        time.sleep(0.1)
+    # while(1):
+    #     pulley.server.send(pulley.packer.pack([[0],[10],[10]]))
+    #     time.sleep(0.1)
